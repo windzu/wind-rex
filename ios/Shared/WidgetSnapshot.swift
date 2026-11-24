@@ -9,7 +9,7 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// The format this build writes and reads.
     static let format = 1
     /// The App Group the app and the extension share.
-    static let group = "group.dev.gorex.ios"
+    static let group = "group.wiki.wind.windrex"
     /// The most items written for one host, and the most characters of a
     /// heading or a detail.
     static let maxItems = 20
@@ -118,15 +118,15 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-/// What a widget's tap opens in the app: rexgo://open?host=&session=&block=
-/// a terminal, rexgo://inbox the status inbox. The pairing code
+/// What a widget's tap opens in the app: windrex://open?host=&session=&block=
+/// a terminal, windrex://inbox the status inbox. The pairing code
 /// (rexgo://tailcat) is HostConfig(tailcat:)'s.
 nonisolated enum WidgetLink: Equatable, Sendable {
     case open(host: UUID, session: String, block: String)
     case inbox
 
     init?(url: URL) {
-        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false), c.scheme?.lowercased() == "rexgo" else { return nil }
+        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false), c.scheme?.lowercased() == "windrex" else { return nil }
         func value(_ n: String) -> String? { c.queryItems?.first { $0.name == n }?.value.flatMap { $0.isEmpty ? nil : $0 } }
         switch c.host?.lowercased() {
         case "inbox":
@@ -141,7 +141,7 @@ nonisolated enum WidgetLink: Equatable, Sendable {
 
     var url: URL {
         var c = URLComponents()
-        c.scheme = "rexgo"
+        c.scheme = "windrex"
         switch self {
         case .inbox:
             c.host = "inbox"

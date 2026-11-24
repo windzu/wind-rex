@@ -12,7 +12,7 @@ permissions: {}
 
 jobs:
   verified:
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     env:
       # observe: a missing line is a warning. enforce: it fails the check.

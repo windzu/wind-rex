@@ -858,7 +858,7 @@ actor Sherpa: Recogniser {
 /// start waits for it. The engine is made and used on that queue only.
 nonisolated final class Recording: @unchecked Sendable {
     static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
-    private static let queue = DispatchQueue(label: "dev.gorex.recording", qos: .userInitiated)
+    private static let queue = DispatchQueue(label: "wiki.wind.windrex.recording", qos: .userInitiated)
     /// The engine, once a start begins: a stop with none has nothing to
     /// stop.
     private var engine: AVAudioEngine?

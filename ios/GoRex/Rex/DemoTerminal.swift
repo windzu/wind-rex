@@ -326,7 +326,7 @@ final class DemoTerminal {
         let arg = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : ""
         switch command {
         case "help", "?":
-            lineOut(DemoText.bold("Rex Go Demo Mode"))
+            lineOut(DemoText.bold("WindRex Demo Mode"))
             lineOut(DemoText.dim("This terminal runs on the phone."))
             lineOut()
             lineOut("  \(DemoText.cyan("ls")) [ -l ]      list the folder")

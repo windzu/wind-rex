@@ -63,7 +63,7 @@ enum ConnectionLog {
     /// failing never breaks the app.
     final class File {
         private let url: URL
-        private let queue = DispatchQueue(label: "dev.gorex.ios.connectionlog")
+        private let queue = DispatchQueue(label: "wiki.wind.windrex.connectionlog")
         // The rest runs on queue.
         private var handle: FileHandle?
         /// The lines the file holds, as read() counted and append() grew it.
@@ -151,7 +151,7 @@ enum ConnectionLog {
         }
     }
 
-    private static let log = Logger(subsystem: "dev.gorex.ios", category: "connection")
+    private static let log = Logger(subsystem: "wiki.wind.windrex", category: "connection")
     private static let limit = 2000
     /// The lines the file may hold past the limit before it is rewritten to
     /// its tail: a rewrite per that many new ones, not one per line.

@@ -1,6 +1,6 @@
 {
-  "name": "GoRex",
-  "short_name": "GoRex",
+  "name": "WindRex",
+  "short_name": "WindRex",
   "description": "The terminals of your GoRex hosts, in a window of their own.",
   "id": "./",
   "start_url": "./",

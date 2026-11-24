@@ -14,7 +14,7 @@ private struct Reveal: ViewModifier {
     }
 }
 
-/// The space picker atop the list (docs/MOD-002-projects.md, Rex Go), or in a wide
+/// The space picker atop the list (docs/MOD-002-projects.md, WindRex), or in a wide
 /// window's bar beside the search: the space shown, and a panel of the
 /// spaces, with Edit and New Space.
 struct SpacePicker: View {

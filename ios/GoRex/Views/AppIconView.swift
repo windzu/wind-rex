@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The app icons Rex Go ships: Prism, the one it installs with, and the
+/// The app icons WindRex ships: Prism, the one it installs with, and the
 /// alternates Spectrum and Classic. Each is an Icon Composer bundle next to
 /// the app (`AppIcon*.icon`); the image set beside it is a picture of the
 /// design, for the app to show.

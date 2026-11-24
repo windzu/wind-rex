@@ -312,6 +312,12 @@ func TestTrustedBranch(t *testing.T) {
 			t.Error("untrusted")
 		}
 	})
+	t.Run("WindRex main", func(t *testing.T) {
+		dir, _ := trustRepo(t, "https://github.com/windzu/wind-rex.git")
+		if ok, why := trustedBranch(dir); !ok {
+			t.Errorf("untrusted: %s", why)
+		}
+	})
 	t.Run("ssh remote", func(t *testing.T) {
 		dir, _ := trustRepo(t, "git@github.com:si-mods/gorex.git")
 		if ok, _ := trustedBranch(dir); !ok {

@@ -180,12 +180,12 @@
         }
       }
     },
-    "Allow Rex Go to use the microphone in Settings.": {
+    "Allow WindRex to use the microphone in Settings.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在“设置”中允许 Rex Go 使用麦克风。"
+            "value": "请在“设置”中允许 WindRex 使用麦克风。"
           }
         }
       }
@@ -1590,12 +1590,12 @@
         }
       }
     },
-    "SSH hosts aren't supported in Rex Go. Enter the address of a Rex server, like http://192.168.1.2:7297.": {
+    "SSH hosts aren't supported in WindRex. Enter the address of a Rex server, like http://192.168.1.2:7297.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 不支持 SSH 主机。请输入 Rex 服务器的地址，例如 http://192.168.1.2:7297。"
+            "value": "WindRex 不支持 SSH 主机。请输入 Rex 服务器的地址，例如 http://192.168.1.2:7297。"
           }
         }
       }
@@ -1830,12 +1830,12 @@
         }
       }
     },
-    "Code, fonts and themes that ship with Rex Go.": {
+    "Code, fonts and themes that ship with WindRex.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 附带的代码、字体和主题。"
+            "value": "WindRex 附带的代码、字体和主题。"
           }
         }
       }
@@ -2556,12 +2556,12 @@
         }
       }
     },
-    "Rex Go puts the terminals of your computers on your iPhone and iPad: a Ghostty terminal with a key bar, selection, scrolling and input made for touch.": {
+    "WindRex puts the terminals of your computers on your iPhone and iPad: a Ghostty terminal with a key bar, selection, scrolling and input made for touch.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 把你电脑上的终端带到 iPhone 和 iPad：基于 Ghostty 的终端，按键栏、选择、滚动和输入都为触控而设计。"
+            "value": "WindRex 把你电脑上的终端带到 iPhone 和 iPad：基于 Ghostty 的终端，按键栏、选择、滚动和输入都为触控而设计。"
           }
         }
       }
@@ -3046,12 +3046,12 @@
         }
       }
     },
-    "Refused: sign Rex Go in as the Tailscale user who signed in the GoRex machine, not with a tagged key, or turn on --allow-tailnet-members there.": {
+    "Refused: sign WindRex in as the Tailscale user who signed in the GoRex machine, not with a tagged key, or turn on --allow-tailnet-members there.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "被拒绝：请用登录 GoRex 电脑的同一 Tailscale 用户登录 Rex Go，不要用带标签的密钥；或在那台电脑上开启 --allow-tailnet-members。"
+            "value": "被拒绝：请用登录 GoRex 电脑的同一 Tailscale 用户登录 WindRex，不要用带标签的密钥；或在那台电脑上开启 --allow-tailnet-members。"
           }
         }
       }
@@ -3086,12 +3086,12 @@
         }
       }
     },
-    "Rex Go joins your tailnet itself, with no Tailscale app or VPN. Hosts on the tailnet go through it.": {
+    "WindRex joins your tailnet itself, with no Tailscale app or VPN. Hosts on the tailnet go through it.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 自己加入你的 tailnet，无需 Tailscale App 或 VPN。tailnet 上的主机经由它连接。"
+            "value": "WindRex 自己加入你的 tailnet，无需 Tailscale App 或 VPN。tailnet 上的主机经由它连接。"
           }
         }
       }
@@ -3246,12 +3246,12 @@
         }
       }
     },
-    "Reach this host through Rex Go's own Tailscale, not the phone's network or the Tailscale app. With built-in Tailscale off, it goes the phone's way.": {
+    "Reach this host through WindRex's own Tailscale, not the phone's network or the Tailscale app. With built-in Tailscale off, it goes the phone's way.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "经由 Rex Go 自带的 Tailscale 连接此主机，而不是手机网络或 Tailscale App。内置 Tailscale 关闭时，按手机的方式连接。"
+            "value": "经由 WindRex 自带的 Tailscale 连接此主机，而不是手机网络或 Tailscale App。内置 Tailscale 关闭时，按手机的方式连接。"
           }
         }
       }
@@ -3326,22 +3326,22 @@
         }
       }
     },
-    "Tailscale inside Rex Go, no VPN": {
+    "Tailscale inside WindRex, no VPN": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tailscale 在 Rex Go 内运行，无 VPN"
+            "value": "Tailscale 在 WindRex 内运行，无 VPN"
           }
         }
       }
     },
-    "On · Rex Go Only": {
+    "On · WindRex Only": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启 · 仅 Rex Go"
+            "value": "开启 · 仅 WindRex"
           }
         }
       }
@@ -3396,12 +3396,12 @@
         }
       }
     },
-    "Rex Go's connection to GoRex is not ready": {
+    "WindRex's connection to GoRex is not ready": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 与 GoRex 的连接尚未就绪"
+            "value": "WindRex 与 GoRex 的连接尚未就绪"
           }
         }
       }
@@ -3426,12 +3426,12 @@
         }
       }
     },
-    "Paired by GoRex's Rex Go code. Deleting the host here doesn't revoke this phone: remove it from Devices in GoRex's Settings › Server.": {
+    "Paired by GoRex's WindRex code. Deleting the host here doesn't revoke this phone: remove it from Devices in GoRex's Settings › Server.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过 GoRex 的 Rex Go 二维码配对。在这里删除主机不会撤销本机的授权：请在 GoRex 的 设置 › 服务器 › 设备 中移除它。"
+            "value": "通过 GoRex 的 WindRex 二维码配对。在这里删除主机不会撤销本机的授权：请在 GoRex 的 设置 › 服务器 › 设备 中移除它。"
           }
         }
       }
@@ -3446,12 +3446,12 @@
         }
       }
     },
-    "Paired. Rex Go is connected.": {
+    "Paired. WindRex is connected.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已配对，Rex Go 已连接。"
+            "value": "已配对，WindRex 已连接。"
           }
         }
       }
@@ -3496,12 +3496,12 @@
         }
       }
     },
-    "Rex Go keeps trying: approve this phone on the machine.": {
+    "WindRex keeps trying: approve this phone on the machine.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 会继续尝试：请在那台电脑上批准本机。"
+            "value": "WindRex 会继续尝试：请在那台电脑上批准本机。"
           }
         }
       }
@@ -3916,12 +3916,12 @@
         }
       }
     },
-    "Rex Go connects to the computers where GoRex runs. Try the demo to explore the app before you add one.": {
+    "WindRex connects to the computers where GoRex runs. Try the demo to explore the app before you add one.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rex Go 连接运行 GoRex 的电脑。添加主机前，可以先进入演示模式体验 App。"
+            "value": "WindRex 连接运行 GoRex 的电脑。添加主机前，可以先进入演示模式体验 App。"
           }
         }
       }
@@ -4180,12 +4180,12 @@
         }
       }
     },
-    "A host that is offline shows its projects and their tabs greyed, as Rex Go last saw them.": {
+    "A host that is offline shows its projects and their tabs greyed, as WindRex last saw them.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "离线的主机以灰色显示它的项目和标签页，内容是 Rex Go 上次看到的样子。"
+            "value": "离线的主机以灰色显示它的项目和标签页，内容是 WindRex 上次看到的样子。"
           }
         }
       }

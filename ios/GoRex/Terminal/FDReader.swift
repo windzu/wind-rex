@@ -11,7 +11,7 @@ nonisolated enum FDReader {
     /// last event handler: that one frees the buffer.
     static func start(_ fd: Int32, _ group: DispatchGroup, _ deliver: @escaping @Sendable (Data) -> Void) -> DispatchSourceRead {
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
-        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "dev.gorex.ios.terminal.input"))
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "wiki.wind.windrex.terminal.input"))
         nonisolated(unsafe) let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
         group.enter()
         source.setCancelHandler {

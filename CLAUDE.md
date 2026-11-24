@@ -1,4 +1,4 @@
-# GoRex
+# WindRex
 
 Rules an agent cannot read from the code. Keep each line one that prevents a real mistake; put lessons in `docs/lessons.md`, procedures in skills or `docs/`, and machine-specific notes outside the repo.
 
@@ -12,7 +12,7 @@ Rules an agent cannot read from the code. Keep each line one that prevents a rea
 
 ## Before you start
 
-- The main checkout is often far behind. `git fetch origin` and read code from `origin/main` before saying how GoRex works.
+- Check `origin/main` for WindRex's latest code. The `upstream` remote is the source for deliberate imports from GoRex.
 - For a feature, search `docs/` for its topic first. Write or update the design doc before the code (`docs/DOC-001-design-docs.md`), and ship both in one PR.
 - For UI, read `DESIGN.md`.
 - Before you change behavior `docs/invariants.md` names, read its test; a thin test gets the case in the same PR.
@@ -33,7 +33,7 @@ Rules an agent cannot read from the code. Keep each line one that prevents a rea
 
 ## Pull requests
 
-- PRs and issues go to `si-mods/gorex` only, never `egoist/gorex`. Pass `-R si-mods/gorex` to every `gh` command, and check the URL it prints; the hook refuses a `gh` write without `-R`. Before any `gh` write, run `git remote -v`: if a remote points to `egoist/gorex`, stop and tell the user.
+- Open WindRex PRs and issues in `windzu/wind-rex`. Use `-R windzu/wind-rex` for GitHub writes. Upstream contribution is a separate task.
 - PR bodies follow `.github/pull_request_template.md` (`## Problem`, `## Cause` + `## Fix` or `## Change`, `## Test`, `## Screenshots` for visible changes, and a `Verified:` line).
 - The repo is public. Code, tests, commits and PR text carry no real names, host names, user paths, LAN addresses, emails, keys or tailnet addresses; use placeholders such as `alice-laptop`.
 - Screenshots go on a `shots/pr-<n>` branch, linked by commit SHA, with made-up data only. `.github/workflows/delete-shots.yml` deletes the branch when the PR merges.
@@ -48,10 +48,8 @@ Rules an agent cannot read from the code. Keep each line one that prevents a rea
 
 ## iOS TestFlight
 
-- Pushes to main that touch `ios/**`, `internal/tailnode/**`, `go.mod` or `go.sum` upload the app (`.github/workflows/testflight.yml`, on the Mac mini's self-hosted runner; with it off, the run waits). Do not upload by hand; read the build from the run's summary ("Uploaded Rex Go X.Y (n)").
-- A squash merge whose message contains `[skip ci]` starts no run. Start one with `gh workflow run testflight.yml -R si-mods/gorex`.
+- Dispatch TestFlight manually from `windzu/wind-rex` after its distribution variables and credentials are configured. See the README for the app and team identifiers.
 - A PR that changes what a tester sees adds a bullet (≤ 200 characters) in their terms to each locale of `ios/WhatToTest.md`; CI checks it (`ios/scripts/test-notes check`).
-- The TestFlight and Apple Developer Portal procedures live in the private `ios-dev` plugin (`/plugin install ios-dev@proem`), not in this repo: `asc-testflight`, `testflight-crashes`, `asc-devportal-identifiers`.
 
 ## Maintenance
 

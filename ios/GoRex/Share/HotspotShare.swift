@@ -250,7 +250,7 @@ final class HotspotShare: NSObject, TailnetShareDelegateProtocol {
                 self.calls.add { await self.pathChanged() }
             }
         }
-        m.start(queue: DispatchQueue(label: "dev.gorex.share.path"))
+        m.start(queue: DispatchQueue(label: "wiki.wind.windrex.share.path"))
         monitor = m
     }
 

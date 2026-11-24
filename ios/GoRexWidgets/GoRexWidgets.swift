@@ -2,7 +2,7 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-/// Rex Go's widgets (docs/IOS-010-widgets.md). They show the snapshot the app
+/// WindRex's widgets (docs/IOS-010-widgets.md). They show the snapshot the app
 /// writes (WidgetSnapshot); they reach no host.
 @main
 struct GoRexWidgets: WidgetBundle {

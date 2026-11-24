@@ -31,7 +31,7 @@ struct DiagnosticsView: View {
     // but for its headings.
     private var sections: [(title: LocalizedStringResource, text: String)] {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-        var app = ["Rex Go \(Bundle.main.version) (\(build)), iOS \(UIDevice.current.systemVersion)", Date.now.ISO8601Format()]
+        var app = ["WindRex \(Bundle.main.version) (\(build)), iOS \(UIDevice.current.systemVersion)", Date.now.ISO8601Format()]
         app.append("Address \(address)")
         if let host {
             app.append("URL \(host.url.absoluteString)")

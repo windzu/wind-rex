@@ -904,12 +904,16 @@ func TestLANMigrationUnsavedTokenStaysOff(t *testing.T) {
 func TestWebPairURL(t *testing.T) {
 	c := LANConfig{Token: "t0ken"}
 	s := LANStatus{Running: true, WTListening: "192.168.1.20:7298", WTCertHash: "abc"}
-	want := "https://web.gorex.uk/#host=https%3A%2F%2F192.168.1.20%3A7298&wt=sha256-abc&k=t0ken"
-	if got := c.WebPairURL(s, WebOrigin); got != want {
+	const origin = "https://web.example.com"
+	want := origin + "/#host=https%3A%2F%2F192.168.1.20%3A7298&wt=sha256-abc&k=t0ken"
+	if got := c.WebPairURL(s, origin); got != want {
 		t.Fatalf("WebPairURL = %q, want %q", got, want)
 	}
-	if got := c.WebPairURL(s, "https://web.gorex.uk/"); got != want {
+	if got := c.WebPairURL(s, origin+"/"); got != want {
 		t.Errorf("a trailing slash changed the link: %q", got)
+	}
+	if got := c.WebPairURL(s, ""); got != "" {
+		t.Errorf("with no web origin, got %q", got)
 	}
 	for name, tc := range map[string]struct {
 		c LANConfig
@@ -921,7 +925,7 @@ func TestWebPairURL(t *testing.T) {
 		"no address":   {c, LANStatus{Running: true, WTCertHash: "abc"}},
 		"an error":     {c, LANStatus{Running: true, WTCertHash: "abc", WTListening: "192.168.1.20:7298", Error: "address already in use"}},
 	} {
-		if got := tc.c.WebPairURL(tc.s, WebOrigin); got != "" {
+		if got := tc.c.WebPairURL(tc.s, origin); got != "" {
 			t.Errorf("%s: WebPairURL = %q, want none", name, got)
 		}
 	}

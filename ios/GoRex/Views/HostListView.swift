@@ -16,7 +16,7 @@ extension Color {
 
 /// The space chosen atop the list, and under it each host with its
 /// projects of the space and its tabs with no project, as the desktop's
-/// sidebar (docs/MOD-002-projects.md, Rex Go); a host of before projects lists its
+/// sidebar (docs/MOD-002-projects.md, WindRex); a host of before projects lists its
 /// sessions. The eye lists instead the tabs by what their programs need.
 /// A wide window shows the list beside the terminal open; a narrow one
 /// pushes the terminal over the list.
@@ -48,7 +48,7 @@ struct HostListView: View {
     @AppStorage("scheme") private var scheme = "dark"
     /// The window's scheme, a terminal's while one is open.
     @Environment(\.colorScheme) private var windowScheme
-    /// The GoRex machine of a Rex Go code opened from outside, to pair with;
+    /// The GoRex machine of a WindRex code opened from outside, to pair with;
     /// waiting is one that waits for Settings to close first.
     @State private var pairing: HostConfig?
     @State private var waiting: HostConfig?
@@ -116,7 +116,7 @@ struct HostListView: View {
             Notifier.shared.opening = nil
         }
         // A widget's tap opens a terminal, as a notification's does, or the
-        // inbox; a host gone opens the list. A Rex Go code opened from the
+        // inbox; a host gone opens the list. A WindRex code opened from the
         // camera pairs, once Settings, open over the list, has closed.
         .onOpenURL { url in
             if let link = WidgetLink(url: url) {
@@ -716,7 +716,7 @@ private struct ListPicker<Content: View>: View {
     }
 }
 
-/// What the list shows before any host is added: how Rex Go reaches a
+/// What the list shows before any host is added: how WindRex reaches a
 /// computer, and Demo Mode's way in.
 private struct NoHostsView: View {
     /// Where Add a Host is the source Settings zooms out of.
@@ -732,7 +732,7 @@ private struct NoHostsView: View {
                 .padding(.bottom, 2)
             Text("No Hosts Yet")
                 .font(.title2.bold())
-            Text("Rex Go connects to the computers where GoRex runs. Try the demo to explore the app before you add one.")
+            Text("WindRex connects to the computers where GoRex runs. Try the demo to explore the app before you add one.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -905,11 +905,11 @@ struct DragEnd: ViewModifier {
 nonisolated final class Lifted: NSItemProvider, @unchecked Sendable {
     static let ended = Notification.Name("GoRex.Lifted.ended")
     /// A row's drag, which only the app's own targets take.
-    static let type = UTType(exportedAs: "dev.gorex.window-row")
+    static let type = UTType(exportedAs: "wiki.wind.windrex.window-row")
     /// A host's drag, under which its item's token is marked: the drop
     /// side sees only the string's text, and the sections' targets know
     /// the drag is on from HostDrop.
-    static let hostType = UTType(exportedAs: "dev.gorex.host")
+    static let hostType = UTType(exportedAs: "wiki.wind.windrex.host")
     var token: UUID?
 
     /// Carries the drag's token under the type given, for this app only.

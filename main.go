@@ -36,7 +36,7 @@ func main() {
 	// server.version reports the app's version, marked as GoRex's; a
 	// build outside a bundle has none and keeps the placeholder.
 	if v := mygo.App.Version(); v != "" {
-		rexapi.RexVersion = v + "-gorex"
+		rexapi.RexVersion = v + "-windrex"
 	}
 	// The state of the sessions lives in the app's data directory, which
 	// the server it starts takes from GOREX_DIR: "GoRex", or "GoRex Dev"
@@ -89,11 +89,11 @@ func main() {
 	}
 	// mygo dev names its app "GoRex Dev", which tells it from the installed
 	// app only by a suffix. This build says what it is for instead: the
-	// menu bar, and the About, Hide and Quit items, read "GoRex SF". The
+	// menu bar, and the About, Hide and Quit items, read "WindRex Dev". The
 	// data directory above keeps the name mygo gave it, so its sessions
 	// stay as they were.
 	if devBuild() {
-		mygo.App.SetName("GoRex SF")
+		mygo.App.SetName("WindRex Dev")
 	}
 	// The app runs once: launched again, it shows the window focused last.
 	// MyGo keys the lock by the app's identifier and name, which mygo dev's

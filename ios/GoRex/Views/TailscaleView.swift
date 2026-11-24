@@ -32,7 +32,7 @@ struct TailscaleView: View {
             } header: {
                 Text("Status")
             } footer: {
-                Text("Rex Go joins your tailnet itself, with no Tailscale app or VPN. Hosts on the tailnet go through it.")
+                Text("WindRex joins your tailnet itself, with no Tailscale app or VPN. Hosts on the tailnet go through it.")
             }
             .listRowBackground(Color.card)
             Section {
@@ -180,7 +180,7 @@ struct TailscaleView: View {
                 }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
-                Text("Tailscale inside Rex Go, no VPN").font(.subheadline).foregroundStyle(.secondary)
+                Text("Tailscale inside WindRex, no VPN").font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
             if busy {

@@ -92,6 +92,7 @@ if [ "${1:-}" = check ]; then
 	exit 0
 fi
 
+require_asc_app
 V=${1:?version} B=${2:?build} FROM=${3:?from} TO=${4:-HEAD}
 TO=$(git rev-parse "$TO")
 en=$(gained "$FROM" en-US "$TO")

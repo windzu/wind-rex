@@ -148,7 +148,7 @@ final class ControlConnection {
         task.resume()
         var hello: [String: Any] = [
             "type": "hello", "api_revision": Self.revision, "api_min_revision": Self.minRevision,
-            "client": ["kind": "app", "platform": "ios", "name": "Rex Go", "version": Bundle.main.version,
+            "client": ["kind": "app", "platform": "ios", "name": "WindRex", "version": Bundle.main.version,
                        "label": Self.label],
         ]
         hello["reconnect_token"] = token

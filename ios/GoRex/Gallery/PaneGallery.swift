@@ -122,7 +122,7 @@ final class PaneGallery {
 
     /// The scanner and the store of a pane, used on the queue only.
     nonisolated final class Worker: @unchecked Sendable {
-        private static let queue = DispatchQueue(label: "dev.gorex.gallery", qos: .utility)
+        private static let queue = DispatchQueue(label: "wiki.wind.windrex.gallery", qos: .utility)
         private var scanner = GalleryScanner()
         private let dir: URL
         /// Read from disk at first use, on the queue.

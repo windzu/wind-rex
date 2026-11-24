@@ -91,7 +91,7 @@ import Observation
             let network = "\(name) \(name.isEmpty ? [] : path.gateways.map { "\($0)" }.sorted())"
             Task { @MainActor in told(name, network) }
         }
-        m.start(queue: DispatchQueue(label: "dev.gorex.ios.network.path"))
+        m.start(queue: DispatchQueue(label: "wiki.wind.windrex.network.path"))
         return m
     }
 }

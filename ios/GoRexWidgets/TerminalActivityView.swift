@@ -150,7 +150,7 @@ struct TerminalActivityLine: View {
                     .opacity(paused ? 0.5 : 1)
             }
             if paused {
-                Text("Paused — open Rex Go")
+                Text("Paused — open WindRex")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -244,7 +244,7 @@ struct TerminalActivityCard: View {
                 .opacity(paused ? 0.5 : 1)
             Group {
                 if paused {
-                    Text("Paused — open Rex Go")
+                    Text("Paused — open WindRex")
                         .fontWeight(.semibold)
                         .foregroundStyle(.white.opacity(0.85))
                 } else {

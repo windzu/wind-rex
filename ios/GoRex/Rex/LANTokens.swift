@@ -11,9 +11,9 @@ protocol LANTokens: AnyObject {
 }
 
 /// The tokens in the Keychain, a generic password per host: service
-/// dev.gorex.ios.lan-token, account the host's id.
+/// wiki.wind.windrex.lan-token, account the host's id.
 final class KeychainLANTokens: LANTokens {
-    static let service = "dev.gorex.ios.lan-token"
+    static let service = "wiki.wind.windrex.lan-token"
 
     private func item(_ host: UUID) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

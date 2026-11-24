@@ -29,15 +29,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Most jobs run on an instabox machine (Ubuntu 24.04) that lives for
-  # the job, a fork's pull request too. Go caches are saved on pushes to
-  # main only; a pull request restores them and saves none, so the 10 GB
-  # cache limit does not fill with one copy per pull request.
-  # The Mac mini's runner takes one job at a time and is kept for the
-  # release, so no job here waits for it.
-  # Windows tests run on the self-hosted YIBO-PC runner (same-repo PRs and
-  # pushes only); macOS-only issues still show on a developer's machine.
-  # si-mods runs no job on GitHub's runners.
+  # GitHub-hosted runners build and test the clients. Go caches are saved
+  # on pushes to main only.
 
   # Whether the change reaches past the iOS app. A change only to the
   # Swift app (IOS_ONLY: its sources, tests, packages, scripts and
@@ -48,7 +41,7 @@ jobs:
   # in READ_ELSEWHERE. An empty diff, a manual run, and a base that is not
   # an ancestor (a new branch, a force-push) run all.
   changes:
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
@@ -79,7 +72,7 @@ jobs:
   # every pull request, the iOS app's alone too.
   what-to-test:
     if: github.event_name == 'pull_request'
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -101,7 +94,7 @@ jobs:
   build:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: instabox-large
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -164,7 +157,7 @@ jobs:
   web:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -186,7 +179,7 @@ jobs:
   test-linux:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     # One run of a part that hangs, at 15 minutes, and the setup.
     timeout-minutes: 20
     strategy:
@@ -240,7 +233,7 @@ jobs:
   test-windows:
     needs: changes
     if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, yibo-pc]
+    runs-on: windows-latest
     timeout-minutes: 25
     steps:
       - run: git config --global core.autocrlf false
@@ -265,7 +258,7 @@ jobs:
   web-r2:
     needs: changes
     if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: instabox-medium
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7

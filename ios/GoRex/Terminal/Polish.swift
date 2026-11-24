@@ -127,7 +127,7 @@ nonisolated struct Polish: Sendable {
 
 nonisolated extension Polish {
     private static var item: [CFString: Any] {
-        [kSecClass: kSecClassGenericPassword, kSecAttrService: "dev.gorex.ios.polish", kSecAttrAccount: "key"]
+        [kSecClass: kSecClassGenericPassword, kSecAttrService: "wiki.wind.windrex.polish", kSecAttrAccount: "key"]
     }
 
     private static func query(_ extra: [CFString: Any]) -> CFDictionary {

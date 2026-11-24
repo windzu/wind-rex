@@ -1,5 +1,5 @@
 #!/bin/bash
-# upload: archive Rex Go and upload it to TestFlight. Run on a Mac with Xcode,
+# upload: archive WindRex and upload it to TestFlight. Run on a Mac with Xcode,
 # asc and xcodegen, from ios/, after scripts/build-ghostty-vt.sh and
 # scripts/build-tailnet. Signing is cloud-managed, by the App Store Connect
 # API key: ASC_KEY_PATH, ASC_KEY_ID and ASC_ISSUER_ID, by default the key in
@@ -8,6 +8,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/asc-env
+require_asc_app
+TEAM=${WINDREX_APPLE_TEAM_ID:-}
+[[ $TEAM =~ ^[A-Z0-9]{10}$ ]] || { echo "Set WINDREX_APPLE_TEAM_ID to the signing team ID" >&2; exit 1; }
+[[ -n $ASC_KEY_ID && -n $ASC_ISSUER_ID && -f $ASC_PRIVATE_KEY_PATH ]] || { echo "Set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH" >&2; exit 1; }
 export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_PATH
 A=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_PRIVATE_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 # Builds count up from 1 for each version, as TestFlight shows them: 1.1 (3).
@@ -27,7 +31,7 @@ cat > build/export.plist <<P
 <plist version="1.0"><dict>
 <key>method</key><string>app-store-connect</string>
 <key>destination</key><string>${DESTINATION:-upload}</string>
-<key>teamID</key><string>57QL6YCAH5</string>
+<key>teamID</key><string>$TEAM</string>
 <key>signingStyle</key><string>automatic</string>
 <key>manageAppVersionAndBuildNumber</key><false/>
 </dict></plist>
@@ -46,7 +50,7 @@ sign() { # BUNDLE [ENTITLEMENTS]: signs it ad hoc, with the entitlements
   id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1/Info.plist")
   [[ -n $id ]] || { echo "no CFBundleIdentifier in $1" >&2; exit 1; }
   f=build/$id.entitlements
-  sed -e "s/\$(TeamIdentifierPrefix)/57QL6YCAH5./g" -e "s/\$(CFBundleIdentifier)/$id/g" "$2" > "$f"
+  sed -e "s/\$(TeamIdentifierPrefix)/$TEAM./g" -e "s/\$(CFBundleIdentifier)/$id/g" "$2" > "$f"
   codesign -f -s - --entitlements "$f" "$1"
 }
 sign_entitlements() { # APP
@@ -71,7 +75,7 @@ for try in 0 1 2; do
   echo "BUILD $V ($B)"
   rm -rf build/GoRex.xcarchive build/export
   xcodebuild -scheme GoRex -destination generic/platform=iOS -archivePath build/GoRex.xcarchive \
-    CURRENT_PROJECT_VERSION="$B" GOREX_COMMIT="$C" CODE_SIGNING_ALLOWED=NO archive > build/archive.log 2>&1 || { grep -E "error" build/archive.log | tail -15; exit 1; }
+    CURRENT_PROJECT_VERSION="$B" GOREX_COMMIT="$C" DEVELOPMENT_TEAM="$TEAM" WINDREX_PUSH_RELAY_URL="${WINDREX_PUSH_RELAY_URL:-}" CODE_SIGNING_ALLOWED=NO archive > build/archive.log 2>&1 || { grep -E "error" build/archive.log | tail -15; exit 1; }
   echo ARCHIVED
   sign_entitlements build/GoRex.xcarchive/Products/Applications/GoRex.app
   xcodebuild -exportArchive -archivePath build/GoRex.xcarchive -exportOptionsPlist build/export.plist -exportPath build/export "${A[@]}" > build/export.log 2>&1 && break

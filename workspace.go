@@ -1224,7 +1224,7 @@ func (st *store) secondInstance() {
 // newWindow makes the window of a workspace; tests make none.
 var newWindow = func(a *App) *mygo.Window {
 	opts := mygo.WindowOptions{
-		Title:                "GoRex",
+		Title:                "WindRex",
 		Width:                1000,
 		Height:               620,
 		MinWidth:             560,

@@ -1,36 +1,41 @@
-# GoRex
+# WindRex
 
-A replica of [Superlogical's Rex](https://www.superlogical.com/updates/public-testing-beginning)
-terminal, written in Go with [MyGo](https://mygo.egoist.dev)'s native UI and its
-terminal plugin (Ghostty's libghostty-vt). No cgo: one ~15 MB app, whose
-browser panes use the system's web view.
+WindRex is an independently developed fork of [GoRex](https://github.com/si-mods/gorex)
+for iPhone and iPad, desktop, and the web. It starts from upstream v0.56.1
+and retains the Rex connection protocol for existing hosts.
 
-![GoRex](docs/screenshot.png)
+## Develop locally
 
-## Install and update
+- **iOS** needs full Xcode with an iOS Simulator runtime, Go 1.27.4 or newer
+  and XcodeGen 2.45.1 or newer. From the repository root run
+  `ios/scripts/build-ghostty-vt.sh` and `ios/scripts/build-tailnet`, then run
+  `xcodegen generate` from `ios/`. Use the `GoRex` scheme in
+  `ios/GoRex.xcodeproj` with an iPhone simulator. A CLI build uses
+  `xcodebuild -scheme GoRex -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build` from `ios/`.
+- **Desktop** uses `go tool mygo dev -background` or `go tool mygo build`.
+  For local server-only work, build with `go build -o build/wind-rex .`
+  and run that binary with `-server`. WindRex uses its own data directory.
+- **Web** uses `npm ci` and `npm run dev` from `web/`. Run
+  `npm run typecheck` and `npm test` there for local checks.
 
-The signed installer for macOS and Linux is published with each release.
+## Distribution
 
-```sh
-curl -fsSL https://github.com/si-mods/gorex/releases/latest/download/install.sh | sh
-```
+The iOS bundle ID is `wiki.wind.windrex`. Its widget is
+`wiki.wind.windrex.widgets` and uses the App Group `group.wiki.wind.windrex`
+with the iOS app. Prepare those identifiers and entitlements in the Apple
+team before setting up the manual TestFlight workflow in this repository.
+The workflow takes `WINDREX_APPLE_TEAM_ID`, `WINDREX_ASC_APP_ID`,
+`ASC_KEY_ID` and `ASC_ISSUER_ID` from repository variables, and `ASC_KEY_P8`
+from a repository secret. Configure your distribution authorization before
+running it.
 
-On Windows (10 1809 or later, x64 and ARM64), run the PowerShell installer
-or download `gorex-setup-*-amd64.exe` / `gorex-setup-*-arm64.exe` from
-[the latest release](https://github.com/si-mods/gorex/releases/latest):
+To enable hosted Web pairing, set `WINDREX_WEB_ORIGIN` on the desktop or
+server to the deployed Web client's origin. The optional iOS Live Activity
+relay uses `WINDREX_PUSH_RELAY_URL` on the host and in the iOS build. For iOS
+Hotspot Share, set the Web snapshot URL in the app's settings.
 
-```powershell
-irm https://github.com/si-mods/gorex/releases/latest/download/install.ps1 | iex
-```
-
-On Linux, `gorex update` installs a signed update where GoRex runs from,
-which the user running it must be able to write: the per-user install, or a
-system install such as one under `/opt`. It hands an active local session
-server over to the new version. After installing a newer build yourself,
-`gorex server upgrade` performs the handoff on macOS and Linux; it refuses
-a build whose modification time is not newer than the server's. On Windows
-and macOS, use **Check for Updates** in the app. See
-[the CLI reference](docs/REF-001-cli.md#commands).
+The remaining documentation describes the inherited GoRex behavior and
+may refer to its historical product and command names.
 
 ## What it does
 

@@ -32,7 +32,6 @@ settings:
     # Local builds are (0); uploads count from 1.
     CURRENT_PROJECT_VERSION: "0"
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: 57QL6YCAH5
     # The xcframework's simulator library is arm64 only.
     EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
 targets:
@@ -67,7 +66,7 @@ targets:
       base:
         OTHER_LDFLAGS: -lc++ -lbz2
         SWIFT_OBJC_BRIDGING_HEADER: GoRex/GoRex-Bridging-Header.h
-        PRODUCT_BUNDLE_IDENTIFIER: dev.gorex.ios
+        PRODUCT_BUNDLE_IDENTIFIER: wiki.wind.windrex
         # iCloud key-value store: the settings that sync (CloudSettings).
         # App Group: the widgets' snapshot (WidgetSnapshot).
         CODE_SIGN_ENTITLEMENTS: GoRex/GoRex.entitlements
@@ -82,10 +81,11 @@ targets:
     info:
       path: GoRex/Info.plist
       properties:
-        CFBundleDisplayName: Rex Go
+        CFBundleDisplayName: WindRex
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         GoRexCommit: $(GOREX_COMMIT)
+        WindRexPushRelayURL: $(WINDREX_PUSH_RELAY_URL)
         ITSAppUsesNonExemptEncryption: false
         # The terminal's Live Activity (docs/IOS-006-live-activities.md), drawn
         # by GoRexWidgets; pushes through the relay keep it going while the
@@ -105,27 +105,27 @@ targets:
         # The local network listener is plain HTTP by design (docs/REF-005-rex-api.md).
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        NSLocalNetworkUsageDescription: Rex Go connects to your computers on the local network.
-        NSCameraUsageDescription: Rex Go scans the pairing QR code that GoRex or Rex shows.
+        NSLocalNetworkUsageDescription: WindRex connects to your computers on the local network.
+        NSCameraUsageDescription: WindRex scans the pairing QR code that GoRex or Rex shows.
         # The mic dictates into the terminal (Dictation).
-        NSMicrophoneUsageDescription: Rex Go hears what you say while the mic is on, and types it into the terminal. Speech is recognised on this device.
+        NSMicrophoneUsageDescription: WindRex hears what you say while the mic is on, and types it into the terminal. Speech is recognised on this device.
         # A gallery's image saved to Photos from the share sheet.
-        NSPhotoLibraryAddUsageDescription: Rex Go saves the images you choose from a terminal's gallery to your photos.
+        NSPhotoLibraryAddUsageDescription: WindRex saves the images you choose from a terminal's gallery to your photos.
         # A window row's or a host's drag in the list (HostListView's
         # Lifted), which only the app's own drop targets take.
         UTExportedTypeDeclarations:
-          - UTTypeIdentifier: dev.gorex.window-row
-            UTTypeDescription: Rex Go Window
+          - UTTypeIdentifier: wiki.wind.windrex.window-row
+            UTTypeDescription: WindRex Window
             UTTypeConformsTo: [public.data]
-          - UTTypeIdentifier: dev.gorex.host
-            UTTypeDescription: Rex Go Host
+          - UTTypeIdentifier: wiki.wind.windrex.host
+            UTTypeDescription: WindRex Host
             UTTypeConformsTo: [public.data]
-        # rexgo://tailcat?a=…&n=…, GoRex's Rex Go QR…, opened from the
+        # rexgo://tailcat?a=…&n=…, GoRex's pairing QR code, opened from the
         # camera app. The Tailscale login's callback (TailnetEngine) is the
         # same scheme; its session takes that one itself.
         CFBundleURLTypes:
-          - CFBundleURLName: dev.gorex.ios
-            CFBundleURLSchemes: [rexgo]
+          - CFBundleURLName: wiki.wind.windrex
+            CFBundleURLSchemes: [windrex]
   # The Home Screen and Lock Screen widgets (docs/IOS-010-widgets.md). They
   # read the snapshot the app writes to the App Group, and link none of
   # the app's frameworks.
@@ -142,14 +142,14 @@ targets:
       - sdk: AppIntents.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.gorex.ios.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: wiki.wind.windrex.widgets
         CODE_SIGN_ENTITLEMENTS: GoRexWidgets/GoRexWidgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
     info:
       path: GoRexWidgets/Info.plist
       properties:
-        CFBundleDisplayName: Rex Go
+        CFBundleDisplayName: WindRex
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleLocalizations: [en, zh-Hans]
@@ -208,7 +208,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: true
         # An identifier, for its asset catalog (the brand marks) to load.
-        PRODUCT_BUNDLE_IDENTIFIER: dev.gorex.ios.tests
+        PRODUCT_BUNDLE_IDENTIFIER: wiki.wind.windrex.tests
         # Archive.swift reads bzip2, as the app does.
         OTHER_LDFLAGS: -lbz2
         SWIFT_OBJC_BRIDGING_HEADER: GoRex/GoRex-Bridging-Header.h

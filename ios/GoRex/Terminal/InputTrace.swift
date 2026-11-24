@@ -7,7 +7,7 @@ import os
 /// they hold what was typed.
 enum InputTrace {
     static let key = "inputTrace"
-    private static let log = Logger(subsystem: "dev.gorex.ios", category: "input")
+    private static let log = Logger(subsystem: "wiki.wind.windrex", category: "input")
     private static let limit = 1000
     private(set) static var lines: [String] = []
     /// The keyboard last noted, so a line names it only when it changes.

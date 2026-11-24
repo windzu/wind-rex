@@ -44,7 +44,7 @@ struct InboxContent: View {
             switch family {
             case .accessoryCircular: Circular(s: s, stale: entry.stale)
             case .accessoryRectangular: Rectangular(s: s, stale: entry.stale)
-            case .accessoryInline: Text(entry.stale ? String(localized: "Open Rex Go to update") : s.counts(max: 2) ?? String(localized: "Nothing needs you"))
+            case .accessoryInline: Text(entry.stale ? String(localized: "Open WindRex to update") : s.counts(max: 2) ?? String(localized: "Nothing needs you"))
             case .systemSmall: Small(s: s, stale: entry.stale)
             case .systemLarge:
                 // Seven rows under four names fill a large widget on the
@@ -104,7 +104,7 @@ private struct Freshness: View {
     var body: some View {
         Group {
             if stale {
-                Text("Open Rex Go to update")
+                Text("Open WindRex to update")
             } else {
                 Text("Updated \(ago(s.written))")
             }
@@ -336,13 +336,13 @@ private struct Rectangular: View {
                 Text(StateName.of(top.item.state)).font(.headline)
                 Text(top.item.heading.isEmpty ? top.item.window : top.item.heading).privacySensitive()
                 if stale {
-                    Text("Open Rex Go to update").foregroundStyle(.secondary)
+                    Text("Open WindRex to update").foregroundStyle(.secondary)
                 } else if let c = s.counts(max: 2) {
                     Text(c).foregroundStyle(.secondary)
                 }
             } else {
                 Text("Nothing needs you").font(.headline)
-                if stale { Text("Open Rex Go to update").foregroundStyle(.secondary) }
+                if stale { Text("Open WindRex to update").foregroundStyle(.secondary) }
             }
         }
         .lineLimit(1)
@@ -357,7 +357,7 @@ private struct OpenApp: View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            Text("Open Rex Go")
+            Text("Open WindRex")
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
@@ -366,7 +366,7 @@ private struct OpenApp: View {
         default:
             VStack(spacing: 6) {
                 Image(systemName: "terminal").font(.title2)
-                Text("Open Rex Go").font(.headline)
+                Text("Open WindRex").font(.headline)
             }
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

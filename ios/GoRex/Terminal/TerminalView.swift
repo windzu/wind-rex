@@ -180,7 +180,7 @@ final class TerminalView: UIView, TerminalOutput {
     /// The surface's terminal takes the program's output here, in order on
     /// the queue: a write waits while Ghostty catches up.
     private var output: Int32 = -1
-    private let writes = DispatchQueue(label: "dev.gorex.ios.terminal.output")
+    private let writes = DispatchQueue(label: "wiki.wind.windrex.terminal.output")
     /// Reads what Ghostty encodes for the program; left once it stopped.
     private var input: DispatchSourceRead?
     private let reading = DispatchGroup()
@@ -719,7 +719,7 @@ final class TerminalView: UIView, TerminalOutput {
             return false
         case .denied:
             alert(String(localized: "No Access to the Microphone"),
-                  String(localized: "Allow Rex Go to use the microphone in Settings."))
+                  String(localized: "Allow WindRex to use the microphone in Settings."))
             return false
         default:
             break

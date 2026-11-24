@@ -3107,7 +3107,7 @@ func (p *Pane) notifyDue(own bool) bool {
 // and 777), unless the pane is gone or the user looks at it.
 func (a *App) notifyProgram(p *Pane, title, body string) {
 	if !p.closed && !a.shows(p) && p.notifyDue(true) {
-		a.notifyPane(p, "", p.program(), cmp.Or(title, "GoRex"), body)
+		a.notifyPane(p, "", p.program(), cmp.Or(title, "WindRex"), body)
 	}
 }
 

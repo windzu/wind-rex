@@ -180,23 +180,23 @@ func readOnlyPlan(cs []check) []check {
 		safe := c.name == "gofmt" || c.name == "actionlint" || c.name == "design docs" ||
 			strings.HasPrefix(c.name, "vet ") || strings.HasPrefix(c.name, "build ")
 		if !safe && c.skip == "" {
-			cs[i].skip = "NOT VERIFIED: branch is not from si-mods; read-only checks only"
+			cs[i].skip = "NOT VERIFIED: branch has no trusted base; read-only checks only"
 			cs[i].unverified = true
 		}
 	}
 	return cs
 }
 
-var siModsURL = regexp.MustCompile(`(?i)^(?:(?:https?|ssh|git)://)?(?:[^@/\s]+@)?github\.com[:/]si-mods/gorex(?:\.git)?/?$`)
+var trustedRepoURL = regexp.MustCompile(`(?i)^(?:(?:https?|ssh|git)://)?(?:[^@/\s]+@)?github\.com[:/](?:windzu/wind-rex|si-mods/gorex)(?:\.git)?/?$`)
 
 // trustedBranch decides whether the checkout at root holds only code that
-// came from si-mods, so its tests and scripts may run. It reads only the
+// came from WindRex or its upstream, so its tests and scripts may run. It reads only the
 // repository's own state (git config, refs, the HEAD reflog), never a file
 // of the working tree, so a pushed branch cannot grant itself trust. Rule:
-// some remote points at github.com/si-mods/gorex, and every commit of HEAD
+// a remote points at a trusted repository, and every commit of HEAD
 // that is not on that remote's main was made here by a plain `git commit`
 // (per the HEAD reflog). Other remote branches do not count: a fork branch
-// pushed to the remote would turn into "si-mods" code. Commits fetched from a
+// pushed to the remote would turn into trusted code. Commits fetched from a
 // fork, cherry-picked, rebased, merged or amended do not qualify. The rule
 // judges where commits came from, not where their content came from. Any
 // doubt returns false.
@@ -209,7 +209,7 @@ func trustedBranch(root string) (bool, string) {
 	for _, l := range strings.Split(out, "\n") {
 		key, url, _ := strings.Cut(strings.TrimSpace(l), " ")
 		name := strings.TrimSuffix(strings.TrimPrefix(key, "remote."), ".url")
-		if name != key && siModsURL.MatchString(strings.TrimSpace(url)) {
+		if name != key && trustedRepoURL.MatchString(strings.TrimSpace(url)) {
 			ref := "refs/remotes/" + name + "/main"
 			if _, err := git(root, "rev-parse", "--verify", "-q", ref); err == nil {
 				args = append(args, ref)
@@ -217,7 +217,7 @@ func trustedBranch(root string) (bool, string) {
 		}
 	}
 	if len(args) == 0 {
-		return false, "no si-mods remote with a main branch (github.com/si-mods/gorex)"
+		return false, "no trusted remote with a main branch"
 	}
 	out, err = git(root, append([]string{"rev-list", "HEAD", "--not"}, args...)...)
 	if err != nil {
@@ -225,7 +225,7 @@ func trustedBranch(root string) (bool, string) {
 	}
 	extra := strings.Fields(out)
 	if len(extra) == 0 {
-		return true, "HEAD is on si-mods main"
+		return true, "HEAD is on a trusted main branch"
 	}
 	log, err := git(root, "log", "-g", "--format=%H %gs", "HEAD")
 	if err != nil {
@@ -240,10 +240,10 @@ func trustedBranch(root string) (bool, string) {
 	}
 	for _, h := range extra {
 		if !local[h] {
-			return false, "commit " + h[:min(len(h), 12)] + " is neither on si-mods main nor made here by git commit"
+			return false, "commit " + h[:min(len(h), 12)] + " is neither on a trusted main nor made here by git commit"
 		}
 	}
-	return true, fmt.Sprintf("%d local commits on top of si-mods", len(extra))
+	return true, fmt.Sprintf("%d local commits on a trusted base", len(extra))
 }
 
 func pathDir(p string) string {

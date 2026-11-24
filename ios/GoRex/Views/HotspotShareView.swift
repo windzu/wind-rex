@@ -29,7 +29,7 @@ struct HotspotShareView: View {
                     ))
                     .listRowBackground(Color.card)
                 } footer: {
-                    Text("Keep Rex Go open while sharing. A laptop on your Personal Hotspot can open the web client without installing anything.")
+                    Text("Keep WindRex open while sharing. A laptop on your Personal Hotspot can open the web client without installing anything.")
                 }
 
                 if share.isSharing {

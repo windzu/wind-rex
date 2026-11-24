@@ -34,7 +34,7 @@ nonisolated final class TerminalFeed: @unchecked Sendable {
         var cols, rows, cellWidth, cellHeight: Int
     }
 
-    private let queue = DispatchQueue(label: "dev.gorex.ios.terminal-feed", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "wiki.wind.windrex.terminal-feed", qos: .userInitiated)
     private let deliver: @MainActor @Sendable ([Event]) -> Void
     /// Used on queue only.
     private var stream = TerminalStream(nonce: 0)

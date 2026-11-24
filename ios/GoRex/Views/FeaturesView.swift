@@ -14,7 +14,7 @@ struct FeaturesView: View {
             ("A project from a folder", "The + by a host browses its folders and makes a project of one. New Tab in a project opens on its host, in its folder."),
             ("Long-press a project for its menu", "New Tab, Rename, Color, Move to Space and Close Project, which asks first."),
             ("Long-press a tab for its menu", "Rename Tab, Reset Name, Move Up, Move Down, Move to Project, New Tab, Close Tab and Close Other Tabs."),
-            ("Hosts that are away", "A host that is offline shows its projects and their tabs greyed, as Rex Go last saw them."),
+            ("Hosts that are away", "A host that is offline shows its projects and their tabs greyed, as WindRex last saw them."),
             ("Activity under the eye", "The eye lists the tabs of every host by what their programs need: waiting for input first, then failed, done and working, with how long ago."),
             ("Search tabs", "The search at the bottom filters the tabs by title, in the list and under the eye."),
             ("Liquid Glass", "The list, the buttons, the sheets and the key bar use the system's Liquid Glass."),
@@ -108,7 +108,7 @@ struct FeaturesView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("\(Self.sections.map(\.features.count).reduce(0, +)) Features and Details").font(.title.bold())
-                        Text("Rex Go puts the terminals of your computers on your iPhone and iPad: a Ghostty terminal with a key bar, selection, scrolling and input made for touch.")
+                        Text("WindRex puts the terminals of your computers on your iPhone and iPad: a Ghostty terminal with a key bar, selection, scrolling and input made for touch.")
                             .foregroundStyle(.secondary)
                         Text("\(Bundle.main.version) · Full Catalog").font(.footnote).foregroundStyle(.secondary)
                     }

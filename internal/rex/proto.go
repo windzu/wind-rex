@@ -1267,7 +1267,7 @@ func Dir() string {
 	if err != nil {
 		base = os.TempDir()
 	}
-	return filepath.Join(base, "GoRex")
+	return filepath.Join(base, "WindRex")
 }
 
 // SocketPath returns the path of the server's socket: in Dir, unless that

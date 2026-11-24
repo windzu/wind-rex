@@ -6,7 +6,7 @@ import SwiftUI
 struct PaneMiniMap: View {
     let cells: [PaneCell]
     let current: String
-    /// The current pane's color, from its program's tile, as Rex Go tints
+    /// The current pane's color, from its program's tile, as WindRex tints
     /// the pane it shows.
     let currentColor: Color
     @Environment(\.colorScheme) private var scheme

@@ -1,9 +1,9 @@
 name: iOS test
 
-# Builds Rex Go and runs its unit tests (GoRexTests) for any branch, tag or
-# commit, on the Mac mini's runner. It uploads nothing and uses no secret.
+# Builds WindRex and runs its unit tests (GoRexTests) for any branch, tag or
+# commit, on a macOS runner. It uploads nothing and uses no secret.
 # Start it by hand; this file runs from main:
-#   gh workflow run ios-test.yml -R si-mods/gorex --ref main -f ref=<branch>
+#   gh workflow run ios-test.yml -R windzu/wind-rex --ref main -f ref=<branch>
 on:
   workflow_dispatch:
     inputs:
@@ -32,8 +32,7 @@ defaults:
 
 jobs:
   test:
-    # The Mac mini's own runner, as testflight.yml uses.
-    runs-on: gorex-testflight
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:

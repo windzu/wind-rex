@@ -161,7 +161,7 @@ struct TerminalScreen: View {
                 .padding(.bottom, hasBar ? KeyBar.height + 10 : 10)
             }
             // The layout, floating under the toolbar's right side for a
-            // moment after a switch, as Rex Go shows it.
+            // moment after a switch, as WindRex shows it.
             .overlay(alignment: .topTrailing) {
                 if paneMapShown {
                     OwnBody { PaneMiniMap(cells: paneCellList, current: currentTarget.block, currentColor: paneAccent(currentTarget.block)) }
@@ -625,7 +625,7 @@ struct TerminalScreen: View {
         }
     }
 
-    /// The color Rex Go gives the current pane in the map: its program's
+    /// The color WindRex gives the current pane in the map: its program's
     /// tile, preferring the foreground unless that is white.
     private func paneAccent(_ block: String) -> Color {
         let program = Program.of(host.blocks[block]?.program)

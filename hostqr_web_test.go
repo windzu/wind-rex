@@ -18,6 +18,9 @@ import (
 // the pairing token and the certificate's hash kept off the screen.
 func TestLocalPairQRWebTab(t *testing.T) {
 	isolateSettings(t, "")
+	previousOrigin := rexapi.WebOrigin
+	rexapi.WebOrigin = "https://web.example.com"
+	t.Cleanup(func() { rexapi.WebOrigin = previousOrigin })
 	registerFonts()
 	dir := rexapi.TailnetDir()
 	section, remote, qr := settingsUI.section, remoteUI, remoteUI.pairQR

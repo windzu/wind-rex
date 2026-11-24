@@ -20,7 +20,7 @@ var (
 	verifyRe  = regexp.MustCompile(`^go\s+run\s+\S*tools/verify\S*\s+(.*\s)?--?full\b`)
 )
 
-const ghReason = "gh writes in this repo must name their repo with -R; PRs and issues for GoRex go to si-mods/gorex, never egoist/gorex. If the user asked for something else, ask them."
+const ghReason = "gh writes in this repo must name their repo with -R; use windzu/wind-rex for WindRex PRs and issues."
 
 const heavyReason = "Full test suites run in CI (test-linux shards, test-windows). Locally run only the changed packages' tests, ideally with -run. Only if the user asked for a full run, prefix the command: `GOREX_HEAVY_TESTS=1 go test ...` (bash) or `$env:GOREX_HEAVY_TESTS=1; go test ...` (PowerShell)."
 

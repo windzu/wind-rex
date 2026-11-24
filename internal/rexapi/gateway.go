@@ -50,7 +50,7 @@ var (
 	commandWait = rex.CommandTimeout + time.Second
 	// pushRelayURL is the push relay the host sends Live Activity
 	// updates through (docs/NET-003-push-relay.md); "" pushes none.
-	pushRelayURL = "https://relay.gorex.uk"
+	pushRelayURL = os.Getenv("WINDREX_PUSH_RELAY_URL")
 	// ticketWait is how long a data connection ticket works.
 	ticketWait = 60 * time.Second
 	// resumeBytes is how many stream bytes a waiting data stream keeps

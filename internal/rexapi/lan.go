@@ -170,7 +170,7 @@ func (c LANConfig) PairURL(s LANStatus) string {
 
 // WebOrigin is the page the web client is published at: the origin a host
 // trusts, and the one a WebTransport pairing link opens.
-const WebOrigin = "https://web.gorex.uk"
+var WebOrigin = os.Getenv("WINDREX_WEB_ORIGIN")
 
 // WebPairURL is that page's address for this listener: the page, then the
 // gateway's WebTransport address, its certificate's hash and the pairing

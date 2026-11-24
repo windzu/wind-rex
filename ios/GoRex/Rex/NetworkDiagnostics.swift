@@ -57,7 +57,7 @@ final class NetworkDiagnostics {
 
     private(set) var snapshot = Snapshot()
     @ObservationIgnored private var monitor: NWPathMonitor?
-    @ObservationIgnored private let queue = DispatchQueue(label: "dev.gorex.ios.devmode.path")
+    @ObservationIgnored private let queue = DispatchQueue(label: "wiki.wind.windrex.devmode.path")
 
     func start() {
         guard monitor == nil else { return }
@@ -327,7 +327,7 @@ struct DeveloperModeSummary: Equatable {
         now: Date = .now
     ) -> String {
         var lines: [String] = []
-        lines.append("Rex Go \(version) (\(build)), \(system)")
+        lines.append("WindRex \(version) (\(build)), \(system)")
         lines.append(now.ISO8601Format())
         lines.append("")
         lines.append("Network")

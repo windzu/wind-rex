@@ -1,5 +1,5 @@
 #!/bin/bash
-# testflight: invite testers to Rex Go's internal TestFlight, over the asc
+# testflight: invite testers to WindRex's internal TestFlight, over the asc
 # CLI (brew install asc; `asc auth login` with an App Store Connect API key).
 # Internal testing needs no Beta App Review: every build reaches the group.
 #
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 . "$(dirname "$0")/asc-env"
-GROUP=${REXGO_GROUP:-Internal}
+GROUP=${WINDREX_TESTFLIGHT_GROUP:-Internal}
 export ASC_TIMEOUT=${ASC_TIMEOUT:-90s}
 
 usage() { sed -n '2,14s/^# \{0,1\}//p' "$0"; exit 2; }
@@ -41,6 +41,10 @@ print(",".join(a["id"] for a in json.load(sys.stdin).get("data",[])))')
 }
 
 cmd=${1:-}; [ $# -gt 0 ] && shift
+case "$cmd" in
+invite|testers|builds) require_asc_app ;;
+*) usage ;;
+esac
 case "$cmd" in
 invite)
 	[ $# -eq 1 ] || [ $# -eq 3 ] || usage

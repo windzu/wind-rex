@@ -16,10 +16,10 @@ protocol PushKeys: AnyObject {
 }
 
 /// The device key in the Keychain, a generic password: service
-/// dev.gorex.ios.push-device, account "device", the pair's raw bytes.
+/// wiki.wind.windrex.push-device, account "device", the pair's raw bytes.
 /// Made at first use.
 final class KeychainPushKeys: PushKeys {
-    static let service = "dev.gorex.ios.push-device"
+    static let service = "wiki.wind.windrex.push-device"
     static let account = "device"
 
     private var item: [String: Any] {

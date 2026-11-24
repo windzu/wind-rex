@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A host in the list: its name and state, then, for a host that keeps
-/// projects (docs/MOD-002-projects.md, Rex Go), its projects of the space shown in
+/// projects (docs/MOD-002-projects.md, WindRex), its projects of the space shown in
 /// order of last use, those not used for 30 days under Older, and its tabs
 /// with no project, which every space shows, tiled after them. A project
 /// opens to its tabs and a New Tab row. A host away shows its projects as

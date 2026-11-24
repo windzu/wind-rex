@@ -38,7 +38,7 @@ struct SettingsView: View {
             [Item(title: "Terminal", icon: tile("apple.terminal.fill", .gray), page: { AnyView(TerminalSettings()) }),
              Item(title: "Remote Hosts", icon: tile("globe", .orange), page: { AnyView(RemoteHostsView()) }),
              Item(title: "Tailscale", icon: AnyView(TailscaleGlyph.tile()),
-                  value: String(localized: tailnet ? "On · Rex Go Only" : "Off"), page: { AnyView(TailscaleView()) }),
+                  value: String(localized: tailnet ? "On · WindRex Only" : "Off"), page: { AnyView(TailscaleView()) }),
              Item(title: "Share on Hotspot", icon: tile("personalhotspot", .green),
                   value: String(localized: HotspotShare.shared.isSharing ? "On" : "Off"), page: { AnyView(HotspotShareView()) })],
             [Item(title: "Features", icon: tile("sparkles", .blue), page: { AnyView(FeaturesView()) }),
@@ -537,7 +537,7 @@ private struct InputTraceView: View {
 /// The app's name, commit, device and iOS version, as About shows them
 /// and the Developer page's report copies them.
 private struct DeviceFacts {
-    let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Rex Go"
+    let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "WindRex"
     /// The short git hash the upload builds from; empty for a local build.
     let commit = Bundle.main.object(forInfoDictionaryKey: "GoRexCommit") as? String ?? ""
     let system = UIDevice.current.systemName + " " + UIDevice.current.systemVersion
@@ -616,13 +616,13 @@ private struct AboutView: View {
                 ForEach(Self.components, id: \.0) { name, license in
                     NavigationLink { Notices(section: name) } label: { LabeledContent(name, value: license) }
                 }
-                Link(destination: URL(string: "https://github.com/si-mods/gorex")!) {
-                    LabeledContent("GitHub", value: "si-mods/gorex")
+                Link(destination: URL(string: "https://github.com/windzu/wind-rex")!) {
+                    LabeledContent("GitHub", value: "windzu/wind-rex")
                 }
             } header: {
                 Text("Open Source")
             } footer: {
-                Text("Code, fonts and themes that ship with Rex Go.")
+                Text("Code, fonts and themes that ship with WindRex.")
             }
             .listRowBackground(Color.card)
         }

@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import os
 
-private let log = Logger(subsystem: "dev.gorex.ios", category: "terminal")
+private let log = Logger(subsystem: "wiki.wind.windrex", category: "terminal")
 
 /// What shows a session's screen: Ghostty's surface, in the view.
 protocol TerminalOutput: AnyObject {

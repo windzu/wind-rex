@@ -200,17 +200,17 @@ nonisolated final class WidgetTests: XCTestCase {
         XCTAssertEqual(s.away.map(\.name), ["bob-desktop"])
     }
 
-    /// rexgo://open and rexgo://inbox read back as written; the pairing
+    /// windrex://open and windrex://inbox read back as written; the pairing
     /// code is neither, and they are no pairing code.
     @MainActor func testLinks() throws {
         let id = UUID()
         let open = WidgetLink.open(host: id, session: "s 1", block: "b&2")
         XCTAssertEqual(WidgetLink(url: open.url), open)
         XCTAssertEqual(WidgetLink(url: WidgetLink.inbox.url), .inbox)
-        XCTAssertEqual(WidgetLink.inbox.url.absoluteString, "rexgo://inbox")
+        XCTAssertEqual(WidgetLink.inbox.url.absoluteString, "windrex://inbox")
         XCTAssertEqual(WidgetLink(url: try XCTUnwrap(URL(string: "REXGO://open?block=b&session=s&host=\(id.uuidString.lowercased())"))),
                        .open(host: id, session: "s", block: "b"))
-        for bad in ["rexgo://open?host=x&session=s&block=b", "rexgo://open?host=\(id)&session=s", "rexgo://open?host=\(id)&session=&block=b",
+        for bad in ["windrex://open?host=x&session=s&block=b", "windrex://open?host=\(id)&session=s", "windrex://open?host=\(id)&session=&block=b",
                     "rexgo://other", "https://inbox", "rexgo://tailcat?a=tcx&n=mac"] {
             XCTAssertNil(WidgetLink(url: try XCTUnwrap(URL(string: bad))), bad)
         }

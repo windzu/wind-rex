@@ -97,7 +97,7 @@ struct RemoteHostsView: View {
     }
 
     /// Adds the host of a scanned code, or shows it when it's there
-    /// already; a Rex Go code pairs first.
+    /// already; a WindRex code pairs first.
     private func pair(_ code: String) -> String? {
         if let c = HostConfig(tailcat: code) {
             if let h = c.tailcat.flatMap({ store.host(tailcat: $0.address) }) {
@@ -256,7 +256,7 @@ private struct HostForm: View {
                     Section {
                         LabeledContent("GoRex remote access", value: t.machine)
                     } footer: {
-                        Text("Paired by GoRex's Rex Go code. Deleting the host here doesn't revoke this phone: remove it from Devices in GoRex's Settings › Server.")
+                        Text("Paired by GoRex's WindRex code. Deleting the host here doesn't revoke this phone: remove it from Devices in GoRex's Settings › Server.")
                     }
                     .listRowBackground(Color.card)
                 } else {
@@ -320,7 +320,7 @@ private struct HostForm: View {
                     Section {
                         Toggle("Built-in Tailscale", isOn: Binding { c?.transport == .tailnet } set: { tailnet = $0 })
                     } footer: {
-                        Text("Reach this host through Rex Go's own Tailscale, not the phone's network or the Tailscale app. With built-in Tailscale off, it goes the phone's way.")
+                        Text("Reach this host through WindRex's own Tailscale, not the phone's network or the Tailscale app. With built-in Tailscale off, it goes the phone's way.")
                     }
                     .listRowBackground(Color.card)
                 }
@@ -360,7 +360,7 @@ private struct HostForm: View {
     }
 }
 
-/// Pairs with a GoRex machine by its Rex Go code (docs/IOS-002-tailcat.md,
+/// Pairs with a GoRex machine by its WindRex code (docs/IOS-002-tailcat.md,
 /// Pairing a phone): asks it to allow this phone, shows the fingerprint to
 /// compare with the one GoRex shows by the request, and adds the host,
 /// which connects once the request is approved there.
@@ -394,7 +394,7 @@ struct TailcatPairSheet: View {
                 } description: {
                     Text(end == .failed
                          ? "Check the connection and try again."
-                         : "Rex Go keeps trying: approve this phone on the machine.")
+                         : "WindRex keeps trying: approve this phone on the machine.")
                 } actions: {
                     if end == .failed {
                         Button("Try again") { retry() }
@@ -405,7 +405,7 @@ struct TailcatPairSheet: View {
                 }
             } else if let fingerprint {
                 if online {
-                    Text("Paired. Rex Go is connected.").foregroundStyle(.secondary)
+                    Text("Paired. WindRex is connected.").foregroundStyle(.secondary)
                 } else {
                     Text("On \(code.name), approve \(TailnetSettings.name) in Settings › Server › Devices only if its fingerprint is this one.")
                         .foregroundStyle(.secondary)
@@ -481,7 +481,7 @@ struct TailcatPairSheet: View {
 /// iOS's versions, then the recent connection events.
 private func diagnosticsText() -> String {
     let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-    let head = "Rex Go \(Bundle.main.version) (\(build)), iOS \(UIDevice.current.systemVersion), \(Date.now.ISO8601Format())"
+    let head = "WindRex \(Bundle.main.version) (\(build)), iOS \(UIDevice.current.systemVersion), \(Date.now.ISO8601Format())"
     return ([head] + ConnectionLog.lines).joined(separator: "\n")
 }
 
@@ -498,7 +498,7 @@ private enum PairEnd {
 /// (docs/NET-002-host-links.md, Pairing by address): shows the code to compare
 /// with the one the machine shows, and once the user says they match and
 /// the machine approves, adds the host at the tailcat address it got, as
-/// a Rex Go code's. "They differ", an error or leaving saves nothing.
+/// a WindRex code's. "They differ", an error or leaving saves nothing.
 private struct AddressPairSheet: View {
     let address: String
     /// The host as entered: its name, icon and command.

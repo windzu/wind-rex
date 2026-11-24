@@ -1,6 +1,6 @@
 import Foundation
 
-/// The hosts Rex Go shares over Personal Hotspot, as the JSON
+/// The hosts WindRex shares over Personal Hotspot, as the JSON
 /// TailnetShareSetHosts takes (docs/IOS-003-web-share.md).
 enum ShareHosts {
     struct Payload: Encodable {

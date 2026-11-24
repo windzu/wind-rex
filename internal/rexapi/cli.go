@@ -501,6 +501,10 @@ func lanQRMain(dir string, args []string) int {
 			return 2
 		}
 	}
+	if origin == "" {
+		fmt.Fprintln(os.Stderr, "wind-rex rexapi lan qr: set WINDREX_WEB_ORIGIN or pass --origin URL")
+		return 2
+	}
 	s := LoadLANStatus(dir)
 	conf, err := LoadLAN(dir)
 	if err != nil {

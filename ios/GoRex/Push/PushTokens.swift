@@ -12,7 +12,11 @@ final class PushTokens {
     static let shared = PushTokens()
 
     /// A register answer without a relay URL points at this one.
-    static let defaultRelay = URL(string: "https://relay.gorex.uk")!
+    static let configuredRelay: URL? = {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "WindRexPushRelayURL") as? String,
+              let url = URL(string: value), url.scheme == "https", url.host != nil else { return nil }
+        return url
+    }()
 
     /// "sandbox" in a debug build, else "production": the APNs
     /// environment the relay sends to.

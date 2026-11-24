@@ -63,7 +63,7 @@ func TestJobLabel(t *testing.T) {
 	if a != jobLabel("/Users/x/Library/Application Support/GoRex") {
 		t.Fatal("the label of a directory changed between calls")
 	}
-	if !strings.HasPrefix(a, "dev.gorex.app.server.") {
+	if !strings.HasPrefix(a, "wiki.wind.windrex.desktop.server.") {
 		t.Fatalf("the label is not the app's: %q", a)
 	}
 }

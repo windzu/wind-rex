@@ -13,7 +13,7 @@ nonisolated final class ListingsWriter: @unchecked Sendable {
 
     private let url: URL
     private let perform: Perform
-    private let queue = DispatchQueue(label: "dev.gorex.listings-writer", qos: .utility)
+    private let queue = DispatchQueue(label: "wiki.wind.windrex.listings-writer", qos: .utility)
     private let lock = NSLock()
     private var pending: [String: ProjectListing]?
     private var queued = false

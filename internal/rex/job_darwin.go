@@ -42,7 +42,7 @@ var errNoJob = errors.New("rex: no job to start the server as")
 // SHA-256 of the server's directory ("com.superlogical.rex.server.ebba…").
 func jobLabel(dir string) string {
 	sum := sha256.Sum256([]byte(dir))
-	return "dev.gorex.app.server." + hex.EncodeToString(sum[:])
+	return "wiki.wind.windrex.desktop.server." + hex.EncodeToString(sum[:])
 }
 
 // inBundle reports whether exe runs from an app bundle. The app's own

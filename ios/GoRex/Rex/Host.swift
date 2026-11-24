@@ -50,7 +50,7 @@ struct HostConfig: Codable, Identifiable, Hashable {
         case tailcat
     }
 
-    /// A GoRex machine as its Rex Go code names it: its tailcat address, a
+    /// A GoRex machine as its WindRex code names it: its tailcat address, a
     /// secret, and its name.
     struct Tailcat: Codable, Hashable {
         var address: String
@@ -163,12 +163,13 @@ extension HostConfig {
         t.count <= 256 && t.wholeMatch(of: /[A-Za-z0-9_-]+/) != nil
     }
 
-    /// The host of a Rex Go code, rexgo://tailcat?a=<address>&n=<machine>,
-    /// as GoRex's Rex Go QR… shows it; nil for anything else. The engine
+    /// The host of a WindRex code, rexgo://tailcat?a=<address>&n=<machine>,
+    /// as GoRex's WindRex QR… shows it; nil for anything else. The engine
     /// checks the address in full as it pairs.
     init?(tailcat code: String) {
         guard let c = URLComponents(string: code.trimmingCharacters(in: .whitespacesAndNewlines)),
-              c.scheme?.lowercased() == "rexgo", c.host?.lowercased() == "tailcat", c.path.isEmpty,
+              let scheme = c.scheme?.lowercased(), ["windrex", "rexgo"].contains(scheme),
+              c.host?.lowercased() == "tailcat", c.path.isEmpty,
               c.user == nil, c.password == nil, c.port == nil, c.fragment == nil,
               let a = c.queryItems?.first(where: { $0.name == "a" })?.value,
               a.wholeMatch(of: /tc[A-Za-z0-9_-]+/) != nil
@@ -186,7 +187,7 @@ extension HostConfig {
         let scheme = address[..<r.lowerBound].trimmingCharacters(in: .whitespaces).lowercased()
         if ["", "http", "https"].contains(scheme) { return nil }
         if scheme == "ssh" {
-            return String(localized: "SSH hosts aren't supported in Rex Go. Enter the address of a Rex server, like http://192.168.1.2:7297.")
+            return String(localized: "SSH hosts aren't supported in WindRex. Enter the address of a Rex server, like http://192.168.1.2:7297.")
         }
         return String(localized: "Unsupported address. Enter an http:// or https:// address, like http://192.168.1.2:7297.")
     }
@@ -519,7 +520,7 @@ final class Host: Identifiable {
             p = t
         case .tailcat:
             guard let t = Self.tailcatProxy() else {
-                throw RexError(code: "offline", message: String(localized: "Rex Go's connection to GoRex is not ready"))
+                throw RexError(code: "offline", message: String(localized: "WindRex's connection to GoRex is not ready"))
             }
             p = t
         }
@@ -615,7 +616,7 @@ final class Host: Identifiable {
                 ConnectionLog.note("\(name): online, \(elapsed.ms)")
             } catch let e as RexError where e.code == "refused" && viaTailnet {
                 // The gateway lets in only whom it says (docs/IOS-001-tailnet.md, Server).
-                c.close(RexError(code: e.code, message: String(localized: "Refused: sign Rex Go in as the Tailscale user who signed in the GoRex machine, not with a tagged key, or turn on --allow-tailnet-members there.")))
+                c.close(RexError(code: e.code, message: String(localized: "Refused: sign WindRex in as the Tailscale user who signed in the GoRex machine, not with a tagged key, or turn on --allow-tailnet-members there.")))
             } catch {
                 // A dial through the proxy that fails may be a listener
                 // iOS took: the engine reads the proxy again at once.
@@ -797,7 +798,8 @@ final class Host: Identifiable {
     /// activity a start push begins shows and opens it right. Nothing on
     /// a demo host or a server without gorex.push, which keeps phase 1.
     private func registerPush() {
-        guard !isDemo, let c = control, c.features.contains(Self.pushFeature) else { return }
+        guard !isDemo, let relay = PushTokens.configuredRelay,
+              let c = control, c.features.contains(Self.pushFeature) else { return }
         let tokens = Self.pushTokens()
         let device = tokens.deviceKey
         guard !device.isEmpty else { return }
@@ -814,7 +816,7 @@ final class Host: Identifiable {
         Task {
             guard let r = try? await c.call("gorex.push.register", args).payload, c === control else { return }
             guard let key = r["host"] as? String, !key.isEmpty else { return }
-            let relay = (r["relay"] as? String).flatMap { URL(string: $0) } ?? PushTokens.defaultRelay
+            guard let address = r["relay"] as? String, URL(string: address) == relay else { return }
             tokens.set(host: id, target: PushTarget(key: key, relay: relay))
             // Its pushes are live: a seen report that could not go
             // while the connection was down goes now (gorex.push.seen).

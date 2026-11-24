@@ -132,32 +132,32 @@
         }
       }
     },
-    "Open Rex Go": {
+    "Open WindRex": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开 Rex Go"
+            "value": "打开 WindRex"
           }
         }
       }
     },
-    "Open Rex Go to update": {
+    "Open WindRex to update": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开 Rex Go 以更新"
+            "value": "打开 WindRex 以更新"
           }
         }
       }
     },
-    "Paused — open Rex Go": {
+    "Paused — open WindRex": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已暂停 — 打开 Rex Go 以继续"
+            "value": "已暂停 — 打开 WindRex 以继续"
           }
         }
       }

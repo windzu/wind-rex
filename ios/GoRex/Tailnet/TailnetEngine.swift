@@ -5,7 +5,7 @@ import Observation
 import os
 import Tailnet
 
-/// Rex Go's built-in Tailscale: the Go engine of ios/tailnet, a device of
+/// WindRex's built-in Tailscale: the Go engine of ios/tailnet, a device of
 /// its own on the tailnet in the app's process, whose loopback proxy the
 /// hosts on `.tailnet` go through (docs/IOS-001-tailnet.md). The same proxy
 /// reaches the hosts paired over tailcat, with the device on or off
@@ -70,7 +70,7 @@ final class TailnetEngine {
     /// it; empty before the first pairing.
     private(set) var tailcatKey = ""
     @ObservationIgnored private let paths = PathMonitor()
-    @ObservationIgnored private let log = Logger(subsystem: "dev.gorex.ios", category: "tailnet")
+    @ObservationIgnored private let log = Logger(subsystem: "wiki.wind.windrex", category: "tailnet")
 
     /// Hosts reach the proxy once the device runs. Until it has the
     /// network map, the proxy refuses them, and they try again. The
@@ -271,7 +271,7 @@ final class TailnetEngine {
     private func useTailcatKey(create: Bool) throws -> Bool {
         if !TailnetTailcatKey().isEmpty { return true }
         let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword, kSecAttrService: "dev.gorex.ios.tailcat", kSecAttrAccount: "client",
+            kSecClass: kSecClassGenericPassword, kSecAttrService: "wiki.wind.windrex.tailcat", kSecAttrAccount: "client",
         ]
         var item: CFTypeRef?
         var status = SecItemCopyMatching(query.merging([kSecReturnData: true]) { $1 } as CFDictionary, &item)
@@ -451,7 +451,7 @@ final class TailnetEngine {
         guard signingIn, login == nil, let s = status.auth_url, s != shown, let url = URL(string: s) else { return }
         guard let window = Anchor.window() else { signingIn = false; return }
         shown = s
-        let session = ASWebAuthenticationSession(url: url, callback: .customScheme("rexgo")) { [weak self] _, _ in
+        let session = ASWebAuthenticationSession(url: url, callback: .customScheme("windrex")) { [weak self] _, _ in
             self?.login = nil
             self?.anchor = nil
             self?.signingIn = false
@@ -504,8 +504,8 @@ final class TailnetEngine {
     /// that carries it, as Wi-Fi to cellular, or none, and its gateways,
     /// as from one Wi-Fi to another; iOS lets it watch none itself.
     nonisolated private final class PathMonitor: @unchecked Sendable {
-        private static let log = Logger(subsystem: "dev.gorex.ios", category: "tailnet")
-        private let queue = DispatchQueue(label: "dev.gorex.ios.tailnet.path")
+        private static let log = Logger(subsystem: "wiki.wind.windrex", category: "tailnet")
+        private let queue = DispatchQueue(label: "wiki.wind.windrex.tailnet.path")
         // On queue.
         private var monitor: NWPathMonitor?
         private var told: String?

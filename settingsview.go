@@ -932,7 +932,7 @@ func (a *App) aboutSettings(c *ui.Context, k *colors) {
 		version = locales.SettingsDevBuild()
 	}
 	settingsGroup(c, k, "", "", "", func() {
-		settingRow(c, k, "GoRex", locales.SettingsVersion(version), func() {
+		settingRow(c, k, "WindRex", locales.SettingsVersion(version), func() {
 			if mygo.Updater.Enabled() {
 				if ui.Button(c, locales.CmdCheckForUpdates()).Clicked() {
 					a.invokeCommand(&cmdUpdates, nil)
