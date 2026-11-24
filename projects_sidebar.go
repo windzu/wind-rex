@@ -964,3 +964,5 @@ func spacedComma(d string) string {
 	}
 	return ", " + d
 }
+
+// CI timing sample.
