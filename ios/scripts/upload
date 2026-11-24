@@ -30,12 +30,30 @@ case "$SIGNING" in
     ;;
   *) echo "WINDREX_RELEASE_SIGNING must be cloud or local" >&2; exit 1 ;;
 esac
+ASC=(asc)
+if [[ -n ${WINDREX_ASC_PROFILE:-} ]]; then
+  ASC+=(--profile "$WINDREX_ASC_PROFILE")
+fi
+XCODE_DEST=$DEST
+if [[ $DEST == upload && -n ${WINDREX_ASC_PROFILE:-} ]]; then
+  [[ $SIGNING == local ]] || { echo "WINDREX_ASC_PROFILE upload requires local signing" >&2; exit 1; }
+  require_asc_app
+  : "${WINDREX_TESTFLIGHT_GROUP_ID:?Set WINDREX_TESTFLIGHT_GROUP_ID to the internal group ID}"
+  "${ASC[@]}" testflight groups list --app "$APP" --internal --output json |
+    python3 -I -c '
+import json, sys
+groups = json.load(sys.stdin)["data"]
+if not any(group["id"] == sys.argv[1] and group["attributes"]["isInternalGroup"] for group in groups):
+    sys.exit("The TestFlight group is not an internal group of this app")
+' "$WINDREX_TESTFLIGHT_GROUP_ID"
+  XCODE_DEST=export
+fi
 V=$(sed -n 's/^ *MARKETING_VERSION: "\([0-9.]*\)"$/\1/p' project.yml)
 [[ $V =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "no MARKETING_VERSION in project.yml" >&2; exit 1; }
 B=${BUILD:-}
 if [[ -z $B ]]; then
   require_asc_app
-  B=$(ASC_TIMEOUT=90s asc builds next-build-number --app "$APP" --version "$V" --platform IOS --output json |
+  B=$(ASC_TIMEOUT=90s "${ASC[@]}" builds next-build-number --app "$APP" --version "$V" --platform IOS --output json |
     python3 -I -c 'import sys,json; print(json.load(sys.stdin)["nextBuildNumber"])')
 fi
 [[ $B =~ ^[0-9]+$ ]] || { echo "bad build number: $B" >&2; exit 1; }
@@ -43,7 +61,7 @@ fi
 C=$(git rev-parse --short=7 HEAD 2>/dev/null || true)
 xcodegen generate -q
 mkdir -p build
-python3 -I - "$SIGNING" "$DEST" "$TEAM" <<'PY'
+python3 -I - "$SIGNING" "$XCODE_DEST" "$TEAM" <<'PY'
 import os
 import plistlib
 import sys
@@ -118,4 +136,8 @@ for try in 0 1 2; do
 done
 tail -3 build/export.log
 [[ $DEST == upload ]] || { echo "EXPORTED $V ($B) to build/export"; exit 0; }
+if [[ $XCODE_DEST == export ]]; then
+  "${ASC[@]}" publish testflight --app "$APP" --ipa build/export/GoRex.ipa \
+    --group "$WINDREX_TESTFLIGHT_GROUP_ID" --wait
+fi
 echo "UPLOADED $V ($B)"
