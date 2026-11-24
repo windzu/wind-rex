@@ -1411,3 +1411,5 @@ document.body.classList.toggle("onboarding", !loadHosts().length && !startAt);
 document.body.dataset.tabs = prefs.tabPlacement || "above";
 startApp();
 main();
+
+// CI timing sample.
