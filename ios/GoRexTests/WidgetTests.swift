@@ -208,7 +208,7 @@ nonisolated final class WidgetTests: XCTestCase {
         XCTAssertEqual(WidgetLink(url: open.url), open)
         XCTAssertEqual(WidgetLink(url: WidgetLink.inbox.url), .inbox)
         XCTAssertEqual(WidgetLink.inbox.url.absoluteString, "windrex://inbox")
-        XCTAssertEqual(WidgetLink(url: try XCTUnwrap(URL(string: "REXGO://open?block=b&session=s&host=\(id.uuidString.lowercased())"))),
+        XCTAssertEqual(WidgetLink(url: try XCTUnwrap(URL(string: "WINDREX://open?block=b&session=s&host=\(id.uuidString.lowercased())"))),
                        .open(host: id, session: "s", block: "b"))
         for bad in ["windrex://open?host=x&session=s&block=b", "windrex://open?host=\(id)&session=s", "windrex://open?host=\(id)&session=&block=b",
                     "rexgo://other", "https://inbox", "rexgo://tailcat?a=tcx&n=mac"] {

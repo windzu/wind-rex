@@ -46,6 +46,7 @@ nonisolated final class PairingTests: XCTestCase {
         XCTAssertNil(c.transport)
 
         XCTAssertEqual(HostConfig(tailcat: "REXGO://TAILCAT?n=mac&a=tcx")?.tailcat?.address, "tcx")
+        XCTAssertEqual(HostConfig(tailcat: "windrex://tailcat?n=mac&a=tcx")?.tailcat?.address, "tcx")
         XCTAssertEqual(HostConfig(tailcat: "rexgo://tailcat?a=tcx")?.name, "GoRex")
         XCTAssertEqual(HostConfig(tailcat: "rexgo://tailcat?a=tcx&n=%20")?.name, "GoRex")
         XCTAssertNotEqual(HostConfig(tailcat: "rexgo://tailcat?a=tcx")?.id, HostConfig(tailcat: "rexgo://tailcat?a=tcx")?.id)

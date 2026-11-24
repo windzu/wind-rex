@@ -798,9 +798,9 @@ final class Host: Identifiable {
     /// activity a start push begins shows and opens it right. Nothing on
     /// a demo host or a server without gorex.push, which keeps phase 1.
     private func registerPush() {
-        guard !isDemo, let relay = PushTokens.configuredRelay,
-              let c = control, c.features.contains(Self.pushFeature) else { return }
+        guard !isDemo, let c = control, c.features.contains(Self.pushFeature) else { return }
         let tokens = Self.pushTokens()
+        guard let relay = tokens.registrationRelay else { return }
         let device = tokens.deviceKey
         guard !device.isEmpty else { return }
         var args: [String: Any] = ["device": device,
@@ -829,7 +829,9 @@ final class Host: Identifiable {
     /// its answer awaited as the connection closes right after.
     private func unregisterPush() {
         guard !isDemo, let c = control, c.features.contains(Self.pushFeature) else { return }
-        let device = Self.pushTokens().deviceKey
+        let tokens = Self.pushTokens()
+        guard tokens.registrationRelay != nil else { return }
+        let device = tokens.deviceKey
         guard !device.isEmpty else { return }
         c.tell("gorex.push.unregister", ["device": device])
     }

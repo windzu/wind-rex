@@ -18,7 +18,7 @@ nonisolated final class PushTokensTests: XCTestCase {
         func unbindStart(token: String, attributesType: String, target: PushTarget) async { startUnbinds.append((token, attributesType, target)) }
     }
 
-    private static let defaultRelay = URL(string: "https://relay.gorex.uk")!
+    private static let defaultRelay = URL(string: "https://relay.example")!
 
     private static func target(_ key: String, relay: URL = defaultRelay) -> PushTarget {
         PushTarget(key: key, relay: relay)
@@ -114,7 +114,7 @@ nonisolated final class PushTokensTests: XCTestCase {
             }
         }
         let keys = MemoryPushKeys(), r = FakeRelay()
-        let p = PushTokens(keys: keys, relay: r)
+        let p = PushTokens(keys: keys, relay: r, registrationRelay: Self.defaultRelay)
         let was = Host.pushTokens
         Host.pushTokens = { p }
         defer { Host.pushTokens = was }
@@ -191,7 +191,7 @@ nonisolated final class PushTokensTests: XCTestCase {
             default: [:]
             }
         }
-        let p = PushTokens(keys: MemoryPushKeys(), relay: FakeRelay())
+        let p = PushTokens(keys: MemoryPushKeys(), relay: FakeRelay(), registrationRelay: Self.defaultRelay)
         let wasTokens = Host.pushTokens, wasOn = Host.liveActivitiesOn
         Host.pushTokens = { p }
         Host.liveActivitiesOn = { true }
@@ -237,7 +237,7 @@ nonisolated final class PushTokensTests: XCTestCase {
             default: [:]
             }
         }
-        let p = PushTokens(keys: MemoryPushKeys(), relay: FakeRelay())
+        let p = PushTokens(keys: MemoryPushKeys(), relay: FakeRelay(), registrationRelay: Self.defaultRelay)
         let was = Host.pushTokens
         Host.pushTokens = { p }
         defer { Host.pushTokens = was }
@@ -257,7 +257,7 @@ nonisolated final class PushTokensTests: XCTestCase {
         defer { rex.stop() }
         rex.respond = { m, _ in m == "session.bootstrap" ? ["attach_all": ["sessions": []]] : [:] }
         let keys = MemoryPushKeys(), r = FakeRelay()
-        let p = PushTokens(keys: keys, relay: r)
+        let p = PushTokens(keys: keys, relay: r, registrationRelay: Self.defaultRelay)
         let was = Host.pushTokens
         Host.pushTokens = { p }
         defer { Host.pushTokens = was }

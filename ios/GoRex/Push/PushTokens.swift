@@ -11,8 +11,8 @@ final class PushTokens {
     /// The app's: the Keychain's device key, the relay over HTTPS.
     static let shared = PushTokens()
 
-    /// A register answer without a relay URL points at this one.
-    static let configuredRelay: URL? = {
+    /// The relay permitted by this build's configuration.
+    private static let configuredRelay: URL? = {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "WindRexPushRelayURL") as? String,
               let url = URL(string: value), url.scheme == "https", url.host != nil else { return nil }
         return url
@@ -30,6 +30,7 @@ final class PushTokens {
 
     /// The device key the binds are signed with.
     let keys: PushKeys
+    let registrationRelay: URL?
     private let relay: PushRelay
     /// Each host's target, by host, as its registers answered.
     private(set) var targets: [UUID: PushTarget] = [:]
@@ -40,14 +41,16 @@ final class PushTokens {
     /// once for each, as a host of any version may grow push-to-start.
     private(set) var startTokens: [String: String] = [:]
 
-    init(keys: PushKeys, relay: PushRelay) {
+    init(keys: PushKeys, relay: PushRelay, registrationRelay: URL? = nil) {
         self.keys = keys
         self.relay = relay
+        self.registrationRelay = registrationRelay
     }
 
     private convenience init() {
         let keys = KeychainPushKeys()
-        self.init(keys: keys, relay: HTTPPushRelay(env: Self.environment, keys: keys))
+        self.init(keys: keys, relay: HTTPPushRelay(env: Self.environment, keys: keys),
+                  registrationRelay: Self.configuredRelay)
     }
 
     /// The device key's public part, as a register carries it.
