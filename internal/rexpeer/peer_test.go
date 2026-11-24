@@ -23,7 +23,7 @@ import (
 // returns it with the Rex API over its socket, as a Rex server would be.
 func startGorex(t *testing.T) (*rex.Client, string) {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "rexpeer")
+	dir, err := os.MkdirTemp("", "rexpeer")
 	if err != nil {
 		t.Fatal(err)
 	}

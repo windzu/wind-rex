@@ -318,15 +318,16 @@ func TestWebCommand(t *testing.T) {
 // gateway that reads web.json again by itself.
 func TestAllowWebOrigin(t *testing.T) {
 	dir := t.TempDir()
-	added, err := AllowWebOrigin(dir, "HTTPS://Web.Gorex.uk")
+	const origin = "https://web.example.test"
+	added, err := AllowWebOrigin(dir, "HTTPS://Web.Example.TEST:443/")
 	if err != nil || !added {
 		t.Fatalf("allow: %v, %v", added, err)
 	}
 	c, err := LoadWeb(dir)
-	if err != nil || len(c.Origins) != 1 || c.Origins[0] != WebOrigin {
+	if err != nil || len(c.Origins) != 1 || c.Origins[0] != origin {
 		t.Fatalf("web.json: %+v, %v", c, err)
 	}
-	if added, err := AllowWebOrigin(dir, WebOrigin); err != nil || added {
+	if added, err := AllowWebOrigin(dir, origin); err != nil || added {
 		t.Fatalf("allowing it again: %v, %v", added, err)
 	}
 	if _, err := AllowWebOrigin(dir, "not a page"); err == nil {
