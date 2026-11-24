@@ -533,14 +533,15 @@ struct HostListView: View {
     /// Its header lifts a drag while the search is out and the host can
     /// move; the demo host's does not.
     private func section(_ host: Host, current: String, spaces: [String]) -> HostSection {
-        HostSection(host: host, space: current, spaces: spaces, collapsed: $collapsed, expanded: $expanded,
-                    query: query, zoom: zoom, places: places,
-                    open: { go($0) }, openRow: { openRow($0) }, newProject: { newProject = host },
-                    current: width == .regular ? path.last : nil,
-                    liftHost: query.isEmpty && !host.isDemo ? { self.liftHost(host) } : nil,
-                    hostDrop: HostDrop(active: { self.hostDrag != nil },
-                                       pass: { self.passHost(over: host) },
-                                       drop: { self.dropHost($0) }))
+        let showsTerminalAside = width == .regular
+        return HostSection(host: host, space: current, spaces: spaces, collapsed: $collapsed, expanded: $expanded,
+                           query: query, zoom: zoom, places: places,
+                           open: { go($0) }, openRow: { openRow($0) }, newProject: { newProject = host },
+                           showsTerminalAside: showsTerminalAside, current: showsTerminalAside ? path.last : nil,
+                           liftHost: query.isEmpty && !host.isDemo ? { self.liftHost(host) } : nil,
+                           hostDrop: HostDrop(active: { self.hostDrag != nil },
+                                              pass: { self.passHost(over: host) },
+                                              drop: { self.dropHost($0) }))
     }
 
     /// The settings sheet's content, of its own for the type-checker.
@@ -936,16 +937,21 @@ struct WindowRow<Mark: View>: View {
     let divider: Bool
     /// Whether the tiles keep the white ring of a light page.
     var plate = true
+    var compact = false
     @ViewBuilder let mark: Mark
 
     var body: some View {
         let title = host.title(window)
         let status = host.status([block] + window.panes)
-        HStack(spacing: 14) {
-            ProgramTiles(front: host.blocks[block]?.program, back: window.back.map { host.blocks[$0]?.program }, state: status?.state, plate: plate).frame(width: tiles, height: 16 * ProgramTiles.scale + 4, alignment: .leading)
+        HStack(spacing: compact ? SidebarListMetrics.gap : 14) {
+            if !compact {
+                ProgramTiles(front: host.blocks[block]?.program, back: window.back.map { host.blocks[$0]?.program },
+                             state: status?.state, plate: plate)
+                    .frame(width: tiles, height: 16 * ProgramTiles.scale + 4, alignment: .leading)
+            }
             Text(title.isEmpty ? " " : title.asText)
                 // Regular and a little dimmed, as Rex sets a window's title.
-                .font(.body)
+                .font(compact ? .subheadline : .body)
                 .foregroundStyle(.primary.opacity(0.8))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -955,9 +961,9 @@ struct WindowRow<Mark: View>: View {
             ProgramStatusMark(state: status?.state, progress: status?.progress)
             mark
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-        .frame(minHeight: 50)
+        .padding(.horizontal, compact ? SidebarListMetrics.inset : 16)
+        .padding(.vertical, compact ? 8 : 11)
+        .frame(minHeight: compact ? SidebarListMetrics.rowHeight : 50)
         .contentShape(Rectangle())
         .overlay(alignment: .bottom) {
             if divider {

@@ -3,7 +3,7 @@ name: MOD-002
 description: "Projects are folders on each host, inside a space, and hosts own them. Use when you change spaces, projects or where layouts live."
 metadata:
   created: "2026-11-17"
-  updated: "2026-11-24"
+  updated: "2026-11-25"
 ---
 
 # MOD-002: Projects: folders on each host, inside a space
@@ -365,15 +365,23 @@ The folder check of v0.38.0 stays. A missing folder fails with a note and offers
 
 - The top shows the space picker, not a strip of projects.
 - A tap on the picker opens a panel that grows from it, 8 pt under it and with no arrow, over the page; a tap beside the panel closes it. In a wide window's bar the picker opens it as a popover. The panel lists each space with its color and its project count, and marks the one shown. Edit is in its header and New Space comes last. A tap on a space shows it and closes the panel.
-- Each host lists its projects of the space, in order of last use. Then it lists its tabs with no project, in a group of their own, which is a card like a project's. Each tab has a row. A New Tab row comes after them. A project expands to its tabs and a New Tab row.
-- The row of a project shows its folder tile, its name, and a chevron when it has tabs; it shows no tab count. The list does not show the folder itself, as on the desktop and the web client. The rows follow the desktop sidebar (#907), adapted to touch and to the system's list:
-  - **Folder tile.** The tile has the size and corners of a program tile (21×16 DIP at the scale of the tab rows) and a neutral face: the text color at 9%, as on the desktop (`projectFolderTile`). It has no white plate and no shadow. The folder in it has the color of the project, or the muted color when the project has none. It stands in the column of the program tiles. The name of the project starts where the titles of the tabs start. One column width serves every row of a host, taken from the tab with the most tiles behind its front tile, so opening a project moves no name. In the project list, the program tiles of the tabs lose the white ring and the shadow that a light page gives them, so a tile looks as it does on a dark page. The tab sheet, the pane bar, the inbox, the widgets and the Live Activity keep them.
-  - **A card for each project.** Each project has a card of its own with its row, its tabs and its New Tab row. A closed project is a card with its row only. A gap of 12 pt, as between the other cards of the host, separates the cards. The projects under Older share the card of Older. The tabs with no project have a card of their own, No Project (below). The card of a host away is the same.
-  - **Chevron.** The chevron comes after the name, at the end of the row, and always shows. It points right when the project is closed and down when it is open, and it turns with the opening. A project with no tab has no chevron. The Older row has the same chevron before its count.
-  - **One height.** A project row and a tab row are 50 pt high at least, and grow with Dynamic Type. Both keep a touch target of 44 pt.
-  - **Current project.** On a wide window (iPad, the sidebar beside a terminal) the project that holds the open terminal, while its tabs are open, has a **face**. In a card of its own, the card is the face: its fill is a little stronger, and it fades in and out by opacity, so nothing moves. Under Older, where projects share a card, the face is inside the card: 4 pt in, with a radius of 18 pt, a row's 14 pt pill plus those 4 pt. The tab that is open is lifted: a lighter face, a soft shadow and a hairline. It keeps 4 pt from its own card (radius 18 pt, the 22 pt of the card less those 4 pt), or 8 pt under Older (radius 14 pt). The inner radius is always the outer radius less the padding. On a narrow window (iPhone) the list is the whole page and the terminal covers it, so no project is current and no face shows. The projects there keep the mark, the chevron and the height.
-  - **Opening.** The tabs of a project and its New Tab row come and go as one block, with the opening of the chevron: they fade and shrink to the row above. With Reduce Motion they change at once.
-  - **No Project.** The tabs with no project are a group like a project, in a card of the same shape. Its name is "No Project" (a Rex Go label; the desktop keeps "Tabs with no project"). A name in a row is one line, cut at its end, for a project's too. Its first row is built like a project row: a folder tile with a muted folder, as a project with no color has, and the chevron. Its tabs and a New Tab row come under it. The chevron opens and closes it with the same motion as a project's. It is open at first. With no tab it has no chevron and does not fold, as a project with no tab. Its open state lives in the in-memory `collapsed` state of the list, as the closed hosts do, and resets when the app restarts. No saved file and no protocol changes. The row's context menu has New Tab. When the shown tab has no project, on a wide window, this card is the face and the tab is lifted. The card is 12 pt from the cards next to it. The tabs use the same tile column as the projects.
+- Each host lists its recent projects, Older, and the tabs with no
+  project. The host name and connection dot sit above the list.
+- The list uses the compact desktop hierarchy. A project has a neutral
+  outline folder from the same Lucide assets as the desktop, a title, and
+  a disclosure chevron when it has tabs. The folder changes when it opens.
+  An open project's tabs and New Tab row are inset under the project.
+  A tab shows its title first and keeps its program status at the end.
+- No Project keeps its disclosure and menu. It has a small label instead
+  of a folder. Its tabs use the base row alignment because they belong
+  directly to the host. Older still opens to the projects under it.
+- Rows are at least 44 pt high and grow with Dynamic Type. Project rows
+  have no separate card backgrounds or row dividers. Opening a project
+  shows its rows together. Reduce Motion keeps the instant transition.
+- When the terminal is beside the list, its tab has a flat rounded
+  selection fill and an accessibility value identifying it as the current
+  tab. The list uses its parent navigation mode to show chevrons only
+  for rows that push a terminal over the list.
 - An offline host shows its projects greyed, from the copy that the app kept when it last saw them.
 - The `+ ` of the host opens the folder browser of v0.38.0 on that host, with the name and a Space row that picks the space the project is made in (the space shown, at first), and makes the project (`gorex.project.create`). The list shows the space the project went to.
 - New Tab in a project opens on its host with `cwd` set to the folder.
