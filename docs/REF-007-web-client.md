@@ -3,7 +3,7 @@ name: REF-007
 description: "The standalone web client in `web/`: hosts, trust of a page, Tailscale, hosting and the app shell. Use when you change the web client."
 metadata:
   created: "2026-11-12"
-  updated: "2026-11-23"
+  updated: "2026-11-24"
 ---
 
 # REF-007: Web client
@@ -438,12 +438,11 @@ window of its own, with its own icon.
   app window's title bar. There is no `window-controls-overlay`: the
   page would go under the title bar's buttons, and would need a drag
   region of its own.
-- **Icons**: `web/pwa`, PNGs committed to the repository and drawn by
-  `go run ./tools/mkicon -web` from the icon's own drawing: the macOS
-  icon at 192 and 512 pixels (`any`), a maskable one whose gradient
-  fills the square and whose panes keep within the middle circle a
-  launcher's mask leaves (192, 512), and iOS's 180-pixel
-  `apple-touch-icon.png`. The build copies them into `dist/pwa`.
+- **Icons**: `web/pwa` holds the SVG favicon and generated PNGs.
+  `go run ./tools/mkicon -web` rebuilds them from the WindRex master.
+  The manifest has the standard and maskable icons at 192 and 512 px.
+  The 180 px Apple touch icon has a solid background. The build
+  copies these files into `dist/pwa`.
 - **Install**: Settings, About, shows Install GoRex with an Install App
   button when the browser offered its install prompt
   (`beforeinstallprompt`, Chrome and Edge); the button shows the

@@ -1,290 +1,280 @@
-// Mkicon draws the web client's app icons into web/pwa (webIcons): the
-// window's gradient in the squircle of macOS icons, with panes on it as the
-// app splits them.
-//
-// The desktop app's icons, resources/icon.png and resources/icon-dev.png,
-// are the prism of Rex Go's icon now, rendered from its layers; mkicon no
-// longer draws them (docs/IOS-009-app-icons.md, Desktop).
-//
-//	go run ./tools/mkicon -web
+// Mkicon renders the WindRex brand master into the desktop, iOS, and Web
+// icon assets. Run from the repository root. -web limits the output to Web.
 package main
 
 import (
+	"encoding/json"
+	"encoding/xml"
 	"flag"
+	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"image/png"
 	"log"
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
-	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/vector"
 )
 
-const size = 1024
+const (
+	masterPath = "assets/brand/windrex.svg"
+	artSize    = 200
+	iconSize   = 1024
+)
 
-// colors are the icon's: its gradient, its panes and what is on them.
-type colors struct {
-	bg             []stop
-	pane, paneBack uint8
-	ink, green     color.NRGBA
-	text, accent   color.NRGBA
-	snake, red     color.NRGBA
-	shade          color.RGBA
+type iconShape int
+
+const (
+	roundedTile iconShape = iota
+	squareTile
+	markLayer
+)
+
+type point struct{ x, y float64 }
+
+type brand struct {
+	background color.NRGBA
+	foreground color.NRGBA
+	radius     float64
+	stroke     float64
+	points     []point
 }
 
 func main() {
-	web := flag.Bool("web", false, "draw the web client's app icons into web/pwa")
+	webOnly := flag.Bool("web", false, "draw only the Web icons into web/pwa")
 	flag.Parse()
-	if !*web {
-		log.Fatal("mkicon draws only the web icons (-web); resources/icon.png and icon-dev.png are rendered from Rex Go's icon (docs/IOS-009-app-icons.md, Desktop)")
-	}
 
-	// The icon's colours, in the light of the window.
-	c := colors{
-		bg:   []stop{{0, rgb(0xf7e4f6)}, {0.45, rgb(0xeedbe3)}, {0.7, rgb(0xeeddd0)}, {1, rgb(0xebdcb2)}},
-		pane: 250, paneBack: 175,
-		ink: color.NRGBA{42, 45, 49, 255}, green: color.NRGBA{78, 142, 95, 255},
-		text: color.NRGBA{120, 120, 128, 150}, accent: color.NRGBA{194, 70, 90, 170},
-		snake: color.NRGBA{86, 141, 102, 255}, red: color.NRGBA{188, 83, 98, 255},
-		shade: color.RGBA{60, 30, 50, 46},
-	}
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	// The squircle of macOS's icon grid: 824 wide, inset by 100.
-	x0, y0, w := float32(100), float32(100), float32(824)
-	shadow(img, x0+6, y0+12, w-12, w-12, 186, 20, c.shade)
-	grad := gradient(size, c.bg)
-	fill(img, squircle(x0, y0, w, w, 186), grad)
-	panes(img, x0, y0, w, c)
-	webIcons(img, grad, x0, y0, w, c)
-}
-
-// panes draws the panes on the squircle at x0, y0, w wide: one left above
-// another, one right, as the app shows them.
-func panes(img *image.RGBA, x0, y0, w float32, k colors) {
-	pad, gap := float32(70), float32(36)
-	inner := w - 2*pad
-	lw := inner*0.54 - gap/2
-	th := inner*0.5 - gap/2
-	cards := []struct {
-		x, y, w, h float32
-		a          uint8
-	}{
-		{x0 + pad, y0 + pad + 40, lw, th, 250},
-		{x0 + pad, y0 + pad + 40 + th + gap, lw, inner - th - gap - 40, 175},
-		{x0 + pad + lw + gap, y0 + pad + 40, inner - lw - gap, inner - 40, 175},
-	}
-	for _, c := range cards {
-		alpha := k.paneBack
-		if c.a == 250 {
-			alpha = k.pane
-		}
-		shadow(img, c.x, c.y+8, c.w, c.h, 44, 22, k.shade)
-		fill(img, rounded(c.x, c.y, c.w, c.h, 44), image.NewUniform(color.NRGBA{255, 255, 255, alpha}))
-	}
-	// A prompt on the first pane: a chevron and a cursor.
-	c := cards[0]
-	inkSrc := image.NewUniform(k.ink)
-	greenSrc := image.NewUniform(k.green)
-	cx, cy := c.x+68, c.y+c.h/2-6
-	for _, r := range stroke([][2]float32{{cx, cy - 58}, {cx + 62, cy}, {cx, cy + 58}}, 26) {
-		fill(img, r, greenSrc)
-	}
-	fill(img, rounded(cx+100, cy+34, 104, 26, 13), inkSrc)
-	// Snake dots on the right pane.
-	r := cards[2]
-	for i := 0; i < 4; i++ {
-		fill(img, rounded(r.x+52+float32(i)*44, r.y+r.h*0.42, 30, 30, 7), image.NewUniform(k.snake))
-	}
-	fill(img, rounded(r.x+52+3*44, r.y+r.h*0.42+44, 30, 30, 7), image.NewUniform(k.snake))
-	fill(img, rounded(r.x+r.w-100, r.y+r.h*0.7, 34, 34, 17), image.NewUniform(k.red))
-	// Lines of text on the lower left pane.
-	l := cards[1]
-	for i, lw := range []float32{0.62, 0.44, 0.7} {
-		col := k.text
-		if i == 1 {
-			col = k.accent
-		}
-		fill(img, rounded(l.x+52, l.y+56+float32(i)*48, (l.w-104)*lw, 22, 11), image.NewUniform(col))
+	master, err := os.ReadFile(masterPath)
+	check(err)
+	art, err := readBrand(master)
+	check(err)
+	art.writeWeb(master)
+	if !*webOnly {
+		writePNG("resources/icon.png", art.render(iconSize, 100, art.background, art.foreground, roundedTile))
+		writePNG("resources/icon-dev.png", art.render(iconSize, 100, hex("3D3D70"), art.foreground, roundedTile))
+		art.writeIOS()
 	}
 }
 
-// webIcons writes the web client's app icons (docs/REF-007-web-client.md, App):
-// the icon as it is at 192 and 512 pixels, and a maskable one, whose
-// gradient fills the square and whose panes keep within the middle 80%
-// circle that a launcher's mask leaves, at 192 and 512 pixels and as
-// iOS's 180-pixel home screen icon, which iOS rounds itself.
-func webIcons(icon *image.RGBA, grad image.Image, x0, y0, w float32, c colors) {
-	dir := filepath.Join("web", "pwa")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		log.Fatal(err)
+func readBrand(svg []byte) (brand, error) {
+	var doc struct {
+		XMLName xml.Name `xml:"svg"`
+		ViewBox string   `xml:"viewBox,attr"`
+		Tile    struct {
+			Fill   string  `xml:"fill,attr"`
+			Radius float64 `xml:"rx,attr"`
+		} `xml:"rect"`
+		Mark struct {
+			Path  string  `xml:"d,attr"`
+			Color string  `xml:"stroke,attr"`
+			Width float64 `xml:"stroke-width,attr"`
+			Cap   string  `xml:"stroke-linecap,attr"`
+			Join  string  `xml:"stroke-linejoin,attr"`
+		} `xml:"path"`
 	}
-	layer := image.NewRGBA(image.Rect(0, 0, size, size))
-	panes(layer, x0, y0, w, c)
-	full := image.NewRGBA(image.Rect(0, 0, size, size))
-	// Row by row: the gradient is one pixel wide, which draw.Draw would read as such.
-	for y := 0; y < size; y++ {
-		draw.Draw(full, image.Rect(0, y, size, y+1), image.NewUniform(grad.At(0, y)), image.Point{}, draw.Src)
+	if err := xml.Unmarshal(svg, &doc); err != nil {
+		return brand{}, err
 	}
-	// The panes span 170 to 854 of 1024; at 0.84 their corners fall inside the safe circle.
-	k := 0.84
-	in := int(float64(size) * (1 - k) / 2)
-	xdraw.CatmullRom.Scale(full, image.Rect(in, in, size-in, size-in), layer, layer.Bounds(), draw.Over, nil)
-	for _, o := range []struct {
-		name string
-		src  image.Image
-		px   int
+	if doc.ViewBox != "0 0 200 200" || doc.Tile.Radius <= 0 || doc.Mark.Width <= 0 ||
+		doc.Mark.Cap != "round" || doc.Mark.Join != "round" {
+		return brand{}, fmt.Errorf("unsupported artwork in %s", masterPath)
+	}
+
+	// The master is one move followed by absolute cubic Béziers.
+	fields := strings.Fields(doc.Mark.Path)
+	if len(fields) < 10 || fields[0] != "M" || (len(fields)-3)%7 != 0 {
+		return brand{}, fmt.Errorf("%s: expected M followed by cubic C segments", masterPath)
+	}
+	start, err := readPoint(fields[1:3])
+	if err != nil {
+		return brand{}, err
+	}
+	points := []point{start}
+	for i := 3; i < len(fields); i += 7 {
+		if fields[i] != "C" {
+			return brand{}, fmt.Errorf("%s: unsupported path command %q", masterPath, fields[i])
+		}
+		var controls [3]point
+		for j := range controls {
+			controls[j], err = readPoint(fields[i+1+j*2 : i+3+j*2])
+			if err != nil {
+				return brand{}, err
+			}
+		}
+		const samples = 48
+		for n := 1; n <= samples; n++ {
+			t := float64(n) / samples
+			u := 1 - t
+			a, b, c, d := u*u*u, 3*u*u*t, 3*u*t*t, t*t*t
+			points = append(points, point{
+				a*start.x + b*controls[0].x + c*controls[1].x + d*controls[2].x,
+				a*start.y + b*controls[0].y + c*controls[1].y + d*controls[2].y,
+			})
+		}
+		start = controls[2]
+	}
+	return brand{
+		background: hex(strings.TrimPrefix(doc.Tile.Fill, "#")),
+		foreground: hex(strings.TrimPrefix(doc.Mark.Color, "#")),
+		radius:     doc.Tile.Radius,
+		stroke:     doc.Mark.Width,
+		points:     points,
+	}, nil
+}
+
+func readPoint(fields []string) (point, error) {
+	x, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return point{}, err
+	}
+	y, err := strconv.ParseFloat(fields[1], 64)
+	return point{x, y}, err
+}
+
+func hex(v string) color.NRGBA {
+	n, err := strconv.ParseUint(v, 16, 24)
+	if err != nil || len(v) != 6 {
+		log.Fatalf("invalid icon color %q", v)
+	}
+	return color.NRGBA{R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n), A: 255}
+}
+
+// render draws a tile or a transparent mark layer. The tile and mark use
+// the same scale so the proportions remain the same for platform insets.
+func (b brand) render(px, inset int, bg, ink color.NRGBA, shape iconShape) image.Image {
+	dst := image.NewRGBA(image.Rect(0, 0, px, px))
+	scale := float64(px-2*inset) / artSize
+	start, end := float32(inset), float32(px-inset)
+	if shape != markLayer {
+		r := vector.NewRasterizer(px, px)
+		radius := float32(b.radius * scale)
+		if shape == squareTile {
+			radius = 0
+		}
+		roundRect(r, start, end, radius)
+		r.Draw(dst, dst.Bounds(), image.NewUniform(bg), image.Point{})
+	}
+
+	r := vector.NewRasterizer(px, px)
+	radius := b.stroke * scale / 2
+	var prior point
+	for i, p := range b.points {
+		p = point{float64(inset) + p.x*scale, float64(inset) + p.y*scale}
+		if i > 0 {
+			dx, dy := p.x-prior.x, p.y-prior.y
+			if distance := math.Hypot(dx, dy); distance > 0 {
+				x, y := -dy*radius/distance, dx*radius/distance
+				r.MoveTo(float32(prior.x-x), float32(prior.y-y))
+				r.LineTo(float32(p.x-x), float32(p.y-y))
+				r.LineTo(float32(p.x+x), float32(p.y+y))
+				r.LineTo(float32(prior.x+x), float32(prior.y+y))
+				r.ClosePath()
+			}
+		}
+		circle(r, p, radius)
+		prior = p
+	}
+	r.Draw(dst, dst.Bounds(), image.NewUniform(ink), image.Point{})
+	return dst
+}
+
+const arc = 0.55228475
+
+func roundRect(r *vector.Rasterizer, start, end, radius float32) {
+	k := radius * arc
+	r.MoveTo(start+radius, start)
+	r.LineTo(end-radius, start)
+	r.CubeTo(end-radius+k, start, end, start+radius-k, end, start+radius)
+	r.LineTo(end, end-radius)
+	r.CubeTo(end, end-radius+k, end-radius+k, end, end-radius, end)
+	r.LineTo(start+radius, end)
+	r.CubeTo(start+radius-k, end, start, end-radius+k, start, end-radius)
+	r.LineTo(start, start+radius)
+	r.CubeTo(start, start+radius-k, start+radius-k, start, start+radius, start)
+	r.ClosePath()
+}
+
+func circle(r *vector.Rasterizer, p point, radius float64) {
+	x, y, d, k := float32(p.x), float32(p.y), float32(radius), float32(arc*radius)
+	r.MoveTo(x+d, y)
+	r.CubeTo(x+d, y+k, x+k, y+d, x, y+d)
+	r.CubeTo(x-k, y+d, x-d, y+k, x-d, y)
+	r.CubeTo(x-d, y-k, x-k, y-d, x, y-d)
+	r.CubeTo(x+k, y-d, x+d, y-k, x+d, y)
+	r.ClosePath()
+}
+
+func (b brand) writeWeb(master []byte) {
+	const dir = "web/pwa"
+	check(os.WriteFile(filepath.Join(dir, "favicon.svg"), master, 0o644))
+	for _, output := range []struct {
+		name  string
+		size  int
+		shape iconShape
 	}{
-		{"icon-192.png", icon, 192},
-		{"icon-512.png", icon, 512},
-		{"maskable-192.png", full, 192},
-		{"maskable-512.png", full, 512},
-		{"apple-touch-icon.png", full, 180},
+		{"icon-192.png", 192, roundedTile},
+		{"icon-512.png", 512, roundedTile},
+		{"maskable-192.png", 192, squareTile},
+		{"maskable-512.png", 512, squareTile},
+		{"apple-touch-icon.png", 180, squareTile},
 	} {
-		dst := image.NewRGBA(image.Rect(0, 0, o.px, o.px))
-		xdraw.CatmullRom.Scale(dst, dst.Bounds(), o.src, o.src.Bounds(), draw.Src, nil)
-		save(filepath.Join(dir, o.name), dst)
+		writePNG(filepath.Join(dir, output.name), b.render(output.size, 0, b.background, b.foreground, output.shape))
 	}
 }
 
-func save(path string, img image.Image) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		log.Fatal(err)
+func (b brand) writeIOS() {
+	const ios = "ios/GoRex"
+	for _, icon := range []struct {
+		bundle, preview string
+		background, ink color.NRGBA
+	}{
+		{"AppIcon", "IconWindRex", b.background, b.foreground},
+		{"AppIcon-Spectrum", "IconForest", hex("23463F"), b.foreground},
+		{"AppIcon-Classic", "IconPaper", b.foreground, b.background},
+	} {
+		dir := filepath.Join(ios, icon.bundle+".icon")
+		writePNG(filepath.Join(dir, "Assets/mark.png"), b.render(iconSize, 0, icon.background, icon.ink, markLayer))
+		bg := icon.background
+		fill := fmt.Sprintf("srgb:%.5f,%.5f,%.5f,1.00000", float64(bg.R)/255, float64(bg.G)/255, float64(bg.B)/255)
+		config := map[string]any{
+			"fill": map[string]string{"solid": fill},
+			"groups": []map[string]any{{
+				"name":   "WindRex",
+				"layers": []map[string]any{{"name": "Mark", "image-name": "mark.png", "glass": false}},
+				"shadow": map[string]any{"kind": "none", "opacity": 0},
+			}},
+			"supported-platforms": map[string]any{"squares": []string{"iOS"}},
+		}
+		body, err := json.MarshalIndent(config, "", "  ")
+		check(err)
+		check(os.WriteFile(filepath.Join(dir, "icon.json"), append(body, '\n'), 0o644))
+		writePNG(filepath.Join(ios, "Assets.xcassets", icon.preview+".imageset", "icon.png"),
+			b.render(360, 0, bg, icon.ink, squareTile))
 	}
-	f, err := os.Create(path)
+	for scale, suffix := range []string{"", "@2x", "@3x"} {
+		writePNG(filepath.Join(ios, "Assets.xcassets/LaunchIcon.imageset", "launch"+suffix+".png"),
+			b.render(144*(scale+1), 0, b.background, b.foreground, roundedTile))
+	}
+	writePNG(filepath.Join(ios, "Assets.xcassets/BrandMark.imageset/mark.png"),
+		b.render(240, 0, b.background, b.foreground, markLayer))
+}
+
+func writePNG(path string, img image.Image) {
+	check(os.MkdirAll(filepath.Dir(path), 0o755))
+	file, err := os.Create(path)
+	check(err)
+	err = png.Encode(file, img)
+	closeErr := file.Close()
+	check(err)
+	check(closeErr)
+}
+
+func check(err error) {
 	if err != nil {
 		log.Fatal(err)
-	}
-	defer f.Close()
-	if err := png.Encode(f, img); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func rgb(v uint32) color.NRGBA {
-	return color.NRGBA{uint8(v >> 16), uint8(v >> 8), uint8(v), 255}
-}
-
-type stop struct {
-	at float64
-	c  color.NRGBA
-}
-
-// gradient is a vertical gradient through stops.
-func gradient(h int, stops []stop) image.Image {
-	img := image.NewNRGBA(image.Rect(0, 0, 1, h))
-	for y := 0; y < h; y++ {
-		t := float64(y) / float64(h-1)
-		i := 0
-		for i < len(stops)-2 && t > stops[i+1].at {
-			i++
-		}
-		a, b := stops[i], stops[i+1]
-		f := math.Max(0, math.Min(1, (t-a.at)/(b.at-a.at)))
-		mix := func(p, q uint8) uint8 { return uint8(float64(p) + (float64(q)-float64(p))*f + 0.5) }
-		img.SetNRGBA(0, y, color.NRGBA{mix(a.c.R, b.c.R), mix(a.c.G, b.c.G), mix(a.c.B, b.c.B), 255})
-	}
-	return &stretch{img}
-}
-
-// stretch repeats a one-pixel-wide image across.
-type stretch struct{ *image.NRGBA }
-
-func (s *stretch) Bounds() image.Rectangle { return image.Rect(0, 0, size, size) }
-func (s *stretch) At(x, y int) color.Color { return s.NRGBA.At(0, y) }
-func (s *stretch) ColorModel() color.Model { return color.NRGBAModel }
-
-func fill(dst *image.RGBA, r *vector.Rasterizer, src image.Image) {
-	r.Draw(dst, dst.Bounds(), src, image.Point{})
-}
-
-// rounded is a rounded rectangle.
-func rounded(x, y, w, h, rad float32) *vector.Rasterizer {
-	r := vector.NewRasterizer(size, size)
-	k := rad * 0.5523
-	r.MoveTo(x+rad, y)
-	r.LineTo(x+w-rad, y)
-	r.CubeTo(x+w-rad+k, y, x+w, y+rad-k, x+w, y+rad)
-	r.LineTo(x+w, y+h-rad)
-	r.CubeTo(x+w, y+h-rad+k, x+w-rad+k, y+h, x+w-rad, y+h)
-	r.LineTo(x+rad, y+h)
-	r.CubeTo(x+rad-k, y+h, x, y+h-rad+k, x, y+h-rad)
-	r.LineTo(x, y+rad)
-	r.CubeTo(x, y+rad-k, x+rad-k, y, x+rad, y)
-	r.ClosePath()
-	return r
-}
-
-// squircle is a rounded rectangle of continuous curvature, as macOS's
-// icons: a superellipse.
-func squircle(x, y, w, h, _ float32) *vector.Rasterizer {
-	r := vector.NewRasterizer(size, size)
-	const n = 5.0
-	cx, cy, a, b := float64(x+w/2), float64(y+h/2), float64(w/2), float64(h/2)
-	for i := 0; i <= 720; i++ {
-		t := float64(i) / 720 * 2 * math.Pi
-		c, s := math.Cos(t), math.Sin(t)
-		px := cx + a*math.Copysign(math.Pow(math.Abs(c), 2/n), c)
-		py := cy + b*math.Copysign(math.Pow(math.Abs(s), 2/n), s)
-		if i == 0 {
-			r.MoveTo(float32(px), float32(py))
-		} else {
-			r.LineTo(float32(px), float32(py))
-		}
-	}
-	r.ClosePath()
-	return r
-}
-
-// stroke is a polyline of a width, with round joins and caps: shapes to
-// fill one by one, as their windings would cancel where they overlap.
-func stroke(pts [][2]float32, width float32) []*vector.Rasterizer {
-	var out []*vector.Rasterizer
-	hw := width / 2
-	for i := 0; i+1 < len(pts); i++ {
-		r := vector.NewRasterizer(size, size)
-		out = append(out, r)
-		a, b := pts[i], pts[i+1]
-		dx, dy := b[0]-a[0], b[1]-a[1]
-		l := float32(math.Hypot(float64(dx), float64(dy)))
-		nx, ny := -dy/l*hw, dx/l*hw
-		r.MoveTo(a[0]+nx, a[1]+ny)
-		r.LineTo(b[0]+nx, b[1]+ny)
-		r.LineTo(b[0]-nx, b[1]-ny)
-		r.LineTo(a[0]-nx, a[1]-ny)
-		r.ClosePath()
-	}
-	for _, p := range pts {
-		r := vector.NewRasterizer(size, size)
-		circle(r, p[0], p[1], hw)
-		out = append(out, r)
-	}
-	return out
-}
-
-func circle(r *vector.Rasterizer, cx, cy, rad float32) {
-	k := rad * 0.5523
-	r.MoveTo(cx+rad, cy)
-	r.CubeTo(cx+rad, cy+k, cx+k, cy+rad, cx, cy+rad)
-	r.CubeTo(cx-k, cy+rad, cx-rad, cy+k, cx-rad, cy)
-	r.CubeTo(cx-rad, cy-k, cx-k, cy-rad, cx, cy-rad)
-	r.CubeTo(cx+k, cy-rad, cx+rad, cy-k, cx+rad, cy)
-	r.ClosePath()
-}
-
-// shadow draws a soft shadow of a rounded rectangle, as layers of a
-// little alpha each, growing.
-func shadow(dst *image.RGBA, x, y, w, h, rad, blur float32, c color.RGBA) {
-	steps := 12
-	for i := steps; i >= 1; i-- {
-		g := blur * float32(i) / float32(steps)
-		a := float64(c.A) / float64(steps) * 0.9
-		col := color.NRGBA{c.R, c.G, c.B, uint8(a)}
-		m := rounded(x-g/2, y-g/2, w+g, h+g, rad+g/2)
-		m.DrawOp = draw.Over
-		fill(dst, m, image.NewUniform(col))
 	}
 }

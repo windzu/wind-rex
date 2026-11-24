@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// The app icons WindRex ships: Prism, the one it installs with, and the
-/// alternates Spectrum and Classic. Each is an Icon Composer bundle next to
-/// the app (`AppIcon*.icon`); the image set beside it is a picture of the
-/// design, for the app to show.
+/// The WindRex mark in its default, Forest, and Paper palettes.
 enum AppIcon: CaseIterable, Identifiable {
-    case prism, spectrum, classic
+    case windrex, forest, paper
 
     var id: Self { self }
 
@@ -13,32 +10,33 @@ enum AppIcon: CaseIterable, Identifiable {
     /// "AppIcon": iOS 26.1 then fails every later change of icon.
     var alternateName: String? {
         switch self {
-        case .prism: nil
-        case .spectrum: "AppIcon-Spectrum"
-        case .classic: "AppIcon-Classic"
+        case .windrex: nil
+        // Keep the system's identifiers for icons already selected.
+        case .forest: "AppIcon-Spectrum"
+        case .paper: "AppIcon-Classic"
         }
     }
 
     /// The image set that shows the icon in the app.
     var preview: String {
         switch self {
-        case .prism: "IconPrism"
-        case .spectrum: "IconSpectrum"
-        case .classic: "IconClassic"
+        case .windrex: "IconWindRex"
+        case .forest: "IconForest"
+        case .paper: "IconPaper"
         }
     }
 
     var title: LocalizedStringResource {
         switch self {
-        case .prism: "Prism"
-        case .spectrum: "Spectrum"
-        case .classic: "Classic"
+        case .windrex: "WindRex"
+        case .forest: "Forest"
+        case .paper: "Paper"
         }
     }
 
     /// The icon on the Home Screen now.
     static var current: AppIcon {
-        allCases.first { $0.alternateName == UIApplication.shared.alternateIconName } ?? .prism
+        allCases.first { $0.alternateName == UIApplication.shared.alternateIconName } ?? .windrex
     }
 
     /// The preview, a square, clipped to the shape of an app icon.

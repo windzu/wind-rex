@@ -557,7 +557,7 @@ GoRex needs [Go](https://go.dev/dl/) 1.27+ and MyGo 0.7.2, whose CLI
 go tool mygo dev     # GoRex Dev, rebuilt and restarted as the code changes
 go test ./...        # the server, and the view without a window
 go tool mygo build   # build/darwin-arm64/GoRex.app and a .dmg
-go run ./tools/mkicon -web  # redraw the web client's icons in web/pwa
+go run ./tools/mkicon      # rebuild the desktop, iOS and Web icons
 ```
 
 `go tool mygo dev -background` starts the app and each rebuild without

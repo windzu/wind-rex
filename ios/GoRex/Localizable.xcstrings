@@ -300,12 +300,12 @@
         }
       }
     },
-    "Classic": {
+    "Paper": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "经典"
+            "value": "纸白"
           }
         }
       }
@@ -450,12 +450,12 @@
         }
       }
     },
-    "Prism": {
+    "WindRex": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "棱镜"
+            "value": "WindRex"
           }
         }
       }
@@ -470,12 +470,12 @@
         }
       }
     },
-    "Spectrum": {
+    "Forest": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "光谱"
+            "value": "森林绿"
           }
         }
       }
