@@ -56,7 +56,7 @@ jobs:
         id: tailnet
         with:
           path: ios/Frameworks/Tailnet.xcframework
-          key: tailnet-${{ hashFiles('go.mod', 'go.sum', 'ios/tailnet/**', 'internal/tailnode/**', 'ios/scripts/build-tailnet') }}
+          key: tailnet-${{ hashFiles('go.mod', 'go.sum', 'ios/tailnet/**', 'ios/share/**', 'internal/tailnode/**', 'internal/pairaddr/**', 'ios/scripts/build-tailnet') }}
       - if: steps.tailnet.outputs.cache-hit != 'true'
         run: ios/scripts/build-tailnet
       - if: steps.tailnet.outputs.cache-hit != 'true'

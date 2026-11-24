@@ -1,67 +1,83 @@
 name: Web
 
-# Builds GoRex's web client and deploys it to Cloudflare Workers (the
-# `gorex-web` Worker of web/wrangler.jsonc), like `npm run deploy` does on
-# a developer's machine: the same web/dist, the same Wrangler 4.152.0. Only
-# the page's own changes upload it, with the files its build reads from the
-# repo (the terminal's wasm source, the fonts, the icons and brand marks,
-# the Ghostty themes). A change to this workflow redeploys too, so a
-# secret or command change takes effect at once. A run with no
-# CLOUDFLARE_API_TOKEN secret skips the upload, as the R2 job does.
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - web/**
-      - assets/**
-      - ios/GoRex/ghostty-themes.json
-      - go.mod
-      - go.sum
-      - .github/workflows/web.yml
 
 permissions:
   contents: read
 
-concurrency:
-  group: web
-  # A deploy's run always goes to its end: a newer push queues behind it
-  # rather than killing it mid-upload, so the page never serves a partial
-  # deploy (the Worker's assets swap only when the upload completes).
-  cancel-in-progress: false
-
-defaults:
-  run:
-    shell: bash
-
 jobs:
-  deploy:
+  changes:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.scope.outputs.web }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
         with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
+          fetch-depth: 0
+          persist-credentials: false
+      - id: scope
+        env:
+          BASE: ${{ github.event.before }}
+        run: python3 -B .github/scripts/ci_scope.py --base "$BASE"
+
+  deploy:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: web
+      # Only Web changes can take the pending slot. Active uploads finish.
+      cancel-in-progress: false
+    steps:
+      - name: Check deployment configuration
+        id: destinations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "workers=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push && -n "$R2_ENDPOINT" && -n "$R2_BUCKET" &&
+                -n "$R2_ACCESS_KEY_ID" && -n "$R2_SECRET_ACCESS_KEY" ]]; then
+            echo "r2=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ ! -s "$GITHUB_OUTPUT" ]]; then
+            echo "No Web deployment destination is configured for this run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.destinations.outputs.workers == 'true' || steps.destinations.outputs.r2 == 'true'
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: build and deploy to Cloudflare Workers
+          # A queued deployment can replace another. Publish current main.
+          ref: refs/heads/main
+          persist-credentials: false
+      - id: build
+        if: steps.destinations.outputs.workers == 'true' || steps.destinations.outputs.r2 == 'true'
+        uses: ./.github/actions/web-build
+      - name: Deploy to Cloudflare Workers
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.destinations.outputs.workers == 'true' }}
         working-directory: web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # The wasm build fetches and compiles Ghostty's sources; the CI
-          # flag makes a missing translation fail the build (i18n.mjs).
-          CI: "true"
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "Cloudflare secrets not configured; skipping deploy"
-            exit 0
-          fi
-          npm ci
-          node build.mjs --ci
-          npx --yes wrangler@4.152.0 deploy
+        run: npx --yes wrangler@4.152.0 deploy
+      - name: Upload to R2
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.destinations.outputs.r2 == 'true' }}
+        working-directory: web
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_PREFIX: ${{ secrets.R2_PREFIX }}
+        run: node r2-upload.mjs
