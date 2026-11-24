@@ -32,19 +32,13 @@ defaults:
 
 jobs:
   test:
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 1
-      # The deployment target is iOS 26: the newest Xcode_26*, as GitHub's
-      # images name them, else the Mac's own; DEVELOPER_DIR, as xcode-select
-      # needs sudo.
-      - run: |
-          shopt -s nullglob
-          x=$(printf '%s\n' /Applications/Xcode_26*.app | sort -V | tail -1)
-          [[ -z $x ]] || echo "DEVELOPER_DIR=$x/Contents/Developer" >> "$GITHUB_ENV"
+      # The app icon uses features introduced in Icon Composer 2 (Xcode 27).
       - run: xcodebuild -version
       - run: command -v xcodegen >/dev/null || brew install xcodegen
       # ios/project.yml's minimumXcodeGenVersion: the Icon Composer icons
