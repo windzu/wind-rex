@@ -472,6 +472,7 @@ const (
 	foldRowH        = 26
 
 	compactFolderWidth = 18
+	compactFolderGlyph = 17
 	compactTabPreview  = 5
 )
 
@@ -479,13 +480,13 @@ const (
 func compactProjectFolder(c *ui.Context, k *colors, name string, open, hasTabs bool) bool {
 	glyph := "folder-outline"
 	if open {
-		glyph = "folder-open"
+		glyph = "folder-outline-open"
 	}
 	folder := ui.Box(c.Key("fold")).Size(compactFolderWidth, projectRowH()).Center().Shrink(0)
 	if hasTabs {
 		folder.Cursor(ui.CursorPointer).Role(ui.RoleDisclosure).Expanded(open).Label(locales.ProjectsTabsOf(name))
 	}
-	folder.Children(func() { glyphIcon(c, glyph, 15, k.textMuted) })
+	folder.Children(func() { glyphIcon(c, glyph, compactFolderGlyph, k.textMuted) })
 	return hasTabs && folder.Clicked()
 }
 
