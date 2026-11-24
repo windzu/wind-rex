@@ -89,8 +89,9 @@ jobs:
             go-build-${{ hashFiles('go.sum') }}-
             go-build-
       - name: gofmt
+        shell: bash
         run: |
-          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          unformatted=$(git ls-files -z '*.go' | xargs -0 -r gofmt -l)
           if [ -n "$unformatted" ]; then
             echo "gofmt needed:"
             echo "$unformatted"
@@ -205,8 +206,9 @@ jobs:
         # No part retries: a failed test fails the job.
         run: |
           if [ "$PART" = others ]; then
-            pkgs=$(go list ./... | grep -v '^gorex$')
-            go test -race $pkgs -count=1 -timeout 15m
+            package_list=$(go list ./... | grep -vx 'gorex')
+            mapfile -t packages <<< "$package_list"
+            go test -race "${packages[@]}" -count=1 -timeout 15m
           else
             go test -c -o "$RUNNER_TEMP/gorex.test" .
             tests=$("$RUNNER_TEMP/gorex.test" -test.list '^(Test|Example|Fuzz)' |
