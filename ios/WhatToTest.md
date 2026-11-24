@@ -10,6 +10,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 `web` job of `.github/workflows/ci.yml` fails it.
 
 ## en-US
+- Look for the handwritten W on the Home Screen. In Settings, try the Forest and Paper variants.
 - WindRex installs as a separate app with its own host list and widgets.
 - When pairing with a computer fails, the sheet's new Copy diagnostics button puts the recent connection log on the pasteboard, ready to send.
 - The Diagnostics log now survives restarts: lines from before you closed Rex Go are still there when you come back.
@@ -139,6 +140,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 - With Developer Mode on, the floating connection bar at the top no longer covers the first row of the computer list.
 
 ## zh-Hans
+- 主屏幕换上了手写 W 图标。你也可以在设置里试用「森林绿」和「纸白」款。
 - WindRex 作为独立 App 安装，使用自己的主机列表和小组件。
 - 与电脑配对失败时，配对页新增「复制诊断」按钮：一键把最近的连接日志复制到剪贴板，方便发给我们。
 - 「诊断」日志在退出并重开 Rex Go 后仍然保留：回来还能看到之前的记录。

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <title>WindRex</title>
+  <rect width="200" height="200" rx="45" fill="#222825"/>
+  <path fill="none" stroke="#F3EADD" stroke-width="11.7" stroke-linecap="round" stroke-linejoin="round"
+        d="M 36 72 C 47 75 47 129 58 128 C 67 127 73 78 82 79 C 91 80 94 129 105 129 C 114 129 117 100 131 100 C 142 100 152 100 165 100"/>
+</svg>

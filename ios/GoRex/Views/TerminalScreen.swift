@@ -1011,7 +1011,7 @@ struct TerminalScreen: View {
         switch session?.state ?? .connecting {
         case .connecting:
             // A reconnect shows its note above the key bar instead.
-            if session?.reconnecting != true { PrismLoading() }
+            if session?.reconnecting != true { BrandLoading() }
         case .live:
             EmptyView()
         case .exited(let code):
@@ -1061,39 +1061,35 @@ private struct Reconnecting: View {
     }
 }
 
-/// What a terminal shows while its stream opens: the app's prism, its
-/// beam sweeping through the glass into the fan of colours and drawing
-/// back, as the icon holds it still. Reduce Motion shows it lit, still.
-private struct PrismLoading: View {
-    /// How far the beam's sweep has reached, as a fraction of the icon's
-    /// width: under 0 it is all out, over 1 all in.
+/// The WindRex mark while the terminal stream opens.
+private struct BrandLoading: View {
     @State private var edge: CGFloat = -0.2
     @Environment(\.accessibilityReduceMotion) private var still
 
-    private let size: CGFloat = 80
+    private var mark: some View {
+        Image("BrandMark")
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(.primary)
+    }
 
     var body: some View {
         ZStack {
-            // The icon's art layers: the beam and the fan, the glass
-            // prism over them, as it draws the light passing through.
-            Image("PrismSpectrum").resizable()
-                .mask {
+            mark.opacity(still ? 1 : 0.25)
+            if !still {
+                mark.mask {
                     LinearGradient(stops: [
-                        .init(color: .white, location: 0),
-                        .init(color: .white, location: max(edge - 0.14, 0)),
+                        .init(color: .white, location: max(edge - 0.15, 0)),
                         .init(color: .clear, location: min(max(edge, 0.001), 1)),
-                        .init(color: .clear, location: 1),
                     ], startPoint: .leading, endPoint: .trailing)
                 }
-            Image("PrismBody").resizable().opacity(0.55)
-        }
-        .frame(width: size, height: size)
-        .onAppear {
-            guard !still else {
-                edge = 1.1
-                return
             }
-            withAnimation(.easeInOut(duration: 1.5).repeatForever()) { edge = 1.1 }
+        }
+        .frame(width: 80, height: 80)
+        .onAppear {
+            if !still {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever()) { edge = 1.15 }
+            }
         }
         .accessibilityLabel("Connecting…")
     }
