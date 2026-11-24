@@ -74,7 +74,7 @@ nonisolated final class DemoTests: XCTestCase {
         XCTAssertTrue(sink.text.contains("demo@demo-mac"))
 
         s.type(Data("help\r".utf8))
-        XCTAssertTrue(sink.text.contains("Rex Go Demo Mode"))
+        XCTAssertTrue(sink.text.contains("WindRex Demo Mode"))
         s.type(Data("ls\r".utf8))
         XCTAssertTrue(sink.text.contains("README.md"))
         s.type(Data("git status\r".utf8))
