@@ -264,3 +264,5 @@ type revisionPayload struct {
 type clientIDPayload struct {
 	ClientID string `json:"client_id"`
 }
+
+// CI timing sample.
