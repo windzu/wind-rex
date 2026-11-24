@@ -1,5 +1,28 @@
 # Maintenance
 
+## Continuous integration
+
+Pull requests run the checks for the files they change. Desktop inputs run the
+Go build and the Linux root test shards. Shared Go inputs also run the Linux
+package race tests and Windows package tests. Web inputs run the Node checks and
+the production build, including WebAssembly. iOS inputs run the simulator
+suite. Shared files can select more than one set of checks. The path rules and
+their tests are in `.github/scripts/ci_scope.py` and
+`.github/scripts/test_ci_scope.py`.
+
+The CI workflow runs the full suite nightly on main and on a manual dispatch
+with no base. Before a release, dispatch CI for the release commit if it does
+not have a full run. To check the impact of a specific range, dispatch CI on a
+branch with its base commit as the `base` input. CI reports the selected checks
+in the run summary.
+
+A push to main can queue a deployment when Web build inputs change. The
+deployment builds current main once if either destination (Cloudflare Workers
+or R2) is configured. PR builds and the nightly build need no deployment credentials.
+TestFlight uploads remain a separate manual workflow.
+
+## Scheduled audit
+
 The checks no pull request triggers, because the rot they find was merged
 earlier. Run this monthly, and before a release. Findings go into a pull
 request, or into an issue with a reason; a finding that came from a merged

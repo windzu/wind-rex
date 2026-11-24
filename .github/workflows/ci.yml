@@ -1,77 +1,53 @@
 name: CI
 
 on:
-  # Docs-only changes start no run; workflow_dispatch runs it by hand.
-  # ios/WhatToTest.md stays in: the what-to-test job checks it. No other .md file is
-  # an input to the code or the tests.
   pull_request:
-    paths:
-      - '**'
-      - '!**.md'
-      - '!docs/**'
-      - 'ios/WhatToTest.md'
-  push:
-    branches: [main]
-    paths:
-      - '**'
-      - '!**.md'
-      - '!docs/**'
-      - 'ios/WhatToTest.md'
-  # For a commit that started no run: gh workflow run ci.yml --ref <branch>
+  schedule:
+    - cron: '17 2 * * *'
   workflow_dispatch:
+    inputs:
+      base:
+        description: Ancestor commit for a scoped run. Leave empty to run the full suite.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Not on main: a merge's run goes to its end once it starts.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # GitHub-hosted runners build and test the clients. Go caches are saved
-  # on pushes to main only.
-
-  # Whether the change reaches past the iOS app. A change only to the
-  # Swift app (IOS_ONLY: its sources, tests, packages, scripts and
-  # project), docs, .md files or the TestFlight workflow runs only
-  # what-to-test here: the TestFlight workflow builds the app when it
-  # reaches main. Everything else runs all jobs, a new path too: ios/share
-  # and ios/tailnet are Go, and Go's tests and the web build read the files
-  # in READ_ELSEWHERE. An empty diff, a manual run, and a base that is not
-  # an ancestor (a new branch, a force-push) run all.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      code: ${{ steps.diff.outputs.code }}
+      desktop: ${{ steps.scope.outputs.desktop }}
+      go: ${{ steps.scope.outputs.go }}
+      web: ${{ steps.scope.outputs.web }}
+      ios: ${{ steps.scope.outputs.ios }}
+      workflow: ${{ steps.scope.outputs.workflow }}
+      notes: ${{ steps.scope.outputs.notes }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - id: diff
+          persist-credentials: false
+      - name: Test the CI path rules
+        run: python3 -B .github/scripts/test_ci_scope.py
+      - id: scope
         env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          IOS_ONLY: '^(ios/(GoRex|GoRexTests|SherpaOnnx|scripts)/|ios/(project\.yml|\.gitignore)$|docs/|\.github/workflows/testflight\.yml$)|\.md$'
-          READ_ELSEWHERE: '^ios/GoRex/(Rex/RexProtocol\.gen\.swift|ghostty-themes\.json)$'
-        run: |
-          code=true
-          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && git merge-base --is-ancestor "$BASE" HEAD 2>/dev/null; then
-            files=$(git diff --name-only "$BASE" HEAD)
-            if [ -n "$files" ] &&
-              ! printf '%s\n' "$files" | grep -Ev "$IOS_ONLY" | grep -q . &&
-              ! printf '%s\n' "$files" | grep -Eq "$READ_ELSEWHERE"; then
-              code=false
-            fi
-          fi
-          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+        run: python3 -B .github/scripts/ci_scope.py --base "$BASE"
 
   # What to Test comes from ios/WhatToTest.md, a bullet per locale, through
   # ios/scripts/test-notes: a pull request that changes what a tester sees
   # adds one, and one that reads like a commit subject fails. It runs on
-  # every pull request, the iOS app's alone too.
+  # pull requests that affect the app or its notes.
   what-to-test:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && (needs.changes.outputs.ios == 'true' || needs.changes.outputs.notes == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -93,7 +69,7 @@ jobs:
   # large box (8 vCPU, 16 GiB), as vet and lint compile everything.
   build:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.desktop == 'true' || needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -103,6 +79,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - uses: actions/cache/restore@v6
+        id: cache
         with:
           path: |
             ~/.cache/go-build
@@ -144,48 +121,64 @@ jobs:
             echo "::endgroup::"
           done
       - uses: actions/cache/save@v6
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-build-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
-  # The web client's unit tests: its modules with no DOM, in Node
-  # (web/test.mjs bundles web/test/*.test.ts and runs node --test). The
-  # web build itself needs Zig and Ghostty, and is not run here.
   web:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/web-build
+        with:
+          check: 'true'
+
+  ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/ios-test.yml
+
+  workflow:
+    needs: changes
+    if: needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: test
-        working-directory: web
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Check workflow syntax
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -ignore 'label "xcode-27" is unknown'
+      - name: Check TestFlight script syntax
         run: |
-          npm ci
-          npm run typecheck
-          npm test
+          for script in ios/scripts/{asc-env,test-notes,testflight,upload}; do
+            bash -n "$script"
+          done
 
-  # The tests. The root package's tests run one after another, so three
-  # machines take a third each; a fourth runs the other packages. With
-  # build and web, that is five at a time.
+  # Three root shards cover the desktop and CLI. Shared Go changes also
+  # run the non-root packages under the race detector.
   test-linux:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.desktop == 'true' || needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     # One run of a part that hangs, at 15 minutes, and the setup.
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        part: [root-0, root-1, root-2, others]
+        part: ${{ fromJSON(needs.changes.outputs.go == 'true' && '["root-0","root-1","root-2","others"]' || '["root-0","root-1","root-2"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -223,7 +216,7 @@ jobs:
           fi
       # root-0, root-1 and root-2 share one key, so root-0 saves for them.
       - uses: actions/cache/save@v6
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && (matrix.part == 'root-0' || matrix.part == 'others')
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' && (matrix.part == 'root-0' || matrix.part == 'others')
         with:
           path: |
             ~/.cache/go-build
@@ -232,7 +225,7 @@ jobs:
 
   test-windows:
     needs: changes
-    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.changes.outputs.go == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -254,65 +247,13 @@ jobs:
           go test $pkgs -count=1 -timeout 15m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # Builds web/dist (with files.json) and uploads it to Cloudflare R2 on pushes to main.
-  web-r2:
-    needs: changes
-    if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+  result:
+    name: CI result
+    needs: [changes, what-to-test, build, web, ios, workflow, test-linux, test-windows]
+    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: false
-      # Build's cache, restored only: this job saves none.
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-build-${{ hashFiles('go.sum') }}-${{ github.sha }}
-          restore-keys: |
-            go-build-${{ hashFiles('go.sum') }}-
-            go-build-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      # Reuse the built ghostty-vt wasm: web/build.mjs skips the Zig build when
-      # $GOREX_WEB_CACHE has it. The key holds the Ghostty commit, the Zig version
-      # and a hash of build.mjs (which holds the build flags), so any change there
-      # builds cold. Only the wasm file is cached, not the clone or the toolchain.
-      - name: ghostty-vt wasm cache key
-        id: wasm
-        run: |
-          commit=$(sed -n 's/^const COMMIT = "\([0-9a-f]*\)";/\1/p' web/build.mjs)
-          zig=$(sed -n 's/^const ZIG_VERSION = "\([^"]*\)";/\1/p' web/build.mjs)
-          [ -n "$commit" ] && [ -n "$zig" ] || { echo "::error::COMMIT or ZIG_VERSION not found in web/build.mjs"; exit 1; }
-          echo "cache=$RUNNER_TEMP/gorex-web" >> "$GITHUB_OUTPUT"
-          echo "file=$RUNNER_TEMP/gorex-web/ghostty-vt-${commit:0:12}.wasm" >> "$GITHUB_OUTPUT"
-          echo "key=ghostty-vt-$commit-zig-$zig-${{ hashFiles('web/build.mjs') }}" >> "$GITHUB_OUTPUT"
-      - name: ghostty-vt wasm cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ steps.wasm.outputs.file }}
-          key: ${{ steps.wasm.outputs.key }}
-      - name: build and upload to R2
-        working-directory: web
-        env:
-          GOREX_WEB_CACHE: ${{ steps.wasm.outputs.cache }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_PREFIX: ${{ secrets.R2_PREFIX }}
-        run: |
-          if [ -z "$R2_ENDPOINT" ] || [ -z "$R2_BUCKET" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ]; then
-            echo "R2 secrets not configured; skipping upload"
-            exit 0
-          fi
-          npm ci
-          node build.mjs --ci
-          node r2-upload.mjs
+      - env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: test "$FAILED" = false

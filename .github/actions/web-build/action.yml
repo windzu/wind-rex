@@ -1,0 +1,56 @@
+name: Build Web
+description: Build the production Web client, including WebAssembly.
+inputs:
+  check:
+    description: Run the Node typecheck and unit tests before the build.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: false
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: web/package-lock.json
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: web-go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ hashFiles('web/**/*.go') }}
+        restore-keys: |
+          web-go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+    - name: Ghostty WebAssembly cache key
+      id: wasm
+      shell: bash
+      run: |
+        commit=$(sed -n 's/^const COMMIT = "\([^"]*\)";/\1/p' web/build.mjs)
+        zig=$(sed -n 's/^const ZIG_VERSION = "\([^"]*\)";/\1/p' web/build.mjs)
+        [[ -n "$commit" && -n "$zig" ]] || { echo "::error::Cannot find the Ghostty or Zig pin"; exit 1; }
+        echo "file=$RUNNER_TEMP/gorex-web/ghostty-vt-${commit:0:12}.wasm" >> "$GITHUB_OUTPUT"
+        echo "key=ghostty-vt-$commit-zig-$zig-${{ hashFiles('web/build.mjs') }}" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v6
+      with:
+        path: ${{ steps.wasm.outputs.file }}
+        key: ${{ steps.wasm.outputs.key }}
+    - name: Install Web dependencies
+      shell: bash
+      working-directory: web
+      run: npm ci
+    - name: Typecheck and test Web
+      if: inputs.check == 'true'
+      shell: bash
+      working-directory: web
+      run: |
+        npm run typecheck
+        npm test
+    - name: Build Web production assets
+      shell: bash
+      working-directory: web
+      env:
+        GOREX_WEB_CACHE: ${{ runner.temp }}/gorex-web
+      run: node build.mjs --ci
