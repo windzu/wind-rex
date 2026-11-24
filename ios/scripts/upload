@@ -1,43 +1,94 @@
 #!/bin/bash
-# upload: archive WindRex and upload it to TestFlight. Run on a Mac with Xcode,
-# asc and xcodegen, from ios/, after scripts/build-ghostty-vt.sh and
-# scripts/build-tailnet. Signing is cloud-managed, by the App Store Connect
-# API key: ASC_KEY_PATH, ASC_KEY_ID and ASC_ISSUER_ID, by default the key in
-# ~/.appstoreconnect/private_keys. DESTINATION=export writes the signed IPA
-# to build/export and uploads nothing, to check its signing.
+# Build and upload WindRex from a Mac with XcodeGen and both iOS frameworks.
+# The default uses an App Store Connect API key for cloud-managed signing.
+# WINDREX_RELEASE_SIGNING=local uses installed distribution signing assets.
+# DESTINATION=export writes a signed IPA without uploading. Set BUILD to
+# export locally without querying App Store Connect.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/asc-env
-require_asc_app
 TEAM=${WINDREX_APPLE_TEAM_ID:-}
+SIGNING=${WINDREX_RELEASE_SIGNING:-cloud}
+DEST=${DESTINATION:-upload}
 [[ $TEAM =~ ^[A-Z0-9]{10}$ ]] || { echo "Set WINDREX_APPLE_TEAM_ID to the signing team ID" >&2; exit 1; }
-[[ -n $ASC_KEY_ID && -n $ASC_ISSUER_ID && -f $ASC_PRIVATE_KEY_PATH ]] || { echo "Set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH" >&2; exit 1; }
-export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_PATH
-A=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_PRIVATE_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-# Builds count up from 1 for each version, as TestFlight shows them: 1.1 (3).
-# App Store Connect has the last one; BUILD sets it.
+case "$DEST" in
+  export|upload) ;;
+  *) echo "DESTINATION must be export or upload" >&2; exit 1 ;;
+esac
+EXPORT_ARGS=(-exportArchive -archivePath build/GoRex.xcarchive -exportOptionsPlist build/export.plist -exportPath build/export)
+case "$SIGNING" in
+  cloud)
+    require_asc_app
+    [[ -n $ASC_KEY_ID && -n $ASC_ISSUER_ID && -f $ASC_PRIVATE_KEY_PATH ]] || { echo "Set ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH" >&2; exit 1; }
+    export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_PATH
+    EXPORT_ARGS+=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_PRIVATE_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+    ;;
+  local)
+    : "${WINDREX_SIGNING_CERTIFICATE:?Set WINDREX_SIGNING_CERTIFICATE to the Apple Distribution certificate hash}"
+    : "${WINDREX_APP_PROFILE:?Set WINDREX_APP_PROFILE to the main App Store profile UUID}"
+    : "${WINDREX_WIDGET_PROFILE:?Set WINDREX_WIDGET_PROFILE to the widget App Store profile UUID}"
+    ;;
+  *) echo "WINDREX_RELEASE_SIGNING must be cloud or local" >&2; exit 1 ;;
+esac
+ASC=(asc)
+if [[ -n ${WINDREX_ASC_PROFILE:-} ]]; then
+  ASC+=(--profile "$WINDREX_ASC_PROFILE")
+fi
+XCODE_DEST=$DEST
+if [[ $DEST == upload && -n ${WINDREX_ASC_PROFILE:-} ]]; then
+  [[ $SIGNING == local ]] || { echo "WINDREX_ASC_PROFILE upload requires local signing" >&2; exit 1; }
+  require_asc_app
+  : "${WINDREX_TESTFLIGHT_GROUP_ID:?Set WINDREX_TESTFLIGHT_GROUP_ID to the internal group ID}"
+  "${ASC[@]}" testflight groups list --app "$APP" --internal --output json |
+    python3 -I -c '
+import json, sys
+groups = json.load(sys.stdin)["data"]
+if not any(group["id"] == sys.argv[1] and group["attributes"]["isInternalGroup"] for group in groups):
+    sys.exit("The TestFlight group is not an internal group of this app")
+' "$WINDREX_TESTFLIGHT_GROUP_ID"
+  XCODE_DEST=export
+fi
 V=$(sed -n 's/^ *MARKETING_VERSION: "\([0-9.]*\)"$/\1/p' project.yml)
 [[ $V =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "no MARKETING_VERSION in project.yml" >&2; exit 1; }
-B=${BUILD:-$(ASC_TIMEOUT=90s asc builds list --app "$APP" --version "$V" --processing-state all --limit 200 --output json |
-  python3 -I -c 'import sys,json; print(1+max([int(b["attributes"]["version"]) for b in json.load(sys.stdin)["data"]], default=0))')}
+B=${BUILD:-}
+if [[ -z $B ]]; then
+  require_asc_app
+  B=$(ASC_TIMEOUT=90s "${ASC[@]}" builds next-build-number --app "$APP" --version "$V" --platform IOS --output json |
+    python3 -I -c 'import sys,json; print(json.load(sys.stdin)["nextBuildNumber"])')
+fi
 [[ $B =~ ^[0-9]+$ ]] || { echo "bad build number: $B" >&2; exit 1; }
 # The commit About shows; none when run from an archive without .git.
 C=$(git rev-parse --short=7 HEAD 2>/dev/null || true)
 xcodegen generate -q
 mkdir -p build
-cat > build/export.plist <<P
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>method</key><string>app-store-connect</string>
-<key>destination</key><string>${DESTINATION:-upload}</string>
-<key>teamID</key><string>$TEAM</string>
-<key>signingStyle</key><string>automatic</string>
-<key>manageAppVersionAndBuildNumber</key><false/>
-</dict></plist>
-P
-# The archive is built unsigned: the Mac holds no signing identity, and the
-# cloud-managed one signs only at export. But the export signs each bundle
+python3 -I - "$SIGNING" "$XCODE_DEST" "$TEAM" <<'PY'
+import os
+import plistlib
+import sys
+
+signing, destination, team = sys.argv[1:]
+options = {
+    "method": "app-store-connect",
+    "destination": destination,
+    "teamID": team,
+    "signingStyle": "automatic",
+    "manageAppVersionAndBuildNumber": False,
+}
+if signing == "local":
+    options.update(
+        signingStyle="manual",
+        signingCertificate=os.environ["WINDREX_SIGNING_CERTIFICATE"],
+        provisioningProfiles={
+            "wiki.wind.windrex": os.environ["WINDREX_APP_PROFILE"],
+            "wiki.wind.windrex.widgets": os.environ["WINDREX_WIDGET_PROFILE"],
+        },
+        testFlightInternalTestingOnly=True,
+    )
+with open("build/export.plist", "wb") as output:
+    plistlib.dump(options, output)
+PY
+# The archive has no distribution signature until export. Xcode uses a local
+# or cloud-managed identity at that point. The export signs each bundle
 # with the entitlements its archived signature carries, and an unsigned one
 # carries none: the App Group, which the widgets read the app's snapshot
 # through, and the iCloud key-value store went missing (docs/IOS-010-widgets.md,
@@ -78,11 +129,15 @@ for try in 0 1 2; do
     CURRENT_PROJECT_VERSION="$B" GOREX_COMMIT="$C" DEVELOPMENT_TEAM="$TEAM" WINDREX_PUSH_RELAY_URL="${WINDREX_PUSH_RELAY_URL:-}" CODE_SIGNING_ALLOWED=NO archive > build/archive.log 2>&1 || { grep -E "error" build/archive.log | tail -15; exit 1; }
   echo ARCHIVED
   sign_entitlements build/GoRex.xcarchive/Products/Applications/GoRex.app
-  xcodebuild -exportArchive -archivePath build/GoRex.xcarchive -exportOptionsPlist build/export.plist -exportPath build/export "${A[@]}" > build/export.log 2>&1 && break
+  xcodebuild "${EXPORT_ARGS[@]}" > build/export.log 2>&1 && break
   grep -iE "error" build/export.log | tail -15 || true
   [[ $try -lt 2 ]] && grep -qiE "redundant binary upload|already (been )?(used|uploaded)|must be higher than the previously" build/export.log || exit 1
   B=$((B + 1))
 done
 tail -3 build/export.log
-[[ ${DESTINATION:-upload} == upload ]] || { echo "EXPORTED $V ($B) to build/export"; exit 0; }
+[[ $DEST == upload ]] || { echo "EXPORTED $V ($B) to build/export"; exit 0; }
+if [[ $XCODE_DEST == export ]]; then
+  "${ASC[@]}" publish testflight --app "$APP" --ipa build/export/GoRex.ipa \
+    --group "$WINDREX_TESTFLIGHT_GROUP_ID" --wait
+fi
 echo "UPLOADED $V ($B)"

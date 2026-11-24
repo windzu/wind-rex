@@ -29,6 +29,20 @@ The workflow takes `WINDREX_APPLE_TEAM_ID`, `WINDREX_ASC_APP_ID`,
 from a repository secret. Configure your distribution authorization before
 running it.
 
+For local signing, run `ios/scripts/upload` with `WINDREX_RELEASE_SIGNING=local`
+and `WINDREX_APPLE_TEAM_ID`. Set `WINDREX_SIGNING_CERTIFICATE` to the installed
+distribution certificate's SHA-1 hash, and use `WINDREX_APP_PROFILE` and
+`WINDREX_WIDGET_PROFILE` for the respective App Store profile UUIDs. Upload uses
+the Apple account signed into Xcode and marks the build for internal TestFlight
+testing. Set `BUILD` explicitly or let `asc` query App Store Connect for the next
+build number. `DESTINATION=export` writes the signed IPA to `ios/build/export`.
+
+To publish with a local `asc` authentication profile, also set
+`WINDREX_ASC_PROFILE`, `WINDREX_ASC_APP_ID` and
+`WINDREX_TESTFLIGHT_GROUP_ID`. The script checks that the group belongs to
+the app and is internal, exports the signed IPA, and uses `asc` to upload and
+add the processed build to that group.
+
 To enable hosted Web pairing, set `WINDREX_WEB_ORIGIN` on the desktop or
 server to the deployed Web client's origin. The optional iOS Live Activity
 relay uses `WINDREX_PUSH_RELAY_URL` on the host and in the iOS build. For iOS
