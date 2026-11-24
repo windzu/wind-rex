@@ -2526,6 +2526,52 @@ func (msgs Messages) SettingsPlacementRight() string {
 	return Catalog.Format(msgs.locale, "settingsPlacementRight", nil)
 }
 
+// SettingsSidebarLayout says "Project sidebar layout"
+// in the language the app shows.
+//
+// Setting: how the desktop sidebar lays out projects and their tabs.
+func SettingsSidebarLayout() string { return In(i18n.Locale()).SettingsSidebarLayout() }
+
+// SettingsSidebarLayout says "Project sidebar layout"
+// in the language of msgs.
+//
+// Setting: how the desktop sidebar lays out projects and their tabs.
+func (msgs Messages) SettingsSidebarLayout() string {
+	return Catalog.Format(msgs.locale, "settingsSidebarLayout", nil)
+}
+
+// SettingsSidebarGrouped says "Grouped"
+// in the language the app shows.
+//
+// Project sidebar layout option: projects and their tabs share a group
+// face.
+func SettingsSidebarGrouped() string { return In(i18n.Locale()).SettingsSidebarGrouped() }
+
+// SettingsSidebarGrouped says "Grouped"
+// in the language of msgs.
+//
+// Project sidebar layout option: projects and their tabs share a group
+// face.
+func (msgs Messages) SettingsSidebarGrouped() string {
+	return Catalog.Format(msgs.locale, "settingsSidebarGrouped", nil)
+}
+
+// SettingsSidebarCompact says "Compact"
+// in the language the app shows.
+//
+// Project sidebar layout option: title-first tab rows under project
+// folders.
+func SettingsSidebarCompact() string { return In(i18n.Locale()).SettingsSidebarCompact() }
+
+// SettingsSidebarCompact says "Compact"
+// in the language of msgs.
+//
+// Project sidebar layout option: title-first tab rows under project
+// folders.
+func (msgs Messages) SettingsSidebarCompact() string {
+	return Catalog.Format(msgs.locale, "settingsSidebarCompact", nil)
+}
+
 // SettingsPaneHeaders says "Show pane headers"
 // in the language the app shows.
 //
@@ -7862,6 +7908,62 @@ func ProjectQuickLaunchers() string { return In(i18n.Locale()).ProjectQuickLaunc
 // project pins for quick launch.
 func (msgs Messages) ProjectQuickLaunchers() string {
 	return Catalog.Format(msgs.locale, "projectQuickLaunchers", nil)
+}
+
+// ProjectNewTabWith says "New Tab With"
+// in the language the app shows.
+//
+// Project menu: open a tab running an installed agent.
+func ProjectNewTabWith() string { return In(i18n.Locale()).ProjectNewTabWith() }
+
+// ProjectNewTabWith says "New Tab With"
+// in the language of msgs.
+//
+// Project menu: open a tab running an installed agent.
+func (msgs Messages) ProjectNewTabWith() string {
+	return Catalog.Format(msgs.locale, "projectNewTabWith", nil)
+}
+
+// ProjectActions says "Actions for {name}"
+// in the language the app shows.
+//
+// Label of the compact sidebar's project menu button.
+func ProjectActions(name string) string { return In(i18n.Locale()).ProjectActions(name) }
+
+// ProjectActions says "Actions for {name}"
+// in the language of msgs.
+//
+// Label of the compact sidebar's project menu button.
+func (msgs Messages) ProjectActions(name string) string {
+	return Catalog.Format(msgs.locale, "projectActions", map[string]any{"name": name})
+}
+
+// ProjectTabsShowMore says "{n, plural, one {Show # more tab} other {Show # more tabs}}"
+// in the language the app shows.
+//
+// Compact sidebar: reveal the specified number of hidden tabs.
+func ProjectTabsShowMore(n int) string { return In(i18n.Locale()).ProjectTabsShowMore(n) }
+
+// ProjectTabsShowMore says "{n, plural, one {Show # more tab} other {Show # more tabs}}"
+// in the language of msgs.
+//
+// Compact sidebar: reveal the specified number of hidden tabs.
+func (msgs Messages) ProjectTabsShowMore(n int) string {
+	return Catalog.Format(msgs.locale, "projectTabsShowMore", map[string]any{"n": n})
+}
+
+// ProjectTabsShowFewer says "Show Fewer"
+// in the language the app shows.
+//
+// Compact sidebar: restore the short tab list of this project.
+func ProjectTabsShowFewer() string { return In(i18n.Locale()).ProjectTabsShowFewer() }
+
+// ProjectTabsShowFewer says "Show Fewer"
+// in the language of msgs.
+//
+// Compact sidebar: restore the short tab list of this project.
+func (msgs Messages) ProjectTabsShowFewer() string {
+	return Catalog.Format(msgs.locale, "projectTabsShowFewer", nil)
 }
 
 // ProjectSheetTitleOn says "New Project on {host}"

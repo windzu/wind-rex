@@ -98,4 +98,19 @@ func TestProjectAgentLaunchers(t *testing.T) {
 	if _, ok := tt.Find("Claude Code"); !ok {
 		t.Fatalf("Claude Code launcher should reappear after reset")
 	}
+
+	prefs.SidebarLayout = sidebarCompact
+	tt.Frame()
+	if _, ok := tt.Find("Claude Code"); ok {
+		t.Fatal("the compact sidebar still shows the launcher row")
+	}
+	click(t, tt, locales.ProjectActions(a.ws.Name))
+	before = len(a.tabs)
+	if err := tt.ChooseMenuItem(locales.ProjectNewTabWith(), "Codex"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if len(a.tabs) != before+1 {
+		t.Fatal("the compact sidebar's project menu did not open a tab")
+	}
 }

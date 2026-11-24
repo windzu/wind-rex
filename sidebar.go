@@ -20,6 +20,7 @@ const (
 	sidebarMaxW     = 400
 	sidebarDefaultW = 236
 	sideRowH        = 32
+	compactTabRowH  = 28
 	// panesMinW is the room the panes keep beside the sidebar.
 	panesMinW = 320
 )
@@ -27,6 +28,12 @@ const (
 // placements are the values of TabPlacement, in the order of the settings'
 // control: above, the left side, the right side.
 var placements = []string{"", "left", "right"}
+
+const sidebarCompact = "compact"
+
+var sidebarLayouts = []string{"", sidebarCompact}
+
+func compactSidebar() bool { return prefs.SidebarLayout == sidebarCompact }
 
 // sidebarRowH, sidebarLead, sidebarFont and sidebarGroupPad are the
 // sidebar's metrics: the user's sidebar.* settings over the constants
@@ -36,6 +43,13 @@ func sidebarRowH() float32 {
 		return v
 	}
 	return sideRowH
+}
+
+func sidebarTabRowH() float32 {
+	if compactSidebar() && prefs.SidebarRowHeight == 0 {
+		return compactTabRowH
+	}
+	return sidebarRowH()
 }
 
 func sidebarLead() float32 {
@@ -59,13 +73,15 @@ func sidebarGroupPad() float32 {
 	return groupPad
 }
 
-// sidebarIconsText tells whether sidebar.icons is "text": the rows' names
-// with no program tiles, the folder glyph alone for a project.
-func sidebarIconsText() bool { return prefs.SidebarIcons == "text" }
+// Compact rows default to text, and an explicit icon preference takes priority.
+func sidebarIconsText() bool {
+	return prefs.SidebarIcons == "text" || prefs.SidebarIcons == "" && compactSidebar()
+}
 
-// sidebarFillSel tells whether sidebar.selection is "fill": a quiet face
-// fill on the chosen row instead of the glass pill.
-func sidebarFillSel() bool { return prefs.SidebarSelection == "fill" }
+// Compact rows default to a filled selection, with the pill still available.
+func sidebarFillSel() bool {
+	return prefs.SidebarSelection == "fill" || prefs.SidebarSelection == "" && compactSidebar()
+}
 
 // sidebarChosen paints a sidebar row's chosen state: the glass pill as
 // the other surfaces' chosen control, or the fill of sidebar.selection
@@ -521,16 +537,23 @@ func (a *App) sidebarEdge(c *ui.Context, k *colors, right bool) {
 // lifted draws the active tab's pill over its project's group face.
 func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float32, lifted bool) {
 	active := i == a.active
+	compact := compactSidebar()
+	h := sidebarTabRowH()
 	// Keyed by the tab's lasting ID, as spaceTab keys it: as the window
 	// goes to show another space, the rows of both stay, not close and
 	// open again.
-	e := ui.Row(c.Key("tab-"+t.UID)).Height(sidebarRowH()).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(sidebarRowH(), radiusM)).
-		Role(ui.RoleTab).Selected(active)
+	e := ui.Row(c.Key("tab-"+t.UID)).Height(h).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(h, radiusM)).
+		Role(ui.RoleTab)
+	if compact {
+		e.AccessSelected(active)
+	} else {
+		e.Selected(active)
+	}
 	name, detail := t.label()
 	e.Label(name + " " + detail)
 	ck := k // the palette of the row's content, paired with its face
 	if active {
-		sidebarChosen(e, k, sidebarRowH(), lifted)
+		sidebarChosen(e, k, h, lifted)
 		ck = sidebarChosenColors(k)
 		// A tab chosen otherwise than in the list, as by its keys, scrolls
 		// into view, once: the list scrolls freely after.
@@ -539,6 +562,9 @@ func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float3
 			e.ScrollIntoView()
 		}
 	} else if e.Hovered() {
+		if compact {
+			e.Radius(radiusM)
+		}
 		e.Background(hoverFace(k))
 		ck = sidebarHoverColors(k)
 	}
@@ -549,10 +575,10 @@ func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float3
 		// line up; sidebar.icons "text" leaves the room bare.
 		if !sidebarIconsText() {
 			ui.Box(c).Width(reserve).Shrink(0).Children(func() { a.tiles(c, ck, t) })
-		} else {
+		} else if !compact {
 			ui.Box(c).Width(reserve).Shrink(0)
 		}
-		a.tabRest(c, ck, t, active, hovered)
+		a.tabRest(c, ck, t, active, hovered, compact)
 	})
 }
 
@@ -601,23 +627,32 @@ func (a *App) hostSectionIcon(c *ui.Context, k *colors, h *hostConn) {
 // ends the row as a shown tab's does. It reports whether it was
 // clicked.
 func spaceTab(c *ui.Context, k *colors, key, name, detail string, s *rex.ProgramStatus, reserve float32, tiles func()) bool {
-	e := ui.Row(c.Key("tab-"+key)).Height(sidebarRowH()).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(sidebarRowH(), radiusM)).
+	compact := compactSidebar()
+	h := sidebarTabRowH()
+	e := ui.Row(c.Key("tab-"+key)).Height(h).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(h, radiusM)).
 		Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(name + " " + detail)
 	if anim := motion(c); anim != nil {
 		e.Transition(exitIn(ui.ElementTransition{Animation: anim, Position: true, Enter: tabMotion, Exit: tabMotion}, durExitMove))
 	}
 	if e.Hovered() {
+		if compact {
+			e.Radius(radiusM)
+		}
 		e.Background(hoverFace(k))
 		k = sidebarHoverColors(k)
 	}
 	e.Children(func() {
 		if !sidebarIconsText() {
 			ui.Box(c).Width(reserve).Shrink(0).Children(tiles)
-		} else {
+		} else if !compact {
 			ui.Box(c).Width(reserve).Shrink(0)
 		}
 		ui.Box(c).Grow(1).MinWidth(0).Height(18).Draw(func(p *ui.Painter, r ui.Rect) {
-			fadeText(p, r, tabLabel(name, detail, k.textMuted, k.textFaint))
+			if compact {
+				fadeText(p, r, compactTabLabel(name, detail, k))
+			} else {
+				fadeText(p, r, tabLabel(name, detail, k.textMuted, k.textFaint))
+			}
 		})
 		if needsUser(s) || s != nil && s.State == "working" {
 			statusDot(c, k, s, 5.5).Label(statusTip(s))

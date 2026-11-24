@@ -3,7 +3,7 @@ name: MOD-002
 description: "Projects are folders on each host, inside a space, and hosts own them. Use when you change spaces, projects or where layouts live."
 metadata:
   created: "2026-11-17"
-  updated: "2026-11-22"
+  updated: "2026-11-24"
 ---
 
 # MOD-002: Projects: folders on each host, inside a space
@@ -250,6 +250,16 @@ This sketch shows the context menu of a project:
 - The web client has the same rows (below, Web client).
 - A tab of a project that the window does not show names itself as a shown tab does. It uses the title that its program set, the icon of its program and its folder. These come from the session list of the host. No pane is attached. A shell at its prompt names itself by the shell and its folder, shown or not. It does not use the title or the done or error status that a program left when it ended there.
 - The user drags a tab onto a project of its host to move it there, with its panes and their processes.
+
+### Compact desktop sidebar
+
+Appearance › Project Sidebar Layout offers Grouped (the layout above) and Compact when tabs go on either side. `sidebar.layout` in `settings.json` stores `compact`. An absent or unknown value uses Grouped. Switching layouts reuses the saved project disclosure state.
+
+Compact gives each project a neutral outline folder, using Lucide's folder-closed and folder-open icons to show whether its tabs are open. The folder toggles the list, and the project name stays in the same column in both states. An open project's tab rows start one level in, including their selection and hover surfaces. The selection fill follows the active tab, or the current project's header when it is closed or has no tabs. The row menu and New Tab action live at the end of the project header. Agent launch actions are in the project menu.
+
+A long project lists its first five tabs and keeps the active tab visible if it is farther down. The disclosure shows how many tabs are hidden. Choosing it reveals the rest. Show Fewer restores the preview. Each window keeps this choice per project for its lifetime. No Project has a section heading and a flat list. The heading still offers the context menu and accepts a tab from a project on the same host.
+
+Compact defaults to 32 DIP project headers and 28 DIP tab and disclosure rows. The `sidebar.rowHeight` preference sets the height of all three. Compact uses text-first rows and a filled selection by default. The explicit `sidebar.icons` and `sidebar.selection` preferences in [DSK-007](DSK-007-sidebar-style.md) can override those defaults. The layouts share the same tab actions and palette. Verify with two adjacent projects that have the same name as one of their tabs, independent disclosure, a long list, and standalone tabs. Check the narrow sidebar and both appearances.
 
 ### Tabs on top
 

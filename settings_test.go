@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"gorex/internal/rex"
+	"gorex/locales"
 )
 
 // isolateSettings gives a test settings of its own, and a Ghostty
@@ -77,6 +78,39 @@ func TestWithPrefsPrecedence(t *testing.T) {
 	}
 	if got := raw.withPrefs(settings{TermCursor: "wavy"}); got.Cursor != terminal.CursorBar {
 		t.Error("an unknown cursor style was taken")
+	}
+}
+
+func TestProjectSidebarLayoutSettings(t *testing.T) {
+	isolateSettings(t, "")
+	for _, data := range []string{
+		`{"tabPlacement":"left"}`,
+		`{"tabPlacement":"left","sidebar.layout":"unknown"}`,
+	} {
+		if err := os.WriteFile(settingsPath(), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		prefs = settings{}
+		loadSettings()
+		if prefs.TabPlacement != "left" || prefs.SidebarLayout != "" {
+			t.Fatalf("legacy or unknown value did not use Grouped: %+v", prefs)
+		}
+	}
+	a := &App{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Children(func() { a.appearanceWindow(c, colorsOf(c)) })
+	}, 540, 500)
+	tt.Frame()
+	click(t, tt, locales.SettingsSidebarCompact())
+	prefs = settings{}
+	loadSettings()
+	if !compactSidebar() {
+		t.Fatal("the Compact choice was not saved")
+	}
+	tt.Frame()
+	click(t, tt, locales.SettingsSidebarGrouped())
+	if compactSidebar() {
+		t.Fatal("switching back to Grouped did not take effect")
 	}
 }
 

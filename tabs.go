@@ -134,6 +134,11 @@ func tabLabel(name, detail string, nameColor, detailColor ui.Color) []ui.Span {
 	)
 }
 
+func compactTabLabel(name, detail string, k *colors) []ui.Span {
+	size := sidebarFont(fontBody)
+	return append(titleSpans(name, size, 400, k.text), titleSpans(" "+detail, size, 400, k.textFaint)...)
+}
+
 // titleSpans lays out a title programs set, as a tab's name or a pane
 // header shows it: a title's icons, which programs head their titles
 // with, as omp names its sessions with a Nerd Font glyph, draw in the
@@ -209,14 +214,14 @@ func (a *App) tabItem(c *ui.Context, k *colors, i int, t *Tab, width float32, sq
 		if h := t.host(); h != nil {
 			hostBadge(c, k, h)
 		}
-		a.tabRest(c, k, t, active, hovered)
+		a.tabRest(c, k, t, active, hovered, false)
 	})
 	return e
 }
 
 // tabRest draws a tab after its tiles: its label and its end, or the field
 // that renames it.
-func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered bool) {
+func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered, compact bool) {
 	name, detail := t.label()
 	if a.renaming == t {
 		a.renameField(c, k, t, name)
@@ -228,7 +233,11 @@ func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered bool) {
 	}
 	label := ui.Box(c).Grow(1).MinWidth(0).Height(18)
 	label.Draw(func(p *ui.Painter, r ui.Rect) {
-		fadeText(p, r, tabLabel(name, detail, nameColor, detailColor))
+		if compact {
+			fadeText(p, r, compactTabLabel(name, detail, k))
+		} else {
+			fadeText(p, r, tabLabel(name, detail, nameColor, detailColor))
+		}
 	})
 	if dragged, ok := ui.Drop[*Pane](label); ok {
 		a.movePaneToTab(dragged, t)
