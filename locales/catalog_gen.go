@@ -7938,18 +7938,18 @@ func (msgs Messages) ProjectActions(name string) string {
 	return Catalog.Format(msgs.locale, "projectActions", map[string]any{"name": name})
 }
 
-// ProjectTabsShowMore says "Show More"
+// ProjectTabsShowMore says "{n, plural, one {Show # more tab} other {Show # more tabs}}"
 // in the language the app shows.
 //
-// Compact sidebar: show all tabs of this project.
-func ProjectTabsShowMore() string { return In(i18n.Locale()).ProjectTabsShowMore() }
+// Compact sidebar: reveal the specified number of hidden tabs.
+func ProjectTabsShowMore(n int) string { return In(i18n.Locale()).ProjectTabsShowMore(n) }
 
-// ProjectTabsShowMore says "Show More"
+// ProjectTabsShowMore says "{n, plural, one {Show # more tab} other {Show # more tabs}}"
 // in the language of msgs.
 //
-// Compact sidebar: show all tabs of this project.
-func (msgs Messages) ProjectTabsShowMore() string {
-	return Catalog.Format(msgs.locale, "projectTabsShowMore", nil)
+// Compact sidebar: reveal the specified number of hidden tabs.
+func (msgs Messages) ProjectTabsShowMore(n int) string {
+	return Catalog.Format(msgs.locale, "projectTabsShowMore", map[string]any{"n": n})
 }
 
 // ProjectTabsShowFewer says "Show Fewer"

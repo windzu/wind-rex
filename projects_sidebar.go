@@ -270,8 +270,6 @@ func (a *App) projectRow(c *ui.Context, k *colors, w *Workspace, reserve float32
 	case shown && (!open || n == 0):
 		sidebarChosen(row, k, projectRowH(), false)
 		ck = sidebarChosenColors(k)
-	case compact && shown:
-		row.Radius(radiusM).Background(k.hover)
 	case row.Hovered() && !offline:
 		if compact {
 			row.Radius(radiusM)
@@ -368,7 +366,7 @@ func (a *App) projectTabList(c *ui.Context, k *colors, w *Workspace, reserve flo
 	count := w.tabCount()
 	list := ui.Column(c.Key("project-tabs-" + key)).Gap(rowGap)
 	limit := count
-	canExpand := false
+	hidden := 0
 	if compact {
 		list.Gap(0)
 		if w.Dir != "" {
@@ -377,8 +375,8 @@ func (a *App) projectTabList(c *ui.Context, k *colors, w *Workspace, reserve flo
 			if shown && a.active >= compactTabPreview {
 				visible++
 			}
-			canExpand = count > visible
-			if canExpand && !a.expandedProjectTabs[key] {
+			hidden = max(count-visible, 0)
+			if hidden > 0 && !a.expandedProjectTabs[key] {
 				limit = compactTabPreview
 			}
 		}
@@ -399,8 +397,8 @@ func (a *App) projectTabList(c *ui.Context, k *colors, w *Workspace, reserve flo
 		} else {
 			a.workspaceTabs(c, k, w, reserve, limit, offline)
 		}
-		if canExpand {
-			a.projectTabDisclosure(c, k, key, limit == count)
+		if hidden > 0 {
+			a.projectTabDisclosure(c, k, key, hidden, limit == count)
 		}
 		// The New Tab row only under the shown project's tabs; the others'
 		// new tabs come from the + of their rows.
@@ -491,18 +489,20 @@ func compactProjectFolder(c *ui.Context, k *colors, name string, open, hasTabs b
 	return hasTabs && folder.Clicked()
 }
 
-func (a *App) projectTabDisclosure(c *ui.Context, k *colors, key string, expanded bool) {
-	label := locales.ProjectTabsShowMore()
+func (a *App) projectTabDisclosure(c *ui.Context, k *colors, key string, hidden int, expanded bool) {
+	label := locales.ProjectTabsShowMore(hidden)
 	if expanded {
 		label = locales.ProjectTabsShowFewer()
 	}
-	row := ui.Row(c.Key("more")).Height(sidebarRowH()).Shrink(0).Padding(0, 6, 0, sidebarLead()).AlignItems(ui.Center).
+	row := ui.Row(c.Key("more")).Height(sidebarTabRowH()).Shrink(0).Padding(0, 6, 0, sidebarLead()).AlignItems(ui.Center).
 		Radius(radiusM).Cursor(ui.CursorPointer).Role(ui.RoleDisclosure).Expanded(expanded).Label(label)
 	if row.Hovered() {
 		row.Background(hoverFace(k))
 		k = sidebarHoverColors(k)
 	}
-	row.Children(func() { ui.Text(c, label).FontSize(sidebarFont(fontBody)).TextColor(k.textMuted) })
+	row.Children(func() {
+		ui.Text(c, label).FontSize(sidebarFont(fontBody)).TextColor(k.textMuted).SingleLine().Ellipsis("…").MinWidth(0)
+	})
 	if row.Clicked() {
 		if expanded {
 			delete(a.expandedProjectTabs, key)

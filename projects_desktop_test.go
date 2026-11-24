@@ -626,10 +626,13 @@ func TestSidebarCompactLayout(t *testing.T) {
 		find(otherTab).X != task.X || task.X+task.W != projectRow.X+projectRow.W {
 		t.Errorf("unexpected row bounds for project %+v, child %+v, ungrouped %+v", projectRow, task, scratch)
 	}
+	if projectRow.H != 32 || task.H != 28 || scratch.H != 28 || find(otherTab).H != 28 {
+		t.Errorf("unexpected row heights for project %+v, child %+v, ungrouped %+v", projectRow, task, scratch)
+	}
 	absent(locales.ProjectsTabsOf(locales.ProjectsNoProject()))
 	absent("task 6 ")
 	absent("task 7 ")
-	click(t, tt, locales.ProjectTabsShowMore())
+	click(t, tt, locales.ProjectTabsShowMore(2))
 	find("task 6 ")
 	find("task 7 ")
 	click(t, tt, locales.ProjectTabsShowFewer())
@@ -639,6 +642,7 @@ func TestSidebarCompactLayout(t *testing.T) {
 	tt.Frame()
 	find("task 7 ")
 	absent("task 6 ")
+	find(locales.ProjectTabsShowMore(1))
 	click(t, tt, locales.ProjectsTabsOf(other.Name))
 	absent(otherTab)
 	find("task 7 ")

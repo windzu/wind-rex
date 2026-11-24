@@ -39,6 +39,10 @@ func TestSidebarMetricPrefs(t *testing.T) {
 	if projectRowH() != 26 {
 		t.Fatalf("projectRowH %v", projectRowH())
 	}
+	prefs.SidebarLayout = sidebarCompact
+	if sidebarTabRowH() != 26 || projectRowH() != 26 {
+		t.Errorf("explicit compact row heights: tab %v, project %v", sidebarTabRowH(), projectRowH())
+	}
 	if sidebarFont(fontBody) != fontBody {
 		t.Errorf("fontSize unset took %v", sidebarFont(fontBody))
 	}

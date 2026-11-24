@@ -2694,9 +2694,15 @@
       "name": {}
     }
   },
-  "projectTabsShowMore": "Show More",
+  "projectTabsShowMore": "{n, plural, one {Show # more tab} other {Show # more tabs}}",
   "@projectTabsShowMore": {
-    "description": "Compact sidebar: show all tabs of this project."
+    "description": "Compact sidebar: reveal the specified number of hidden tabs.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "2"
+      }
+    }
   },
   "projectTabsShowFewer": "Show Fewer",
   "@projectTabsShowFewer": {

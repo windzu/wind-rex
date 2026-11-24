@@ -20,6 +20,7 @@ const (
 	sidebarMaxW     = 400
 	sidebarDefaultW = 236
 	sideRowH        = 32
+	compactTabRowH  = 28
 	// panesMinW is the room the panes keep beside the sidebar.
 	panesMinW = 320
 )
@@ -42,6 +43,13 @@ func sidebarRowH() float32 {
 		return v
 	}
 	return sideRowH
+}
+
+func sidebarTabRowH() float32 {
+	if compactSidebar() && prefs.SidebarRowHeight == 0 {
+		return compactTabRowH
+	}
+	return sidebarRowH()
 }
 
 func sidebarLead() float32 {
@@ -530,10 +538,11 @@ func (a *App) sidebarEdge(c *ui.Context, k *colors, right bool) {
 func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float32, lifted bool) {
 	active := i == a.active
 	compact := compactSidebar()
+	h := sidebarTabRowH()
 	// Keyed by the tab's lasting ID, as spaceTab keys it: as the window
 	// goes to show another space, the rows of both stay, not close and
 	// open again.
-	e := ui.Row(c.Key("tab-"+t.UID)).Height(sidebarRowH()).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(sidebarRowH(), radiusM)).
+	e := ui.Row(c.Key("tab-"+t.UID)).Height(h).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(h, radiusM)).
 		Role(ui.RoleTab)
 	if compact {
 		e.AccessSelected(active)
@@ -544,7 +553,7 @@ func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float3
 	e.Label(name + " " + detail)
 	ck := k // the palette of the row's content, paired with its face
 	if active {
-		sidebarChosen(e, k, sidebarRowH(), lifted)
+		sidebarChosen(e, k, h, lifted)
 		ck = sidebarChosenColors(k)
 		// A tab chosen otherwise than in the list, as by its keys, scrolls
 		// into view, once: the list scrolls freely after.
@@ -619,7 +628,8 @@ func (a *App) hostSectionIcon(c *ui.Context, k *colors, h *hostConn) {
 // clicked.
 func spaceTab(c *ui.Context, k *colors, key, name, detail string, s *rex.ProgramStatus, reserve float32, tiles func()) bool {
 	compact := compactSidebar()
-	e := ui.Row(c.Key("tab-"+key)).Height(sidebarRowH()).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(sidebarRowH(), radiusM)).
+	h := sidebarTabRowH()
+	e := ui.Row(c.Key("tab-"+key)).Height(h).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(h, radiusM)).
 		Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(name + " " + detail)
 	if anim := motion(c); anim != nil {
 		e.Transition(exitIn(ui.ElementTransition{Animation: anim, Position: true, Enter: tabMotion, Exit: tabMotion}, durExitMove))
