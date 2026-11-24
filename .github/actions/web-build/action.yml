@@ -48,6 +48,15 @@ runs:
       run: |
         npm run typecheck
         npm test
+    - name: Check Web Go formatting
+      if: inputs.check == 'true'
+      shell: bash
+      run: |
+        unformatted=$(git ls-files -z 'web/*.go' | xargs -0 -r gofmt -l)
+        if [[ -n "$unformatted" ]]; then
+          printf 'gofmt needed:\n%s\n' "$unformatted"
+          exit 1
+        fi
     - name: Build Web production assets
       shell: bash
       working-directory: web
