@@ -26,6 +26,8 @@ struct HostSection: View {
     let openRow: (TerminalTarget) -> Void
     /// Opens New Project on the host.
     let newProject: () -> Void
+    /// Whether this list belongs to a split window with a terminal beside it.
+    let showsTerminalAside: Bool
     /// The terminal the window shows beside the list; nil on a narrow
     /// window, where the list is the whole page and no project is current.
     var current: TerminalTarget?
@@ -72,7 +74,7 @@ struct HostSection: View {
 
     var body: some View {
         let isCollapsed = collapsed.contains(hostKey)
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
             header(isCollapsed)
             if !isCollapsed { content }
         }
@@ -156,9 +158,9 @@ struct HostSection: View {
     private func header(_ isCollapsed: Bool) -> some View {
         HStack(spacing: 10) {
             Image(systemName: host.config.symbol)
-                .font(.title3)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text(host.config.name).font(.title3.bold()).lineLimit(1)
+            Text(host.config.name).font(.body.weight(.semibold)).lineLimit(1)
             if hasProjects { StateDot(online: host.status == .online) }
             Spacer()
             if host.status == .online, host.hasProjects, host.listsFolders {
@@ -197,6 +199,7 @@ struct HostSection: View {
             .accessibilityLabel("Host Menu")
         }
         .foregroundStyle(.primary)
+        .frame(minHeight: SidebarListMetrics.rowHeight)
         .contentShape(.rect)
         // A long press lifts the host, to move it in the list.
         .modifier(HostLift(lift: liftHost))
@@ -248,98 +251,69 @@ struct HostSection: View {
         let (recent, older) = ProjectOrder.split(mine, used: { $0.project?.used }, name: \.label)
         let loose = host.sessions.filter { $0.project == nil }
         let looseTabs = entries(loose.flatMap { s in (s.view?.windows ?? []).map { (s, $0) } })
-        let column = tileColumn
-        if !recent.isEmpty {
-            // A card for each project, a gap between them.
-            VStack(spacing: 12) {
-                ForEach(recent) { s in
-                    card(face: faced(s)) { project(s, tiles: column, divider: false, grouped: false) }
+        VStack(spacing: 0) {
+            ForEach(recent) { project($0) }
+            if !older.isEmpty {
+                group("older", Text("Older"), count: older.count) {
+                    ForEach(older) { project($0) }
                 }
             }
-        }
-        if !older.isEmpty {
-            group("older", Text("Older"), count: older.count) {
-                ForEach(Array(older.enumerated()), id: \.element.id) { i, s in
-                    project(s, tiles: column, divider: i < older.count - 1 && !faced(older[i + 1]) && !faced(s), grouped: true)
-                }
-            }
-        }
-        // The tabs with no project are a group like a project: a card with
-        // a row of its own, open at first.
-        if query.isEmpty || !looseTabs.isEmpty {
-            let k = Self.key(host, "loose")
-            // With no tab it is like a project with none: nothing to fold.
-            let empty = looseTabs.isEmpty
-            let isOpen = empty || !collapsed.contains(k) || !query.isEmpty
-            let face = isOpen && current.map { c in c.host == host.id && loose.contains { $0.id == c.session } } ?? false
-            card(face: face) {
+            if query.isEmpty || !looseTabs.isEmpty {
+                let key = Self.key(host, "loose")
+                let hasTabs = !looseTabs.isEmpty
+                let isOpen = !hasTabs || !collapsed.contains(key) || !query.isEmpty
                 Button {
-                    withAnimation(reduceMotion ? nil : .snappy) { if collapsed.contains(k) { collapsed.remove(k) } else { collapsed.insert(k) } }
+                    toggleLoose(key)
                 } label: {
-                    ProjectRow(name: String(localized: "No Project"), color: nil, count: looseTabs.count, open: isOpen,
-                               tiles: column, divider: isOpen)
+                    groupRow(Text("No Project"), open: isOpen, collapsible: hasTabs)
                 }
                 .buttonStyle(.plain)
-                .disabled(empty)
+                .disabled(!hasTabs)
                 .hoverEffect(.highlight)
                 .contextMenu { Button("New Tab", systemImage: "plus") { newLooseTab() } }
-                .accessibilityHint(empty ? "" : isOpen ? "Collapse" : "Expand")
+                .accessibilityHint(hasTabs ? isOpen ? "Collapse" : "Expand" : "")
                 if isOpen {
                     VStack(spacing: 0) {
-                        rows(looseTabs, more: true, tiles: column, onFace: face, grouped: false)
+                        rows(looseTabs)
                         newTabRow { newLooseTab() }
                     }
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .transition(rowTransition)
                 }
             }
         }
     }
 
-    /// The width of the tile column of every row of the host, so that the
-    /// names and titles line up, and opening a project moves none.
-    private var tileColumn: CGFloat {
-        let most = host.sessions.flatMap { $0.view?.windows ?? [] }.map(\.back.count).max() ?? 0
-        return ProgramTiles.width(behind: most)
-    }
-
-    /// Whether the window shows this project, with its tabs open: it has
-    /// a face of its own.
-    private func faced(_ s: Host.Session) -> Bool {
-        guard let c = current, c.host == host.id, c.session == s.id else { return false }
-        return expanded.contains(Self.key(host, s.id)) || !query.isEmpty
-    }
-
-    /// A project's row, and under it, open, its tabs and New Tab.
-    /// A project: its row, and open, its tabs and New Tab. Grouped, it is
-    /// one of several in a card (Older), and the window's project has a
-    /// face of its own inside it; else it has a card of its own, which is
-    /// that face.
-    private func project(_ s: Host.Session, tiles: CGFloat, divider: Bool, grouped: Bool) -> some View {
-        let k = Self.key(host, s.id)
-        let isOpen = expanded.contains(k) || !query.isEmpty
-        let face = faced(s)
+    /// A project's row and, when open, its tabs and New Tab row.
+    private func project(_ s: Host.Session) -> some View {
+        let key = Self.key(host, s.id)
+        let isOpen = expanded.contains(key) || !query.isEmpty
         return VStack(spacing: 0) {
-            Button { toggle(k) } label: {
-                ProjectRow(name: s.label, color: s.project?.color, count: s.view?.windows?.count ?? 0, open: isOpen,
-                           busy: opening.contains(s.id), tiles: tiles, divider: (divider || isOpen) && !face)
+            Button { toggle(key) } label: {
+                ProjectRow(name: s.label, count: s.view?.windows?.count ?? 0, open: isOpen,
+                           busy: opening.contains(s.id))
             }
             .buttonStyle(.plain)
             .hoverEffect(.highlight)
             .contextMenu { projectMenu(s) }
             .accessibilityHint(isOpen ? "Collapse" : "Expand")
             if isOpen {
-                // One block, so that the tabs come and go as a whole.
                 VStack(spacing: 0) {
-                    rows(entries((s.view?.windows ?? []).map { (s, $0) }), more: true, tiles: tiles, onFace: face, grouped: grouped)
+                    rows(entries((s.view?.windows ?? []).map { (s, $0) }))
                     projectNewTabRow(s)
                 }
-                .transition(reduceMotion ? .identity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                .padding(.leading, SidebarListMetrics.indent)
+                .transition(rowTransition)
             }
         }
-        // Always drawn, shown by its opacity: choosing another project
-        // moves nothing.
-        .background {
-            if grouped { ProjectFace().opacity(face ? 1 : 0).animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: face) }
+    }
+
+    private var rowTransition: AnyTransition {
+        reduceMotion ? .identity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
+    }
+
+    private func toggleLoose(_ key: String) {
+        withAnimation(reduceMotion ? nil : .snappy) {
+            if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) }
         }
     }
 
@@ -397,28 +371,33 @@ struct HostSection: View {
         }
     }
 
-    /// A card of a title row that opens to its content: Older, folded at
-    /// first.
+    /// A heading and the projects below it: Older starts closed.
     private func group(_ id: String, _ title: Text, count: Int, @ViewBuilder content: () -> some View) -> some View {
-        let k = Self.key(host, id)
-        let isOpen = expanded.contains(k) || !query.isEmpty
-        return card {
-            Button { toggle(k) } label: {
-                HStack(spacing: 12) {
-                    title.font(.body.weight(.semibold)).foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Chevron(open: isOpen)
-                    Text(verbatim: "\(count)").foregroundStyle(.secondary).monospacedDigit()
-                }
-                .padding(.horizontal, 16)
-                .frame(minHeight: 50)
-                .contentShape(.rect)
-                .overlay(alignment: .bottom) { if isOpen { RowDivider(inset: 16) } }
+        let key = Self.key(host, id)
+        let isOpen = expanded.contains(key) || !query.isEmpty
+        return VStack(spacing: 0) {
+            Button { toggle(key) } label: {
+                groupRow(title, open: isOpen, count: count)
             }
             .buttonStyle(.plain)
             .accessibilityHint(isOpen ? "Collapse" : "Expand")
             if isOpen { content() }
         }
+    }
+
+    private func groupRow(_ title: Text, open: Bool, collapsible: Bool = true, count: Int? = nil) -> some View {
+        HStack(spacing: SidebarListMetrics.gap) {
+            title.font(.footnote.weight(.semibold))
+            Spacer(minLength: 8)
+            if collapsible { Chevron(open: open) }
+            if let count {
+                Text(verbatim: "\(count)").font(.footnote.monospacedDigit())
+            }
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, SidebarListMetrics.inset)
+        .frame(minHeight: SidebarListMetrics.rowHeight)
+        .contentShape(.rect)
     }
 
     /// A project's bottom row: the New Tab row of No Project, and, when
@@ -436,8 +415,8 @@ struct HostSection: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 16)
-                        .frame(minHeight: 44)
+                        .padding(.leading, SidebarListMetrics.inset)
+                        .frame(minHeight: SidebarListMetrics.rowHeight)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -496,8 +475,8 @@ struct HostSection: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .frame(minHeight: 44)
+                .padding(.horizontal, SidebarListMetrics.inset)
+                .frame(minHeight: SidebarListMetrics.rowHeight)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -519,33 +498,25 @@ struct HostSection: View {
     /// no project as last seen, greyed, to read only.
     private func away(_ l: ProjectListing) -> some View {
         let mine = l.projects.filter { $0.space == space }
-        let tiles = Self.awayTiles(mine.flatMap(\.tabs) + l.loose)
         let (recent, older) = ProjectOrder.split(mine, used: \.used, name: \.name)
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 0) {
             if case .offline = host.status { offline() } else { Text("Connecting…").foregroundStyle(.secondary) }
-            if !recent.isEmpty {
-                VStack(spacing: 12) { ForEach(recent, id: \.id) { p in card { awayProject(p, tiles: tiles, divider: false) } } }
-            }
+            ForEach(recent, id: \.id) { awayProject($0) }
             if !older.isEmpty {
                 group("older", Text("Older"), count: older.count) {
-                    ForEach(Array(older.enumerated()), id: \.element.id) { i, p in awayProject(p, tiles: tiles, divider: i < older.count - 1) }
+                    ForEach(older, id: \.id) { awayProject($0) }
                 }
             }
             if !l.loose.isEmpty {
-                let k = Self.key(host, "loose")
-                let isOpen = !collapsed.contains(k)
-                card {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .snappy) { if collapsed.contains(k) { collapsed.remove(k) } else { collapsed.insert(k) } }
-                    } label: {
-                        ProjectRow(name: String(localized: "No Project"), color: nil, count: l.loose.count, open: isOpen,
-                                   tiles: tiles, divider: isOpen)
-                    }
-                    .buttonStyle(.plain)
-                    .hoverEffect(.highlight)
-                    .accessibilityHint(isOpen ? "Collapse" : "Expand")
-                    if isOpen { awayTabs(l.loose, tiles: tiles) }
+                let key = Self.key(host, "loose")
+                let isOpen = !collapsed.contains(key)
+                Button { toggleLoose(key) } label: {
+                    groupRow(Text("No Project"), open: isOpen)
                 }
+                .buttonStyle(.plain)
+                .hoverEffect(.highlight)
+                .accessibilityHint(isOpen ? "Collapse" : "Expand")
+                if isOpen { awayTabs(l.loose) }
             }
         }
         .saturation(0)
@@ -553,38 +524,27 @@ struct HostSection: View {
         .accessibilityHint("Offline")
     }
 
-    @ViewBuilder private func awayProject(_ p: ProjectListing.Project, tiles: CGFloat, divider: Bool) -> some View {
-        let k = Self.key(host, p.id)
-        let isOpen = expanded.contains(k)
-        Button { toggle(k) } label: {
-            ProjectRow(name: p.name, color: p.color, count: p.tabs.count, open: isOpen, tiles: tiles, divider: divider || isOpen)
+    @ViewBuilder private func awayProject(_ project: ProjectListing.Project) -> some View {
+        let key = Self.key(host, project.id)
+        let isOpen = expanded.contains(key)
+        Button { toggle(key) } label: {
+            ProjectRow(name: project.name, count: project.tabs.count, open: isOpen)
         }
         .buttonStyle(.plain)
-        if isOpen { awayTabs(p.tabs, tiles: tiles) }
+        .accessibilityHint(isOpen ? "Collapse" : "Expand")
+        if isOpen { awayTabs(project.tabs).padding(.leading, SidebarListMetrics.indent) }
     }
 
-    /// The tile column of a host away: the room the tabs' tiles need, as
-    /// their copies list a program or none.
-    private static func awayTiles(_ tabs: [ProjectListing.Tab]) -> CGFloat {
-        ProgramTiles.width(behind: tabs.map { max(0, ($0.programs?.count ?? 1) - 1) }.max() ?? 0)
-    }
-
-    private func awayTabs(_ tabs: [ProjectListing.Tab], tiles: CGFloat) -> some View {
-        ForEach(Array(tabs.enumerated()), id: \.element.id) { i, t in
-            // A copy written before tiles has no programs: the shell tile
-            // stands for them, as for a program not yet read.
-            let programs: [String?] = t.programs ?? [nil]
-            HStack(spacing: 14) {
-                ProgramTiles(front: programs.first ?? nil, back: Array(programs.dropFirst()), plate: false)
-                    .frame(width: tiles, height: 16 * ProgramTiles.scale + 4, alignment: .leading)
-                Text(verbatim: t.title.isEmpty ? " " : t.title.asText)
-                    .foregroundStyle(.primary.opacity(0.8))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-            }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 50)
-            .overlay(alignment: .bottom) { if i < tabs.count - 1 { RowDivider(inset: 16 + tiles + 14) } }
+    private func awayTabs(_ tabs: [ProjectListing.Tab]) -> some View {
+        ForEach(tabs, id: \.id) { tab in
+            Text(verbatim: tab.title.isEmpty ? " " : tab.title.asText)
+                .font(.subheadline)
+                .foregroundStyle(.primary.opacity(0.8))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SidebarListMetrics.inset)
+                .padding(.vertical, 8)
+                .frame(minHeight: SidebarListMetrics.rowHeight)
         }
     }
 
@@ -599,7 +559,7 @@ struct HostSection: View {
     @ViewBuilder private func session(_ s: Host.Session) -> some View {
         let windows = entries((s.view?.windows ?? []).map { (s, $0) })
         let isCollapsed = collapsed.contains(s.id)
-        // The session's header on the page, then its tabs in a card.
+        // The session's header followed by its tabs.
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Text(s.label).font(.headline).lineLimit(1)
@@ -630,7 +590,7 @@ struct HostSection: View {
             .frame(minHeight: 50)
             .contentShape(.rect)
             .modifier(SessionMenu(host: host, session: s))
-            if !isCollapsed && !windows.isEmpty { card { rows(windows) } }
+            if !isCollapsed && !windows.isEmpty { rows(windows).padding(.leading, SidebarListMetrics.indent) }
         }
     }
 
@@ -862,43 +822,31 @@ struct HostSection: View {
         }
     }
 
-    private func card(face: Bool = false, @ViewBuilder _ content: () -> some View) -> some View {
-        VStack(spacing: 0, content: content)
-            .background {
-                Rectangle().fill(.fill.quaternary)
-                // The card of the project the window shows is its face.
-                Rectangle().fill(Color.primary.opacity(0.06)).opacity(face ? 1 : 0)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: face)
-            }
-            // The rows' highlights keep to the card's corners.
-            .clipShape(.rect(cornerRadius: CardShape.radius, style: .continuous))
-    }
-
-    /// The rows of a card, each with its tab's menu, and dragged onto
-    /// another of its session to move there; more is a row after them.
-    private func rows(_ entries: [Entry], more: Bool = false, tiles column: CGFloat? = nil, onFace: Bool = false, grouped: Bool = true) -> some View {
+    /// The rows, with each tab's menu and drag targets.
+    private func rows(_ entries: [Entry]) -> some View {
         let windows = arranged(entries)
-        // The room of the tiles of the tab with the most, so that the titles line up.
-        let tiles = column ?? ProgramTiles.width(behind: windows.map(\.window.back.count).max() ?? 0)
-        // The tab the window shows, on the face of its project: lifted.
-        let shownTab: (Entry) -> Bool = { w in
-            onFace && current.map { $0.host == host.id && $0.session == w.session.id && w.window.holds($0.block) } ?? false
-        }
-        // Each session's rows, in order, made once for the card.
         let shownBy = RowGroups.shown(windows.map { ($0.session.id, $0.window.window_id) })
-        return ForEach(Array(windows.enumerated()), id: \.element.id) { i, w in
+        return ForEach(windows, id: \.id) { w in
+            let selected = current.map { $0.host == host.id && $0.session == w.session.id && w.window.holds($0.block) } ?? false
             let row = Button {
                 openRow(TerminalTarget(host: host.id, session: w.session.id, block: w.block, title: host.title(w.window)))
             } label: {
-                WindowRow(host: host, block: w.block, window: w.window, tiles: tiles,
-                          divider: (more || i < windows.count - 1) && !shownTab(w) && !(i + 1 < windows.count && shownTab(windows[i + 1])),
-                          plate: false) {
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.gray)
+                WindowRow(host: host, block: w.block, window: w.window, tiles: 0,
+                          divider: false, compact: true) {
+                    if !showsTerminalAside {
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    }
                 }
             }
             .buttonStyle(.plain)
             .hoverEffect(.highlight)
-            .background { if shownTab(w) { LiftedPill(grouped: grouped) } }
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: SidebarListMetrics.selectionRadius)
+                        .fill(Color.primary.opacity(0.12))
+                        .padding(.vertical, 2)
+                }
+            }
             let shown = shownBy[w.session.id] ?? []
             let place = RowPlace(host: host.id, session: w.session.id, window: w.window.window_id)
             let lifted = drag.map { !$0.dropped && $0.session.id == w.session.id && $0.window == w.window.window_id } ?? false
@@ -909,103 +857,45 @@ struct HostSection: View {
                     drop: { hostDrop?.active() == true ? hostDrop?.drop($0) ?? false : drop($0) }))
                 .opacity(lifted ? 0.4 : 1)
                 .modifier(MatchedPlace(place: place, own: .tab(place), namespace: places))
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityValue(Text("Current"), isEnabled: selected)
         }
     }
 }
 
-/// A project's row: its folder tile in the column of the tabs' program
-/// tiles, its name, and a chevron when it has tabs.
-struct ProjectRow: View {
+enum SidebarListMetrics {
+    static let rowHeight: CGFloat = 44
+    static let inset: CGFloat = 10
+    static let gap: CGFloat = 8
+    static let folderWidth: CGFloat = 18
+    static let indent: CGFloat = 32
+    static let selectionRadius: CGFloat = 8
+}
+
+/// A project row with the same outline icons as the desktop.
+private struct ProjectRow: View {
     let name: String
-    let color: String?
-    /// The number of tabs: a project with none has no chevron to open it.
     let count: Int
     let open: Bool
     var busy = false
-    /// The width of the tile column, as the tab rows below have it.
-    let tiles: CGFloat
-    var divider = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            FolderTile(color: color).frame(width: tiles, height: 16 * ProgramTiles.scale + 4, alignment: .leading)
-            Text(verbatim: name).font(.body.weight(.semibold)).lineLimit(1)
+        HStack(spacing: SidebarListMetrics.gap) {
+            Image(open && count > 0 ? "SidebarFolderOpen" : "SidebarFolderClosed")
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.secondary)
+                .frame(width: SidebarListMetrics.folderWidth, height: SidebarListMetrics.folderWidth)
+                .accessibilityHidden(true)
+            Text(verbatim: name).font(.subheadline.weight(.semibold)).lineLimit(1)
             Spacer(minLength: 8)
             if busy { ProgressView() }
-            // Always shown; a project with no tab has none.
             if count > 0 { Chevron(open: open) }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 11)
-        // As a tab's row.
-        .frame(minHeight: 50)
+        .padding(.horizontal, SidebarListMetrics.inset)
+        .padding(.vertical, 8)
+        .frame(minHeight: SidebarListMetrics.rowHeight)
         .contentShape(.rect)
-        .overlay(alignment: .bottom) { if divider { RowDivider(inset: 16 + tiles + 14) } }
-    }
-}
-
-/// A project's mark, as the desktop's projectFolderTile: a tile of a
-/// program tile's size and corners, in a neutral face (the text color at
-/// 9%), with a folder in the project's color (muted with none). No white
-/// plate, no shadow.
-struct FolderTile: View {
-    let color: String?
-
-    var body: some View {
-        let k = ProgramTiles.scale
-        RoundedRectangle(cornerRadius: 4.5 * k, style: .continuous)
-            .fill(Color.primary.opacity(0.09))
-            .overlay {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 9 * k))
-                    .foregroundStyle(Color(project: color) ?? .secondary)
-            }
-            .frame(width: 21 * k, height: 16 * k)
-            .padding(.leading, k)
-            .accessibilityHidden(true)
-    }
-}
-
-/// The corners of a card and of what sits in it: an inner radius is the
-/// outer one less the padding between them, so the corners share a centre.
-private enum CardShape {
-    /// A card's corner radius.
-    static let radius: CGFloat = 22
-    /// The room between a card and the face in it, and between a face and
-    /// a lifted tab.
-    static let pad: CGFloat = 4
-}
-
-/// The face behind the project the window shows, its row and its tabs:
-/// one pad in from the card, with the card's radius less that pad.
-private struct ProjectFace: View {
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: CardShape.radius - CardShape.pad, style: .continuous)
-        shape.fill(Color.primary.opacity(scheme == .dark ? 0.07 : 0.055))
-            .overlay { shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5) }
-            .padding(CardShape.pad)
-    }
-}
-
-/// The tab that is open on the face, lifted: a lighter face, a soft
-/// shadow and a hairline.
-private struct LiftedPill: View {
-    /// In a card shared with other projects it sits in the project's face
-    /// (4 pt in from the card, 8 pt in all); else the card is the face.
-    let grouped: Bool
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        // The inner radius is the outer one less the padding between them.
-        let inset: CGFloat = grouped ? 2 * CardShape.pad : CardShape.pad
-        let shape = RoundedRectangle(cornerRadius: CardShape.radius - inset, style: .continuous)
-        shape.fill(scheme == .dark ? Color.white.opacity(0.13) : Color.white)
-            .overlay { shape.strokeBorder(Color.primary.opacity(scheme == .dark ? 0.12 : 0.08), lineWidth: 0.5) }
-            .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.1), radius: 4, y: 1)
-            .padding(.horizontal, inset)
-            .padding(.vertical, 2)
     }
 }
 
@@ -1018,15 +908,6 @@ private struct Chevron: View {
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.gray)
             .rotationEffect(.degrees(open ? 90 : 0))
-    }
-}
-
-/// The hairline between a card's rows, as WindowRow draws it.
-struct RowDivider: View {
-    let inset: CGFloat
-
-    var body: some View {
-        Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1 / 3).padding(.leading, inset)
     }
 }
 
