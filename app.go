@@ -52,6 +52,8 @@ type App struct {
 	tabs   []*Tab
 	active int
 	nextID int
+	// expandedProjectTabs holds the compact lists whose preview was expanded in this window.
+	expandedProjectTabs map[string]bool
 	// hosts are the remote hosts saved, in their order.
 	hosts []*hostConn
 	// tailnetHosts are the GoRex hosts the tailnet showed, for the sheet

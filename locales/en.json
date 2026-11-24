@@ -875,6 +875,18 @@
   "@settingsPlacementRight": {
     "description": "Tab placement option: tabs in a sidebar on the right."
   },
+  "settingsSidebarLayout": "Project sidebar layout",
+  "@settingsSidebarLayout": {
+    "description": "Setting: how the desktop sidebar lays out projects and their tabs."
+  },
+  "settingsSidebarGrouped": "Grouped",
+  "@settingsSidebarGrouped": {
+    "description": "Project sidebar layout option: projects and their tabs share a group face."
+  },
+  "settingsSidebarCompact": "Compact",
+  "@settingsSidebarCompact": {
+    "description": "Project sidebar layout option: title-first tab rows under project folders."
+  },
   "settingsPaneHeaders": "Show pane headers",
   "@settingsPaneHeaders": {
     "description": "Setting: whether panes show their header."
@@ -2670,6 +2682,25 @@
   "projectQuickLaunchers": "Quick Launchers",
   "@projectQuickLaunchers": {
     "description": "Project menu and the New Tab row's chevron: the submenu of agent CLIs the project pins for quick launch."
+  },
+  "projectNewTabWith": "New Tab With",
+  "@projectNewTabWith": {
+    "description": "Project menu: open a tab running an installed agent."
+  },
+  "projectActions": "Actions for {name}",
+  "@projectActions": {
+    "description": "Label of the compact sidebar's project menu button.",
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "projectTabsShowMore": "Show More",
+  "@projectTabsShowMore": {
+    "description": "Compact sidebar: show all tabs of this project."
+  },
+  "projectTabsShowFewer": "Show Fewer",
+  "@projectTabsShowFewer": {
+    "description": "Compact sidebar: restore the short tab list of this project."
   },
   "projectSheetTitleOn": "New Project on {host}",
   "@projectSheetTitleOn": {

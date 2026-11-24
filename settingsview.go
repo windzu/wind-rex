@@ -552,6 +552,15 @@ func (a *App) appearanceWindow(c *ui.Context, k *colors) {
 			a.setWindowPref(func(s *settings) { setTabPlacement(s, placements[place]) })
 		}
 	})
+	if prefs.TabPlacement != "" {
+		layout := max(slices.Index(sidebarLayouts, prefs.SidebarLayout), 0)
+		label := locales.SettingsSidebarLayout()
+		settingRow(c, k, label, "", func() {
+			if ui.Segmented(c, &layout, locales.SettingsSidebarGrouped(), locales.SettingsSidebarCompact()).Label(label).Changed() {
+				a.setWindowPref(func(s *settings) { s.SidebarLayout = sidebarLayouts[layout] })
+			}
+		})
+	}
 	headers := !prefs.HidePaneHeaders
 	settingRow(c, k, locales.SettingsPaneHeaders(), locales.SettingsPaneHeadersHint(), func() {
 		if ui.Switch(c, &headers).Label(locales.SettingsPaneHeaders()).Changed() {

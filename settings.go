@@ -39,6 +39,7 @@ type settings struct {
 	// flat dotted keys as VS Code's settings are. The metrics clamp to a
 	// range, 0 for the default; sidebar.colorCustomizations maps one of the
 	// sidebar's palette tokens to "#rrggbb[aa]" or a {"light","dark"} pair.
+	SidebarLayout    string                     `json:"sidebar.layout,omitempty"`
 	SidebarRowHeight float32                    `json:"sidebar.rowHeight,omitempty"`
 	SidebarIndent    float32                    `json:"sidebar.indent,omitempty"`
 	SidebarFontSize  float32                    `json:"sidebar.fontSize,omitempty"`
@@ -234,6 +235,9 @@ func loadSettings() {
 	}
 	if !slices.Contains(placements, prefs.TabPlacement) {
 		prefs.TabPlacement = ""
+	}
+	if !slices.Contains(sidebarLayouts, prefs.SidebarLayout) {
+		prefs.SidebarLayout = ""
 	}
 	if !slices.Contains(animations, prefs.Animation) {
 		prefs.Animation = ""

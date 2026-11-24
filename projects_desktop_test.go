@@ -572,6 +572,105 @@ func TestSidebarFlatLayout(t *testing.T) {
 	}
 }
 
+func TestSidebarCompactLayout(t *testing.T) {
+	a, tt := newTestApp(t)
+	old := prefs
+	t.Cleanup(func() { prefs = old })
+	prefs = settings{TabPlacement: "left", Animation: "off", SidebarLayout: sidebarCompact}
+	tt.SetSize(1000, 760)
+	loose := a.ws
+	a.tabs[0].Name = "scratch"
+	space := ""
+	first := clientCommand(a, rex.LayoutCommand{Op: "project.create", Dir: appTempDir(t, a), Name: "alpha", SpaceName: &space})
+	second := clientCommand(a, rex.LayoutCommand{Op: "project.create", Dir: appTempDir(t, a), Name: "beta", SpaceName: &space})
+	caughtUp(t, a, tt)
+	project, other := a.st.byID(first.Space), a.st.byID(second.Space)
+	a.showWorkspace(project)
+	waitFor(t, tt, "alpha's first tab", func() bool { return a.ws == project && len(a.tabs) == 1 })
+	for len(a.tabs) < 7 {
+		before := len(a.tabs)
+		a.newProjectTab()
+		waitFor(t, tt, "a new tab", func() bool { return len(a.tabs) == before+1 })
+	}
+	for i, tab := range a.tabs {
+		tab.Name = "task " + strconv.Itoa(i+1)
+	}
+	a.tabs[0].Name = project.Name
+	a.selectTab(0)
+	setRowOpen(openKey(nil, other.ID), true)
+	setRowOpen(openKey(nil, loose.ID), false)
+	tt.Frame()
+
+	find := func(label string) ui.Rect {
+		t.Helper()
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("missing %q in sidebar: %q", label, tt.Texts())
+		}
+		return r
+	}
+	absent := func(label string) {
+		t.Helper()
+		if _, ok := tt.Find(label); ok {
+			t.Errorf("unexpected sidebar row %q", label)
+		}
+	}
+	headerLabel := project.Name + spacedComma(workspaceDetail(project, a, project.tabCount()))
+	projectRow := find(headerLabel)
+	task := find("alpha ")
+	scratch := find("scratch ")
+	infos, _, _ := a.st.listOf(nil)
+	otherName, otherDetail, _ := savedTabFace(other.layout.Tabs[0], infos)
+	otherTab := otherName + " " + otherDetail
+	if task.X-projectRow.X != compactFolderWidth+sideGap || scratch.X != projectRow.X ||
+		find(otherTab).X != task.X || task.X+task.W != projectRow.X+projectRow.W {
+		t.Errorf("unexpected row bounds for project %+v, child %+v, ungrouped %+v", projectRow, task, scratch)
+	}
+	absent(locales.ProjectsTabsOf(locales.ProjectsNoProject()))
+	absent("task 6 ")
+	absent("task 7 ")
+	click(t, tt, locales.ProjectTabsShowMore())
+	find("task 6 ")
+	find("task 7 ")
+	click(t, tt, locales.ProjectTabsShowFewer())
+	absent("task 6 ")
+
+	a.selectTab(6)
+	tt.Frame()
+	find("task 7 ")
+	absent("task 6 ")
+	click(t, tt, locales.ProjectsTabsOf(other.Name))
+	absent(otherTab)
+	find("task 7 ")
+
+	prefs.SidebarLayout = ""
+	tt.Frame()
+	if got := find("task 7 "); got.X != find(headerLabel).X {
+		t.Errorf("Grouped layout kept the child indentation: %+v", got)
+	}
+	absent("scratch ")
+
+	prefs.SidebarLayout = sidebarCompact
+	tt.Frame()
+	from := find("task 7 ")
+	to := find(other.Name + spacedComma(workspaceDetail(other, a, other.tabCount())))
+	sid := a.tab().Focus.SID
+	x, y := from.X+from.W/2, from.Y+from.H/2
+	tx, ty := to.X+to.W/2, to.Y+to.H/2
+	tt.Press(x, y)
+	tt.Frame()
+	tt.Move(x, y+12)
+	tt.Frame()
+	tt.Move(tx, ty)
+	tt.Frame()
+	tt.Release(tx, ty)
+	tt.Frame()
+	waitFor(t, tt, "move the tab from the compact list", func() bool { return other.tabCount() == 2 })
+	if !slices.Contains(sessionIDs(t, a.client), sid) {
+		t.Error("moving the tab ended its session")
+	}
+}
+
 // TestMoveTabStaysOnItsHost: a tab moves only between workspaces of its
 // host. Its menu's Move to Project lists none of another host's, and a
 // move there, either way, does nothing: the tab's session runs on, where

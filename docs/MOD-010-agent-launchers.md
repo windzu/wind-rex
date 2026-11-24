@@ -39,7 +39,7 @@ Opening an agent CLI in a project takes two steps. First, the user taps `New Tab
    - Up to the first three of the project's pinned agent CLIs, each a monochrome brand glyph button that opens a tab running that agent CLI.
    - A `▾` (chevron) button that opens a menu listing every installed agent CLI with its brand tile and name and a check on the pinned ones, plus the pin configuration (the same controls as the project menu's `Quick Launchers` submenu).
    - With no pinned agents the cluster is just the `▾`; with no installed agents at all the row is plain `New Tab`.
-   - On the desktop the row exists only under the shown project's tabs — the desktop sidebar has no `New Tab` row of its own, so it appears only where `New Tab` has no other home; the other projects keep their header `+`.
+   - The grouped desktop sidebar shows the row under the current project's tabs. In [Compact](MOD-002-projects.md#compact-desktop-sidebar), the project menu offers New Tab With for installed agents and Quick Launchers for pinning. Both layouts have a New Tab button in the project header.
 3. Tapping a pinned glyph or a menu item verifies the project folder (as `New Tab` does) and opens a new tab in that folder running the agent CLI.
 4. When the agent CLI exits, its PTY process ends and GoRex closes the tab (`internal/rex/layout_life.go`, `watchExit`).
 5. Under `No Project`, on offline hosts, on hosts with zero detected agent CLIs, or on older servers without the capability, the row stays `New Tab`.
