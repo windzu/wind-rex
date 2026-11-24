@@ -472,21 +472,21 @@ const (
 	foldRowH        = 26
 
 	compactFolderWidth = 18
-	compactFolderGlyph = 17
+	compactFolderGlyph = 16
 	compactTabPreview  = 5
 )
 
 // compactProjectFolder shows the open state in the folder's outline.
 func compactProjectFolder(c *ui.Context, k *colors, name string, open, hasTabs bool) bool {
-	glyph := "folder-outline"
+	glyph := "folder-closed"
 	if open {
-		glyph = "folder-outline-open"
+		glyph = "folder-open"
 	}
 	folder := ui.Box(c.Key("fold")).Size(compactFolderWidth, projectRowH()).Center().Shrink(0)
 	if hasTabs {
 		folder.Cursor(ui.CursorPointer).Role(ui.RoleDisclosure).Expanded(open).Label(locales.ProjectsTabsOf(name))
 	}
-	folder.Children(func() { glyphIcon(c, glyph, compactFolderGlyph, k.textMuted) })
+	folder.Children(func() { glyphIcon(c, glyph, compactFolderGlyph, k.text.Alpha(0.85)) })
 	return hasTabs && folder.Clicked()
 }
 
