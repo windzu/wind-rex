@@ -149,3 +149,5 @@ private final class Sink: TerminalOutput {
     func write(_ bytes: Data) { data.append(bytes) }
     func setTheme(_ theme: [String: Any]) {}
 }
+
+// CI timing sample.
