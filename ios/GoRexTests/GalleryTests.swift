@@ -194,16 +194,18 @@ nonisolated final class GalleryTests: XCTestCase {
         XCTAssertEqual(GalleryScanner.paths(inRows: rows, columns: 30), ["/tmp/demo/folder/chart-01.png"])
     }
 
-    func testScreenDropsPiecesTheBytesFound() throws {
+    @MainActor func testScreenDropsPiecesTheBytesFound() async throws {
         let rows = ["saved /tmp/demo/fo", "  lder/sub/chart.png"]
         let screen = GalleryScanner.screen(rows: rows, columns: 18)
         XCTAssertEqual(screen.paths, ["/tmp/demo/folder/sub/chart.png"])
         XCTAssertEqual(screen.pieces, ["lder/sub/chart.png"])
         let worker = PaneGallery.Worker(dir: try tempDir())
         worker.scan(Data((rows.joined(separator: "\r\n") + "\r\n").utf8), fresh: false) { _ in }
-        XCTAssertEqual(index(worker) { $0.index }.entries.map(\.path), ["lder/sub/chart.png"])
+        let pieces = try await index(worker) { $0.index }
+        XCTAssertEqual(pieces.entries.map(\.path), ["lder/sub/chart.png"])
         worker.scan(screen: rows.joined(separator: "\n"), columns: 18) { _ in }
-        XCTAssertEqual(index(worker) { $0.index }.entries.map(\.path), ["/tmp/demo/folder/sub/chart.png"])
+        let joined = try await index(worker) { $0.index }
+        XCTAssertEqual(joined.entries.map(\.path), ["/tmp/demo/folder/sub/chart.png"])
     }
 
     func testScreenPlainWordAtLastColumnNotJoined() {
@@ -270,43 +272,44 @@ nonisolated final class GalleryTests: XCTestCase {
         XCTAssertEqual(s.concealedPaths, ["/tmp/secret.png"])
     }
 
-    func testDroppedFragmentsDoNotReturn() throws {
+    @MainActor func testDroppedFragmentsDoNotReturn() async throws {
         let rows = ["saved /tmp/demo/fo", "  lder/sub/chart.png"]
         let bytes = Data((rows.joined(separator: "\r\n") + "\r\n").utf8)
         let worker = PaneGallery.Worker(dir: try tempDir())
         worker.scan(bytes, fresh: false) { _ in }
         worker.scan(screen: rows.joined(separator: "\n"), columns: 18) { _ in }
-        let first = index(worker) { $0.seen(); return $0.index }
+        let first = try await index(worker) { $0.seen(); return $0.index }
         XCTAssertEqual(first.entries.map(\.path), ["/tmp/demo/folder/sub/chart.png"])
         // A reconnect's snapshot, and the program's redraw, print the pieces again.
         worker.scan(bytes, fresh: true) { _ in }
         worker.scan(bytes, fresh: false) { _ in }
-        let again = index(worker) { $0.index }
+        let again = try await index(worker) { $0.index }
         XCTAssertEqual(again.entries.map(\.path), ["/tmp/demo/folder/sub/chart.png"])
         XCTAssertFalse(again.unseen)
     }
 
-    func testRepeatedScreenReadsAddNothing() throws {
+    @MainActor func testRepeatedScreenReadsAddNothing() async throws {
         let worker = PaneGallery.Worker(dir: try tempDir())
         worker.scan(Data("\u{1b}[8m/tmp/demo/hidden.png\u{1b}[0m\n".utf8), fresh: false) { _ in }
         worker.scan(screen: "/tmp/demo/a.png /tmp/demo/hidden.png\n$ ", columns: 40) { _ in }
-        let first = index(worker) { $0.seen(); return $0.index }
+        let first = try await index(worker) { $0.seen(); return $0.index }
         XCTAssertEqual(first.entries.map(\.path), ["/tmp/demo/a.png"])
         // The same screen, and the same path a row lower, are not new.
         worker.scan(screen: "/tmp/demo/a.png /tmp/demo/hidden.png\n$ ", columns: 40) { _ in }
         worker.scan(screen: "$ ls\n/tmp/demo/a.png\n$ ", columns: 40) { _ in }
-        let again = index(worker) { $0.index }
+        let again = try await index(worker) { $0.index }
         XCTAssertEqual(again.entries.map(\.path), ["/tmp/demo/a.png"])
         XCTAssertFalse(again.unseen)
     }
 
     /// The index after what the worker has queued, and f.
-    private func index(_ worker: PaneGallery.Worker, _ f: @escaping @Sendable (GalleryStore) -> GalleryIndex) -> GalleryIndex {
-        let done = expectation(description: "worker")
-        nonisolated(unsafe) var got: GalleryIndex?
-        worker.run(f) { got = $0; done.fulfill() }
-        wait(for: [done], timeout: 5)
-        return got!
+    @MainActor private func index(_ worker: PaneGallery.Worker, _ f: @escaping @Sendable (GalleryStore) -> GalleryIndex) async throws -> GalleryIndex {
+        let done = XCTestExpectation(description: "gallery worker")
+        var result: GalleryIndex?
+        worker.run(f) { result = $0; done.fulfill() }
+        let outcome = await XCTWaiter.fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(outcome, .completed)
+        return try XCTUnwrap(result)
     }
 
     // MARK: Kitty

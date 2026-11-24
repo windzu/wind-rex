@@ -112,6 +112,9 @@ jobs:
           rm -rf build/test.xcresult
           rc=0
           xcodebuild test "${A[@]}" > build/test.log 2>&1 || rc=$?
+          if [[ $rc -ne 0 ]]; then
+            grep -Em 20 'error:|Test Case .* failed|\*\* TEST FAILED' build/test.log || true
+          fi
           {
             if [[ $rc -eq 0 ]]; then echo "### iOS tests passed"; else echo "### iOS tests failed"; fi
             echo

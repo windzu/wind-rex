@@ -145,13 +145,16 @@ nonisolated final class ConnectionTests: XCTestCase {
         defer { rex.stop() }
         let h = try await online(rex)
         let s = TerminalSession(host: h, session: "s", block: "b")
-        let text = String(repeating: "中\u{1}ab", count: 300_000)
+        defer { s.close(); h.stop() }
+        // This crosses two 64 KiB boundaries, including one inside a UTF-8 character.
+        let text = String(repeating: "中\u{1}ab", count: 22_000)
         s.type(Data(text.utf8))
         await until("written", timeout: 20) { self.written(rex).joined() == text }
-        XCTAssertGreaterThan(written(rex).count, 1)
+        let chunks = written(rex)
+        XCTAssertEqual(chunks.joined(), text)
+        XCTAssertGreaterThan(chunks.count, 2)
+        XCTAssertTrue(chunks.allSatisfy { $0.utf8.count <= 64 << 10 })
         XCTAssertNotNil(h.control)
-        s.close()
-        h.stop()
     }
 
     /// A data connection the server closes for policy, after its WELCOME,
@@ -262,20 +265,19 @@ nonisolated final class ConnectionTests: XCTestCase {
         defer { rex.stop() }
         let h = try await online(rex)
         rex.respond = { method, _ in method == "data.connect" ? ["ticket": "uH4mJKwzMarlTNT-UiyMog"] : [:] }
-        var handshakes = 0
+        var handshakes: [ContinuousClock.Instant] = []
         rex.data = { c, _ in
-            handshakes += 1
+            handshakes.append(.now)
             FakeRex.send(c, FakeRex.welcome)
             FakeRex.close(c, .protocolCode(.goingAway))
         }
         let s = TerminalSession(host: h, session: "s", block: "b")
+        defer { s.close(); h.stop() }
         s.start()
-        try await Task.sleep(for: .seconds(2))
-        // At once, then after 0.5 s and 1 s; the next waits 2 s.
-        XCTAssertLessThanOrEqual(handshakes, 4)
-        XCTAssertGreaterThanOrEqual(handshakes, 2)
-        s.close()
-        h.stop()
+        await until("three handshakes") { handshakes.count >= 3 }
+        guard handshakes.count >= 3 else { return }
+        XCTAssertGreaterThanOrEqual(handshakes[0].duration(to: handshakes[1]), .milliseconds(250))
+        XCTAssertGreaterThanOrEqual(handshakes[1].duration(to: handshakes[2]), .milliseconds(500))
     }
 
     /// A data connection the server drops shows the terminal reconnecting,
