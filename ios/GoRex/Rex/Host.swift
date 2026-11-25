@@ -27,13 +27,17 @@ struct HostConfig: Codable, Identifiable, Hashable {
     /// which the hosts saved never hold. Optional, as a list saved before
     /// Demo Mode must still decode.
     var demo: Bool?
-    /// The LAN gateway's pairing token, from the code's #k=; nil for a
-    /// code without one. It lives in the Keychain (LANTokens), never in
-    /// the list saved, so CodingKeys leaves it out.
+    /// The LAN or direct/relay gateway's pairing token, from the code's #k=;
+    /// nil for a code without one. It lives in the Keychain (LANTokens), never
+    /// in the list saved, so CodingKeys leaves it out.
     var lanToken: String? = nil
+    /// Optional base64url SHA-256 leaf certificate pin for direct TLS or a
+    /// self-hosted stateless relay using a self-signed certificate
+    /// (docs/NET-005-direct-relay.md).
+    var tlsPin: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, url, desktop, icon, command, transport, tailcat, demo
+        case id, name, url, desktop, icon, command, transport, tailcat, demo, tlsPin
     }
 
     /// The token the host's requests carry: the LAN token of a host the
@@ -135,9 +139,11 @@ extension HostConfig {
 
 extension HostConfig {
     /// The host of a pairing QR code. GoRex and Rex show a plain address,
-    /// http(s)://host[:port], with no path, query or user; GoRex's LAN
-    /// code adds its token, http://host:port/#k=<token>. nil for anything
-    /// else. The address kept has no path and no token.
+    /// http(s)://host[:port], with no path, query or user; GoRex's LAN code
+    /// adds its token, http://host:port/#k=<token>; direct TLS and stateless
+    /// relay codes (docs/NET-005-direct-relay.md) may carry /h/<host_id> and
+    /// fragment parameters #k=<token>[&p=<cert_pin>][&n=<name>]. nil for
+    /// anything else. The address kept has no trailing slash and no token.
     init?(pairing code: String) {
         guard var c = URLComponents(string: code.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = c.scheme?.lowercased(), ["http", "https"].contains(scheme),
@@ -145,17 +151,49 @@ extension HostConfig {
               c.user == nil, c.password == nil, c.query == nil
         else { return nil }
         var token: String?
+        var pin: String?
+        var displayName: String?
+        let relayPath = Self.normalizedRelayPath(c.path)
         if let f = c.fragment {
-            guard f.hasPrefix("k="), Self.validToken(String(f.dropFirst(2))), ["", "/"].contains(c.path) else { return nil }
-            token = String(f.dropFirst(2))
-        } else if !c.path.isEmpty {
+            guard c.path.isEmpty || c.path == "/" || relayPath != nil else { return nil }
+            var fc = URLComponents()
+            fc.percentEncodedQuery = f
+            guard let items = fc.queryItems, !items.isEmpty else { return nil }
+            for item in items {
+                guard let value = item.value, !value.isEmpty else { return nil }
+                switch item.name {
+                case "k":
+                    guard token == nil, Self.validToken(value) else { return nil }
+                    token = value
+                case "p":
+                    guard pin == nil, PinnedTLSSession.validPin(value) else { return nil }
+                    pin = value
+                case "n":
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { displayName = trimmed }
+                default:
+                    return nil
+                }
+            }
+            guard token != nil else { return nil }
+        } else if !c.path.isEmpty && relayPath == nil {
             return nil
         }
         c.scheme = scheme
-        c.path = ""
+        c.path = relayPath ?? ""
         c.fragment = nil
         guard let url = c.url else { return nil }
-        self.init(name: Self.name(host), url: url, lanToken: token)
+        self.init(name: displayName ?? Self.name(host), url: url, lanToken: token, tlsPin: pin)
+    }
+
+    /// Normalizes a stateless relay path prefix (/h/<host_id>[/]) to /h/<host_id>;
+    /// returns nil for any other path.
+    private static func normalizedRelayPath(_ path: String) -> String? {
+        let trimmed = path.hasSuffix("/") ? String(path.dropLast()) : path
+        guard trimmed.hasPrefix("/h/") else { return nil }
+        let id = String(trimmed.dropFirst(3))
+        guard id.count >= 8, id.count <= 64, id.wholeMatch(of: /[A-Za-z0-9_-]+/) != nil else { return nil }
+        return "/h/" + id
     }
 
     /// Whether a LAN token reads as the gateway's: base64url, no padding.
@@ -496,7 +534,12 @@ final class Host: Identifiable {
     /// The terminal on screen the host's pushes are for, registered with
     /// it (pushTarget); nil while no terminal shows.
     @ObservationIgnored private(set) var pushTarget: (session: String, block: String)?
+    /// Bumped after HostStore.foreground finishes preparing this host (probing
+    /// system sockets or resetting the tailnet proxy), so open terminals resume
+    /// or probe after the host's transport is ready instead of racing it.
+    private(set) var foregroundReady = 0
     @ObservationIgnored private var proxySession: (proxy: LoopbackProxy, session: URLSession)?
+    @ObservationIgnored private var pinnedSession: (pin: String, session: URLSession)?
 
     init(_ config: HostConfig) {
         self.config = config
@@ -505,13 +548,20 @@ final class Host: Identifiable {
     /// Whether the host's connections go through the built-in Tailscale.
     var viaTailnet: Bool { config.reach(tailnetOn: TailnetSettings.isOn) == .tailnet }
 
-    /// The session the host's connections go through: the system's, or
-    /// one through the engine's proxy of the moment, made anew for each
-    /// run of the built-in Tailscale and each new proxy.
+    /// The session the host's connections go through: the system's (optionally
+    /// pinned to config.tlsPin), or one through the engine's proxy of the
+    /// moment, made anew for each run of the built-in Tailscale and each new proxy.
     func session() throws -> URLSession {
         let p: LoopbackProxy
         switch config.reach(tailnetOn: TailnetSettings.isOn) {
         case .system:
+            if let pin = config.tlsPin, !pin.isEmpty {
+                if let s = pinnedSession, s.pin == pin { return s.session }
+                pinnedSession?.session.invalidateAndCancel()
+                let s = PinnedTLSSession.session(pin: pin)
+                pinnedSession = (pin, s)
+                return s
+            }
             return .shared
         case .tailnet:
             guard let t = Self.tailnetProxy() else {
@@ -642,6 +692,8 @@ final class Host: Identifiable {
         describes.cancelAll()
         proxySession?.session.invalidateAndCancel()
         proxySession = nil
+        pinnedSession?.session.invalidateAndCancel()
+        pinnedSession = nil
         settle(.failure(CancellationError()))
     }
 
@@ -666,6 +718,25 @@ final class Host: Identifiable {
     /// Reconnects now, as after the app returns to the foreground.
     func reconnectIfNeeded() {
         if control == nil { connect() }
+    }
+
+    /// Probes an active control connection with a short ping timeout; keeps it
+    /// untouched when alive, or resumes with a goingAway close when dead.
+    func probeOrResume(timeout: Duration = .milliseconds(1500)) async {
+        guard !isDemo, !stopped else { return }
+        guard let c = control else {
+            connect()
+            return
+        }
+        let alive = await c.probe(timeout: timeout)
+        guard !alive, control === c, !stopped else { return }
+        ConnectionLog.note("\(config.name): foreground probe failed, resuming")
+        resume()
+    }
+
+    /// Signals open terminals on this host that foreground recovery finished.
+    func noteForegroundReady() {
+        foregroundReady += 1
     }
 
     /// Connects again after a failure, waiting longer each time in a row,
@@ -1800,7 +1871,7 @@ final class HostStore {
     /// again. The host stays the same, for the terminals open on it.
     func update(_ config: HostConfig) {
         guard let h = host(config.id) else { return }
-        let moved = h.config.url != config.url || h.config.transport != config.transport || h.config.auth != config.auth
+        let moved = h.config.url != config.url || h.config.transport != config.transport || h.config.auth != config.auth || h.config.tlsPin != config.tlsPin
         if h.config.auth != config.auth { tokens.set(config.auth, for: config.id) }
         h.config = config
         if moved { h.reconnect() }
@@ -1814,11 +1885,27 @@ final class HostStore {
     /// died. Started anew, its old run's connections end with it, and the
     /// hosts connect, on a new session, once it runs (docs/IOS-001-tailnet.md,
     /// Lifecycle). The tailcat hosts connect anew either way: their
-    /// clients outlive the tailnet's runs. The others reconnect if needed,
-    /// at once.
-    func foreground(suspended: Bool, resume: () async -> Bool) async {
+    /// clients outlive the tailnet's runs. System hosts (including direct TLS
+    /// and stateless relay hosts) are probed when returning from background
+    /// so live sockets stay untouched and dead sockets recover within ~1.5 s
+    /// instead of waiting for a background keepalive timeout.
+    func foreground(suspended: Bool, wasBackground: Bool = false, resume: () async -> Bool) async {
         let forced = { (h: Host) in suspended && h.config.reach(tailnetOn: TailnetSettings.isOn) != .system }
-        hosts.filter { !forced($0) }.forEach { $0.reconnectIfNeeded() }
+        let unforced = hosts.filter { !forced($0) }
+        if wasBackground {
+            await withTaskGroup(of: Void.self) { group in
+                for h in unforced {
+                    if h.config.reach(tailnetOn: TailnetSettings.isOn) == .system && h.control != nil {
+                        group.addTask { await h.probeOrResume() }
+                    } else {
+                        h.reconnectIfNeeded()
+                    }
+                }
+            }
+        } else {
+            unforced.forEach { $0.reconnectIfNeeded() }
+        }
+        unforced.forEach { $0.noteForegroundReady() }
         guard suspended else { return }
         let proxied = hosts.filter(forced)
         let kept = await resume()
@@ -1826,6 +1913,7 @@ final class HostStore {
             $0.resume()
             ConnectionLog.note("\($0.config.name): resumed after a suspension")
         }
+        proxied.forEach { $0.noteForegroundReady() }
     }
 
     /// The phone changed network (NetworkPath). Unless in the background

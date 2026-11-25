@@ -111,10 +111,13 @@ struct RemoteHostsView: View {
             return String(localized: "Not a Rex pairing code. Scan the Rex QR code that GoRex or Rex shows.")
         }
         if let h = store.host(at: c.url) {
-            // A new code of the same computer brings its new token.
-            if let t = c.lanToken, t != h.config.lanToken {
+            // A new code of the same computer brings its new token or cert pin.
+            let newToken = c.lanToken ?? h.config.lanToken
+            let newPin = c.tlsPin ?? h.config.tlsPin
+            if newToken != h.config.lanToken || newPin != h.config.tlsPin {
                 var u = h.config
-                u.lanToken = t
+                u.lanToken = newToken
+                u.tlsPin = newPin
                 store.update(u)
             }
             sheet = .details(h.config)

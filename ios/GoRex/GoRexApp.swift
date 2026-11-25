@@ -159,6 +159,7 @@ struct GoRexApp: App {
                     }
                     guard p == .active else { return }
                     // The grace kept the app running past away; back now, it ends.
+                    let wasBackground = away != nil
                     let woke = BackgroundGrace.shared.awake(since: away)
                     let suspended = HostStore.suspended(since: woke)
                     let since = woke.map { " (\(Int(-$0.timeIntervalSinceNow)) s away)" } ?? ""
@@ -171,7 +172,7 @@ struct GoRexApp: App {
                     // hears it once its register's answer lands
                     // (gorex.push.seen, Host.activitySeen).
                     TerminalLive.shared.reportSeen()
-                    Task { await store.foreground(suspended: suspended) { await TailnetEngine.shared.resume() } }
+                    Task { await store.foreground(suspended: suspended, wasBackground: wasBackground) { await TailnetEngine.shared.resume() } }
                 }
                 .onChange(of: store.hosts.map(\.config)) { _, configs in
                     HotspotShare.shared.updateHosts(configs)

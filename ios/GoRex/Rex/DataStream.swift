@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The handshake messages of a data connection ("Handshake Messages").
 enum DataHandshake: Equatable {
@@ -200,6 +201,28 @@ final class DataConnection {
     func close() {
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
+    }
+
+    /// Probes whether the active data WebSocket answers a ping within `timeout`.
+    /// Returns true if a pong arrives in time; false when no socket is open,
+    /// it errors, or the timeout expires.
+    func probe(timeout: Duration = .milliseconds(1500)) async -> Bool {
+        guard let t = task else { return false }
+        let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            let finish: @Sendable (Bool) -> Void = { value in
+                if resumed.withLock({ let first = !$0; $0 = true; return first }) { c.resume(returning: value) }
+            }
+            let deadline = Task {
+                try? await Task.sleep(for: timeout)
+                finish(false)
+            }
+            t.sendPing { e in
+                deadline.cancel()
+                finish(e == nil)
+            }
+        }
+        return ok && task === t
     }
 
     /// A session of the built-in Tailscale's proxy is invalid once the proxy

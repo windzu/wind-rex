@@ -77,8 +77,8 @@ final class ControlConnection {
     var onPing: ((Duration) -> Void)?
     /// How often to ping, how long a pong may take before the connection
     /// counts as dead, and how long a response may take.
-    var pingEvery = Duration.seconds(30)
-    var pongWait = Duration.seconds(15)
+    var pingEvery = Duration.seconds(15)
+    var pongWait = Duration.seconds(8)
     var callWait = Duration.seconds(30)
     private(set) var clientID = ""
     private(set) var reconnectToken: String?
@@ -244,6 +244,51 @@ final class ControlConnection {
                        ["session_id": session, "block_id": block, "args": args]).payload
     }
 
+    /// Sends a block method synchronously on the WebSocket to preserve strict
+    /// FIFO send order for pipelined terminal writes, and calls `done` on the
+    /// main actor when the server answers, times out, or fails.
+    func enqueueBlock(_ method: String, session: String, block: String, _ args: [String: Any] = [:],
+                      done: @escaping @MainActor (Result<[String: Any], Error>) -> Void) {
+        guard !closed else {
+            done(.failure(RexError(code: "offline", message: "disconnected")))
+            return
+        }
+        nextID += 1
+        let id = String(nextID)
+        let req: [String: Any] = [
+            "type": "request",
+            "id": id,
+            "method": "com.superlogical.terminal." + method,
+            "payload": ["session_id": session, "block_id": block, "args": args],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: req) else {
+            done(.failure(RexError(code: "protocol", message: "encode failed")))
+            return
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        let timeout = Task { [weak self, callWait] in
+            try await Task.sleep(for: callWait)
+            self?.pending.removeValue(forKey: id)?.resume(throwing: RexError(code: "timeout", message: "no response"))
+        }
+        Task {
+            defer { timeout.cancel() }
+            do {
+                let r = try await withCheckedThrowingContinuation { (c: CheckedContinuation<Reply, Error>) in
+                    pending[id] = c
+                }
+                done(.success(r.payload))
+            } catch {
+                done(.failure(error))
+            }
+        }
+        // Send immediately on the current turn so back-to-back calls hit the
+        // WebSocket wire in exact FIFO order without waiting for Task scheduling.
+        task.send(.string(text)) { [weak self] error in
+            guard let error else { return }
+            Task { @MainActor in self?.pending.removeValue(forKey: id)?.resume(throwing: error) }
+        }
+    }
+
     /// Closes the connection, for the reason error when given.
     func close(_ error: Error? = nil) {
         task.cancel(with: .normalClosure, reason: nil)
@@ -308,6 +353,30 @@ final class ControlConnection {
         return rtt
     }
 
+    /// Probes whether the connection answers a ping within `timeout`.
+    /// Returns true if a pong arrives in time; false if closed, errored, or timed out.
+    func probe(timeout: Duration = .milliseconds(1500)) async -> Bool {
+        guard !closed else { return false }
+        let sent = ContinuousClock.now
+        let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            let finish: @Sendable (Bool) -> Void = { value in
+                if resumed.withLock({ let first = !$0; $0 = true; return first }) { c.resume(returning: value) }
+            }
+            let deadline = Task {
+                try? await Task.sleep(for: timeout)
+                finish(false)
+            }
+            task.sendPing { e in
+                deadline.cancel()
+                finish(e == nil)
+            }
+        }
+        guard ok, !closed else { return false }
+        onPing?(sent.duration(to: .now))
+        return true
+    }
+
     /// Pings as the server does, so that a server that is gone, or a path
     /// that died without a word, is noticed: a pong that doesn't come in
     /// time ends the connection.
@@ -360,10 +429,11 @@ extension URL {
     }
 
     /// The server's HTTP endpoint at path, as /api/upload and /api/voice:
-    /// this base's scheme, host and port.
+    /// preserves any base path prefix (such as /h/<host_id> on a relay).
     nonisolated func apiURL(_ path: String) -> URL {
         var c = URLComponents(url: self, resolvingAgainstBaseURL: false)!
-        c.path = path
+        let base = c.path == "/" ? "" : (c.path.hasSuffix("/") ? String(c.path.dropLast()) : c.path)
+        c.path = base + path
         return c.url!
     }
 }

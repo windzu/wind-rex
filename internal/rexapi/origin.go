@@ -24,6 +24,10 @@ const (
 	// transportTailcat is the session server's tailcat address, whose
 	// callers are the remote clients it allows.
 	transportTailcat = "tailcat"
+	// transportDirect is the native TLS direct listener authenticated by Bearer token.
+	transportDirect = "direct"
+	// transportRelay is the outbound stateless relay tunnel authenticated by Bearer token.
+	transportRelay = "relay"
 )
 
 type connKey struct{}
@@ -178,6 +182,16 @@ func (g *Gateway) HandlerFor(transport string) http.Handler {
 				writeRefusal(w, "this connection did not come over tailcat")
 				return
 			}
+		case transportDirect, transportRelay:
+			if g.direct == nil {
+				writeRefusal(w, "direct access is off")
+				return
+			}
+			var ok bool
+			if p, ok = g.direct.admit(w, r, transport); !ok {
+				return
+			}
+			r = withoutToken(r)
 		default:
 			inner.ServeHTTP(w, r)
 			return
