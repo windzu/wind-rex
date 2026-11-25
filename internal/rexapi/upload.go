@@ -92,10 +92,12 @@ type uploadBatch struct {
 	expires time.Time
 }
 
+const featureOrderedWrite = "gorex.ordered_write"
+
 // features are the welcome's features: GoRex's own, which Rex's clients
 // ignore, as they ignore every name they do not know.
 func (g *Gateway) features() []string {
-	features := []string{featureSpaces, featureNewWindowFromBlock}
+	features := []string{featureSpaces, featureNewWindowFromBlock, featureOrderedWrite}
 	if g.hello.Can(rex.CapabilityFileTemp) {
 		features = append(features, featureUpload, featureUploadDeflateRaw)
 	}

@@ -51,6 +51,8 @@ func Main(args []string) int {
 			return callMain(args[1:])
 		case "lan":
 			return lanMain(args[1:])
+		case "direct":
+			return directMain(args[1:])
 		case "web":
 			return webMain(args[1:])
 		}
@@ -199,6 +201,7 @@ func run(c *rex.Client, o runOptions) error {
 		g.tailnet.resume()
 	}
 	w := &confWatch{path: lanConfPath(o.dir)}
+	dw := &confWatch{path: directConfPath(o.dir)}
 	applyLAN := func() {
 		conf, err := LoadLAN(o.dir)
 		if err != nil {
@@ -207,8 +210,18 @@ func run(c *rex.Client, o runOptions) error {
 		}
 		g.lan.apply(conf)
 	}
+	applyDirect := func() {
+		conf, err := LoadDirect(o.dir)
+		if err != nil {
+			logf("direct: %v", err)
+			return
+		}
+		g.direct.apply(conf)
+	}
 	w.changed()
+	dw.changed()
 	applyLAN()
+	applyDirect()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {
@@ -222,6 +235,9 @@ func run(c *rex.Client, o runOptions) error {
 		case <-tick.C:
 			if w.changed() {
 				applyLAN()
+			}
+			if dw.changed() {
+				applyDirect()
 			}
 		}
 	}
@@ -253,6 +269,9 @@ func Wanted(dir string) bool {
 		return true
 	}
 	if c, err := LoadLAN(dir); err == nil && c.Enabled {
+		return true
+	}
+	if c, err := LoadDirect(dir); err == nil && c.Enabled {
 		return true
 	}
 	var t TailscaleConfig
@@ -350,6 +369,7 @@ func Supervise(stop <-chan struct{}) {
 		case !want && runStop != nil:
 			end()
 			saveLANStatus(dir, LANStatus{})
+			saveDirectStatus(dir, DirectStatus{})
 		}
 		select {
 		case <-stop:

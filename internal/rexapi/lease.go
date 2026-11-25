@@ -48,6 +48,9 @@ func (g *Gateway) closeAllResources() {
 	if g.lan != nil {
 		g.lan.close()
 	}
+	if g.direct != nil {
+		g.direct.close()
+	}
 	for _, c := range conns {
 		c.closeWith(1001, "data provider canceled")
 	}

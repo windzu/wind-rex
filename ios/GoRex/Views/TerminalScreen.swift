@@ -316,14 +316,21 @@ struct TerminalScreen: View {
                 }
                 // Back within the grace, nothing was suspended. What the
                 // terminal's program reported meanwhile is seen now.
+                // Actual stream resume/probe runs once HostStore.foreground
+                // finishes (host.foregroundReady) so panes do not race proxy reset.
                 if p == .active {
                     TerminalLive.shared.active()
                     host.see(session: currentTarget.session, block: currentTarget.block)
                 }
-                if p == .active, suspended {
+            }
+            .onChange(of: host.foregroundReady) {
+                guard phase == .active else { return }
+                if suspended {
                     for pane in pages where !pane.leaving { pane.session.resume() }
                     suspended = false
                     if let keptPanes { keep(keptPanes) }
+                } else {
+                    for pane in pages where !pane.leaving { pane.session.probeOrResume() }
                 }
             }
             // A new network: the streams continue on it at once, not after

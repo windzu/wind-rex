@@ -110,6 +110,9 @@ type Gateway struct {
 	// lan is the listener on the local network, nil without a state
 	// directory.
 	lan *lanListener
+	// direct is the native TLS direct listener and outbound relay tunnel,
+	// nil without a state directory.
+	direct *directListener
 	// web are the web pages' origins the gateway trusts (web.json), nil
 	// without a state directory: then it trusts none.
 	web *webOrigins
@@ -288,6 +291,7 @@ func New(opt Options) (*Gateway, error) {
 	}
 	if opt.TailnetDir != "" {
 		g.lan = newLANListener(g, opt.TailnetDir)
+		g.direct = newDirectListener(g, opt.TailnetDir)
 		g.web = newWebOrigins(opt.TailnetDir)
 		g.tailnet = newTailnet(g, opt.TailnetDir, newTsnetNode)
 		g.tailnet.serve = g.serveOn

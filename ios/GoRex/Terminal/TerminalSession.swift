@@ -92,9 +92,15 @@ final class TerminalSession {
     /// wait, and when the last one opened.
     @ObservationIgnored private var drops = 0
     @ObservationIgnored private var opened = ContinuousClock.now
-    /// Bytes to write, and whether a write is on its way.
+    /// Bytes to write, whether a single-flight/offline write is waiting, and
+    /// how many pipelined writes are currently in flight.
     @ObservationIgnored private var typed = PendingBytes()
     @ObservationIgnored private var typing = false
+    @ObservationIgnored private var inFlight = 0
+    /// Maximum concurrent in-flight writes when the server guarantees strict
+    /// arrival ordering (`gorex.ordered_write`).
+    static let maxPipelinedWrites = 8
+    static let orderedWriteFeature = "gorex.ordered_write"
     /// The terminal of Demo Mode, which runs on the phone; nil for a
     /// host's, whose stream comes over a data connection.
     @ObservationIgnored private var demo: DemoTerminal?
@@ -222,6 +228,21 @@ final class TerminalSession {
         guard demo == nil, !closed, going else { return }
         drops = 0
         rejoin()
+    }
+
+    /// Probes the active data stream after returning to the foreground within
+    /// grace: keeps a live stream untouched with no flicker, or resumes at once
+    /// when the socket silently died while away.
+    func probeOrResume(timeout: Duration = .milliseconds(1500)) {
+        guard demo == nil, !closed, state == .live else { return }
+        let g = generation
+        let current = data
+        Task {
+            let alive = await current.probe(timeout: timeout)
+            guard !alive, !closed, g == generation, current === data, state == .live else { return }
+            ConnectionLog.note("terminal \(block): foreground probe failed, resuming")
+            resume()
+        }
     }
 
     private func rejoin() {
@@ -471,15 +492,34 @@ final class TerminalSession {
     }
 
     private func write(flush: Bool = false) {
-        guard !typing, !closed, !typed.isEmpty else { return }
-        guard let (n, text) = typed.nextWrite(max: 64 << 10, flush: flush) else {
-            // A character cut off at the end goes as it is if its rest
-            // doesn't come in a moment.
-            let held = typed.count
-            Task {
-                try? await Task.sleep(for: .milliseconds(50))
-                if typed.count == held { write(flush: true) }
+        guard !closed, !typed.isEmpty else { return }
+        // Fast path: when online on a server that orders writes in arrival order
+        // (`gorex.ordered_write`), pipeline up to `maxPipelinedWrites` writes
+        // synchronously onto the WebSocket so consecutive keys do not stall a full RTT.
+        if !typing, host.status == .online, let c = host.control, c.features.contains(Self.orderedWriteFeature) {
+            while !closed, !typed.isEmpty, inFlight < Self.maxPipelinedWrites,
+                  host.status == .online, host.control === c {
+                guard let (n, text) = typed.nextWrite(max: 64 << 10, flush: flush) else {
+                    schedulePartialFlush()
+                    return
+                }
+                typed.removeFirst(n)
+                inFlight += 1
+                setWaitingToSend(false)
+                c.enqueueBlock("write", session: session, block: block, ["data": text]) { [weak self] result in
+                    guard let self else { return }
+                    if case .failure(let error) = result {
+                        log.error("dropped a write of \(n) bytes: \(error.localizedDescription, privacy: .public)")
+                    }
+                    self.inFlight -= 1
+                    self.write()
+                }
             }
+            return
+        }
+        guard !typing, inFlight == 0 else { return }
+        guard let (n, text) = typed.nextWrite(max: 64 << 10, flush: flush) else {
+            schedulePartialFlush()
             return
         }
         typing = true
@@ -501,6 +541,14 @@ final class TerminalSession {
             }
             typing = false
             write()
+        }
+    }
+
+    private func schedulePartialFlush() {
+        let held = typed.count
+        Task {
+            try? await Task.sleep(for: .milliseconds(50))
+            if typed.count == held { write(flush: true) }
         }
     }
 }

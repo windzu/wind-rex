@@ -25,7 +25,7 @@ import (
 // checksHost reports whether requests over transport have their Host
 // checked.
 func checksHost(transport string) bool {
-	return transport != transportUnix && transport != transportTailcat
+	return transport != transportUnix && transport != transportTailcat && transport != transportDirect && transport != transportRelay
 }
 
 // hostAllowed reports whether a request's Host is one of the gateway's
