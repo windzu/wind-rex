@@ -161,7 +161,7 @@ struct HostSection: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(host.config.name).font(.body.weight(.semibold)).lineLimit(1)
-            if hasProjects { StateDot(online: host.status == .online) }
+            HostStatusDot(status: host.status)
             Spacer()
             if host.status == .online, host.hasProjects, host.listsFolders {
                 Button { newProject() } label: {
@@ -908,19 +908,6 @@ private struct Chevron: View {
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.gray)
             .rotationEffect(.degrees(open ? 90 : 0))
-    }
-}
-
-/// A host's state by its header: filled while online, a ring while away.
-private struct StateDot: View {
-    let online: Bool
-
-    var body: some View {
-        Circle()
-            .strokeBorder(online ? Color.green : Color.secondary, lineWidth: 1.5)
-            .background(Circle().fill(online ? Color.green : Color.clear))
-            .frame(width: 8, height: 8)
-            .accessibilityLabel(online ? "Online" : "Offline")
     }
 }
 

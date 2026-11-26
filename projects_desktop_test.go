@@ -1410,3 +1410,81 @@ func TestNoProjectCannotBeRenamed(t *testing.T) {
 	}
 	a.wsRenaming = false
 }
+
+// TestSidebarHostHeaderStatusDot checks that connected host headers render a
+// green solid status dot (k.busy) with an accessible status label, while
+// connecting and offline remote hosts render hollow non-green rings and restore
+// green once reconnected.
+func TestSidebarHostHeaderStatusDot(t *testing.T) {
+	a, tt, _, _ := projectsApp(t)
+	remote := &hostConn{
+		savedHost: savedHost{ID: "h-status", Name: "alice-laptop", Address: filepath.Join(testDir(t), "none.sock")},
+		state:     hostConnecting,
+		stop:      make(chan struct{}),
+	}
+	t.Cleanup(func() { remote.client = nil })
+	a.hosts = append(a.hosts, remote)
+	a.st.workspaces = append(a.st.workspaces, &Workspace{ID: "remote-proj", Name: "remote-proj", Dir: "/srv/app", host: remote})
+
+	dotCenter := func(label string) (r, g, b uint8) {
+		t.Helper()
+		rect, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("missing dot with label %q in %q", label, tt.Texts())
+		}
+		c := tt.Image().RGBAAt(int(rect.X+rect.W/2), int(rect.Y+rect.H/2))
+		return c.R, c.G, c.B
+	}
+	isGreen := func(r, g, b uint8) bool {
+		return int(g) > int(r)+30 && int(g) > int(b)+20
+	}
+
+	// Local machine is online -> green solid dot; remote is connecting -> not green.
+	tt.Frame()
+	lr, lg, lb := dotCenter(locales.HostsConnected())
+	if !isGreen(lr, lg, lb) {
+		t.Errorf("online host header dot center rgb(%d,%d,%d), want green", lr, lg, lb)
+	}
+	cr, cg, cb := dotCenter(locales.HostsConnecting())
+	if isGreen(cr, cg, cb) {
+		t.Errorf("connecting host header dot center rgb(%d,%d,%d), want non-green ring", cr, cg, cb)
+	}
+
+	// Remote transitions to failed/offline -> offline ring, not green.
+	remote.state = hostFailed
+	tt.Frame()
+	fr, fg, fb := dotCenter(locales.HostsFailed())
+	if isGreen(fr, fg, fb) {
+		t.Errorf("failed host header dot center rgb(%d,%d,%d), want non-green ring", fr, fg, fb)
+	}
+
+	// Remote reconnects (has live client) -> green solid dot restored.
+	remote.state = hostConnected
+	remote.client = a.client
+	tt.Frame()
+	if _, ok := tt.Find(locales.HostsFailed()); ok {
+		t.Errorf("connected host still shows failed status")
+	}
+	// Verify the remote host's dot specifically by checking pixels around its header.
+	hRect, ok := tt.Find("ALICE-LAPTOP")
+	if !ok {
+		t.Fatalf("missing ALICE-LAPTOP header in %q", tt.Texts())
+	}
+	foundGreen := false
+	img := tt.Image()
+	for x := int(hRect.X + hRect.W); x < int(hRect.X+hRect.W+24); x++ {
+		for y := int(hRect.Y); y < int(hRect.Y+hRect.H); y++ {
+			px := img.RGBAAt(x, y)
+			if isGreen(px.R, px.G, px.B) {
+				foundGreen = true
+				break
+			}
+		}
+		if foundGreen {
+			break
+		}
+	}
+	if !foundGreen {
+		t.Errorf("reconnected remote host header ALICE-LAPTOP has no green status dot beside its name")
+	}
+}

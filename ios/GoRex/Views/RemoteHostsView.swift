@@ -142,14 +142,27 @@ private struct HostRow: View {
                 Text(host.config.name).foregroundStyle(.primary).lineLimit(1)
                 // A tailcat host's address is a secret, and its URL the proxy's.
                 Text(host.config.tailcat == nil ? host.config.url.absoluteString : String(localized: "GoRex remote access"))
-                    .font(.footnote).foregroundStyle(.gray)
+                    .font(.footnote).foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .layoutPriority(1)
             .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
             Spacer(minLength: 8)
-            Text(status).font(.subheadline).foregroundStyle(.gray).lineLimit(1).fixedSize()
-            Button(action: info) { Image(systemName: "info.circle").font(.title3).foregroundStyle(.gray) }
+            HStack(spacing: 6) {
+                HostStatusDot(status: host.status)
+                    .accessibilityHidden(true)
+                Text(status)
+                    .font(.subheadline)
+                    .foregroundStyle(host.status == .online ? .primary : .secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .accessibilityElement(children: .combine)
+            Button(action: info) {
+                Image(systemName: "info.circle")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+            }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Edit Host")
         }
