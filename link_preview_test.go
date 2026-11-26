@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -228,7 +227,7 @@ func TestLinkPreviewLocalFlow(t *testing.T) {
 	}
 
 	// 3. OSC 8 file:// Markdown with space in name opens in Side Preview.
-	mdURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(mdPath)}).String()
+	mdURL := fileURL(mdPath)
 	if !a.openLinkWith(p, mdURL, false) {
 		t.Fatal("osc8 md not taken")
 	}
@@ -277,7 +276,7 @@ func TestLinkPreviewLocalFlow(t *testing.T) {
 	}
 
 	// 9. Missing file (plain and OSC 8 file://) shows error state without external open.
-	missingURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(dir, "nope.md"))}).String()
+	missingURL := fileURL(filepath.Join(dir, "nope.md"))
 	for _, link := range []string{"nope.md", missingURL} {
 		if !a.openLinkWith(p, link, false) {
 			t.Fatalf("%s not taken", link)
@@ -290,7 +289,7 @@ func TestLinkPreviewLocalFlow(t *testing.T) {
 	// 10. PDF, unsupported binary, and directory open directly in system default app.
 	a.preview = nil
 	opened = nil
-	pdfURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(pdfPath)}).String()
+	pdfURL := fileURL(pdfPath)
 	for _, link := range []string{"spec.pdf", pdfURL, "bundle.zip", "docs/"} {
 		if !a.openLinkWith(p, link, false) {
 			t.Fatalf("%s not taken", link)
@@ -505,5 +504,96 @@ func TestLinkPreviewRemoteFlowAndErrors(t *testing.T) {
 	tt.Frame()
 	if a.preview != nil {
 		t.Fatalf("closed preview reopened after download finished: %+v", a.preview)
+	}
+}
+
+// TestLinkPreviewMarkdownLinks checks that links clicked inside a Markdown Side
+// Preview ignore unsafe non-HTTP schemes (javascript:, data:, file:) without
+// clobbering the active preview, open safe HTTP(S) links externally, and resolve
+// relative links on remote previews against the remote directory (never leaking
+// the local ~/Downloads path).
+func TestLinkPreviewMarkdownLinks(t *testing.T) {
+	// 1. Unsafe schemes are ignored without replacing the active preview.
+	dir := t.TempDir()
+	mdPath := filepath.Join(dir, "doc.md")
+	otherPath := filepath.Join(dir, "other.md")
+	if err := os.WriteFile(mdPath, []byte("# Doc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(otherPath, []byte("# Other"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var opened []string
+	a := &App{openURLHook: func(u string) { opened = append(opened, u) }}
+	localPane := &Pane{info: rex.SessionInfo{Dir: dir}}
+	a.openLocalPreview(localPane, mdPath, previewMarkdown, 0)
+	orig := a.preview
+	for _, bad := range []string{"javascript:alert(1)", "data:text/html,<h1>x</h1>", "file:///etc/passwd", "#heading"} {
+		a.openPreviewMarkdownLink(orig, bad)
+		if a.preview != orig {
+			t.Fatalf("unsafe/anchor link %q replaced active preview: %+v", bad, a.preview)
+		}
+	}
+	if len(opened) != 0 {
+		t.Fatalf("unsafe links opened externally: %q", opened)
+	}
+	// Safe HTTP(S) link opens externally without closing the preview.
+	a.openPreviewMarkdownLink(orig, "https://example.com/docs")
+	if !slices.Equal(opened, []string{"https://example.com/docs"}) || a.preview != orig {
+		t.Fatalf("https link: opened=%q previewSame=%v", opened, a.preview == orig)
+	}
+	// Local relative link with #anchor resolves against local directory.
+	a.openPreviewMarkdownLink(orig, "other.md#section")
+	if a.preview == orig || a.preview == nil || a.preview.localPath != otherPath {
+		t.Fatalf("local relative link preview = %+v, want %q", a.preview, otherPath)
+	}
+
+	// 2. Remote relative link resolves against pv.displayPath (never pv.localPath).
+	if got := resolveRemoteRelative("/srv/app/docs/spec.md", "../README.md"); got != "/srv/app/README.md" {
+		t.Errorf("resolveRemoteRelative POSIX parent = %q, want /srv/app/README.md", got)
+	}
+	if got := resolveRemoteRelative("/srv/app/docs/spec.md", "notes.md"); got != "/srv/app/docs/notes.md" {
+		t.Errorf("resolveRemoteRelative POSIX sibling = %q, want /srv/app/docs/notes.md", got)
+	}
+	if got := resolveRemoteRelative(`C:\repo\docs\spec.md`, "notes.md"); got != `C:\repo\docs\notes.md` {
+		t.Errorf("resolveRemoteRelative Windows sibling = %q, want C:\\repo\\docs\\notes.md", got)
+	}
+
+	// End-to-end remote Markdown preview: clicking a relative link requests the
+	// remote sibling path and never leaks the local Downloads directory.
+	app2, tt := newTestApp(t)
+	there := testDir(t)
+	t.Cleanup(func() { os.RemoveAll(there) })
+	docsSub := filepath.Join(there, "docs")
+	if err := os.MkdirAll(docsSub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docsSub, "index.md"), []byte("# Index\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docsSub, "child.md"), []byte("# Child\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, rp := remotePane(t, app2, tt, there)
+	downloads := downloadsHere(t)
+
+	x := clicked(t, app2, tt, rp, "docs/index.md")
+	if !x.ok || app2.preview == nil || app2.preview.state != previewReady {
+		t.Fatalf("index.md remote preview failed: x=%+v pv=%+v", x, app2.preview)
+	}
+	if app2.preview.md.LoadImage != nil {
+		t.Error("remote Markdown preview set local FileImages on ~/Downloads")
+	}
+	app2.openPreviewMarkdownLink(app2.preview, "child.md#top")
+	last := listOf(rp)[len(listOf(rp))-1]
+	waitFor(t, tt, "remote child.md download", func() bool { return last.ok || last.err != "" })
+	if !last.ok {
+		t.Fatalf("remote child.md download failed: %+v", last)
+	}
+	if strings.Contains(last.from, downloads) {
+		t.Fatalf("remote relative link leaked local downloads path %q in %q", downloads, last.from)
+	}
+	if app2.preview == nil || app2.preview.state != previewReady || !strings.Contains(app2.preview.text, "# Child") {
+		t.Fatalf("remote child.md preview = %+v", app2.preview)
 	}
 }

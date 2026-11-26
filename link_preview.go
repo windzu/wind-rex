@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -565,11 +566,15 @@ func (a *App) loadPreviewFile(pv *linkPreview, localPath string) {
 		}
 		pv.text = string(data)
 		if pv.kind == previewMarkdown {
-			pv.md = markdown.Options{
-				LoadImage: markdown.FileImages(filepath.Dir(localPath)),
-				OnLink: func(dest string) {
-					a.openPreviewMarkdownLink(pv, dest)
-				},
+			pv.md.OnLink = func(dest string) {
+				a.openPreviewMarkdownLink(pv, dest)
+			}
+			// Only resolve relative Markdown images on disk for local previews;
+			// remote Markdown files live in ~/Downloads where sibling files are unrelated.
+			if pv.hostLabel == "" {
+				pv.md.LoadImage = markdown.FileImages(filepath.Dir(localPath))
+			} else {
+				pv.md.LoadImage = nil
 			}
 		}
 		pv.state = previewReady
@@ -617,12 +622,60 @@ func (a *App) openPreviewMarkdownLink(pv *linkPreview, dest string) {
 		a.openExternal(dest)
 		return
 	}
-	if pv == nil || pv.localPath == "" || strings.Contains(dest, "://") {
+	// Reject any non-HTTP(S)/mailto URI scheme (including javascript:, data:, file:).
+	if u, err := url.Parse(dest); err == nil && len(u.Scheme) > 1 {
+		return
+	}
+	// Strip optional #anchor from a relative file path.
+	dest, _, _ = strings.Cut(dest, "#")
+	dest = strings.TrimSpace(dest)
+	if pv == nil || dest == "" {
+		return
+	}
+	if pv.originPane != nil && pv.originPane.host != nil {
+		if target := resolveRemoteRelative(pv.displayPath, dest); target != "" {
+			a.openLinkWith(pv.originPane, target, false)
+		}
+		return
+	}
+	if pv.localPath == "" {
 		return
 	}
 	base := filepath.Dir(pv.localPath)
 	rel := filepath.Join(base, filepath.FromSlash(dest))
 	a.openLinkWith(pv.originPane, rel, false)
+}
+
+// resolveRemoteRelative resolves a relative Markdown link dest against the
+// remote directory of displayPath without ever leaking a local Downloads path.
+func resolveRemoteRelative(displayPath, dest string) string {
+	if dest == "" {
+		return ""
+	}
+	// Preserve absolute or home-relative remote links as-is.
+	if strings.ContainsRune(`~/\`, rune(dest[0])) || (len(dest) > 1 && dest[1] == ':') {
+		return dest
+	}
+	dir := remotePathDir(displayPath)
+	if dir == "" {
+		return dest
+	}
+	if strings.HasPrefix(dir, "/") {
+		return path.Clean(dir + "/" + strings.ReplaceAll(dest, `\`, "/"))
+	}
+	return hostPath(dir, strings.ReplaceAll(dest, "/", `\`))
+}
+
+func remotePathDir(p string) string {
+	trimmed := strings.TrimRight(p, `/\`)
+	idx := strings.LastIndexAny(trimmed, `/\`)
+	if idx < 0 {
+		return ""
+	}
+	if idx == 0 {
+		return trimmed[:1]
+	}
+	return trimmed[:idx]
 }
 
 // openPreviewExternal hands the currently previewed local file to the system
