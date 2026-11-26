@@ -1,6 +1,6 @@
 ---
 name: NET-005
-description: "WindRex adds a native TLS direct listener and a stateless reverse relay so iOS reaches remote hosts over cellular networks without an in-process VPN stack. Use when you change direct TLS, windrex-relay, certificate pinning, foreground probes, or pipelined terminal writes."
+description: "WindRex adds a native TLS direct listener, a stateless reverse relay, and desktop Settings GUI controls so iOS reaches remote hosts over cellular networks without an in-process VPN stack. Use when you change direct TLS, windrex-relay, desktop Direct / Relay settings, certificate pinning, foreground probes, or pipelined terminal writes."
 metadata:
   created: "2026-11-26"
   updated: "2026-11-26"
@@ -8,7 +8,7 @@ metadata:
 
 # NET-005: Direct TLS and stateless relay transport
 
-Status: phase 1 built.
+Status: phase 1 built (#22); phase 2 desktop GUI built (#25).
 
 This doc defines a native TLS transport for cellular remote work, with two deployment modes that share one iOS client path, plus fast foreground recovery and pipelined terminal writes. It extends [`IOS-012`](IOS-012-background-and-network-changes.md) and coexists with [`IOS-001`](IOS-001-tailnet.md) and [`IOS-002`](IOS-002-tailcat.md) during migration.
 
@@ -44,8 +44,9 @@ Four code defects compound the transport overhead:
 2. The host starts a TLS listener on `:7443`, creates a 256-bit pairing token and a self-signed ECDSA P-256 certificate (unless `--cert` and `--key` are provided), and prints a pairing URL and QR code: `https://203.0.113.10:7443/#k=<token>&p=<cert_pin>&n=<host>`.
 3. On a host behind NAT without port forwarding, the user runs `windrex-relay -listen :7443` on a reachable machine (a home router, Linux box, or VPS) and runs `gorex rexapi direct relay --url https://relay.example.com:7443 --pin <relay_pin>` on the host.
 4. The host maintains one persistent outbound WebSocket tunnel to the relay under a random `host_id` and prints the pairing URL `https://relay.example.com:7443/h/<host_id>/#k=<token>&p=<relay_pin>&n=<host>`.
-5. On iOS, the user scans the QR code (or pastes the URL) in Remote Hosts. WindRex stores the URL, Bearer token in Keychain, and optional certificate pin, then connects directly with native `URLSession`.
-6. When the user switches back from another app or unlocks the phone, WindRex probes the active control and data sockets with a 1.5-second ping timeout. Live sockets stay attached without flicker. Dead sockets close with `goingAway` and reconnect immediately using the reconnect token and stream byte offset.
+5. On the desktop app, the user can also configure the same `direct.json` settings in Settings › Server under Direct / Relay Access: toggle Direct TLS / Relay on or off, enter a self-hosted relay URL (plus optional relay token and certificate pin) or a direct public URL and listen address, watch live connection status, rotate the pairing token, and open the Direct / Relay QR sheet. When direct or relay access is ready, the above-the-fold Connect iPhone card also exposes the Direct / Relay QR… button.
+6. On iOS, the user scans the QR code (or pastes the URL) in Remote Hosts. WindRex stores the URL, Bearer token in Keychain, and optional certificate pin, then connects directly with native `URLSession`.
+7. When the user switches back from another app or unlocks the phone, WindRex probes the active control and data sockets with a 1.5-second ping timeout. Live sockets stay attached without flicker. Dead sockets close with `goingAway` and reconnect immediately using the reconnect token and stream byte offset.
 
 ### Model
 
@@ -63,6 +64,7 @@ Four code defects compound the transport overhead:
 - `cmd/windrex-relay/main.go`: Standalone relay server binary supporting custom ports, auto self-signed TLS with pin output, or custom `-cert`/`-key`.
 - `internal/rexapi/direct.go`, `directcli.go`: `DirectConfig`, `DirectStatus`, `directListener` (direct TLS + outbound relay tunnel), `transportDirect` and `transportRelay` admission, and `gorex rexapi direct` CLI commands (`on`, `off`, `status`, `qr`, `relay`, `rotate`).
 - `internal/rexapi/serve.go`, `origin.go`, `host.go`, `gateway.go`, `protocol.go`, `upload.go`: Wire `directListener` into `Gateway` and `Wanted`, allow direct and relay transports, add `com.superlogical.terminal.write` to `orderedMethods`, and advertise `gorex.ordered_write`.
+- `remoteview.go`, `hostqr.go`, `settingsview.go`, `locales/en.json`, `locales/zh-Hans.json`: Load and poll `direct.json` and `direct-status.json` alongside LAN settings, render the Direct / Relay Access section and Connect iPhone shortcut in Settings › Server, validate and save changes via `rexapi.SaveDirect`, rotate the pairing token, and display the `DirectConfig.PairURL` QR code in `hostPairQRSheet` with concealed clipboard copy and token masking.
 - `ios/GoRex/Rex/TLSPin.swift`: `PinnedTLSSession` delegate verifying leaf certificate SHA-256 against `HostConfig.tlsPin`.
 - `ios/GoRex/Rex/Host.swift`, `ControlConnection.swift`, `DataStream.swift`, `GoRexApp.swift`, `Views/TerminalScreen.swift`, `Views/RemoteHostsView.swift`: Parse `#k=...&p=...&n=...` and path-prefixed pairing URLs, preserve URL base paths, add `ControlConnection.probe` and `DataConnection.probe`, coordinate foreground resume before terminal resume, and shorten default control ping intervals to 15 seconds with an 8-second pong timeout.
 - `ios/GoRex/Terminal/TerminalSession.swift`: Pipeline up to 8 ordered `com.superlogical.terminal.write` requests when the server advertises `gorex.ordered_write`.
@@ -79,6 +81,7 @@ Four code defects compound the transport overhead:
 - Self-signed certificates are accepted only when the exact leaf DER SHA-256 hash matches the pinned digest scanned from the host's QR code.
 - The stateless relay accepts host registrations only with the configured `-secret` when set, stores no credentials or session data on disk, and cannot pass host admission without the host's Bearer token.
 - Query parameter `k` is stripped after admission (`withoutToken`) and never logged.
+- In the desktop QR dialog (`hostPairQRSheet`), the pairing URL fragment containing `#k=<token>` stays inside the QR image and concealed clipboard writes (`ClipboardOptions{Concealed: true}`), never shown as visible text on screen or logged. The QR sheet closes automatically if direct/relay access stops or the token rotates.
 
 ## Migration
 
@@ -91,10 +94,12 @@ Four code defects compound the transport overhead:
 
 - Relay mux and end-to-end WebSocket proxy: unit tests in `internal/directrelay` verifying concurrent HTTP and WebSocket streams, large payloads, close propagation, and reconnect.
 - Direct TLS listener, relay mode, Bearer auth, cert pinning, and ordered writes: unit tests in `internal/rexapi` covering valid/invalid tokens, cert pin verification, relay WebSocket `/api/control` + `/api/data` + `RESUME`, and strict write ordering (`docs/invariants.md` item 5).
+- Desktop Direct / Relay GUI: headless view tests (`ui.NewTester`) in `remoteview_test.go` covering status display, saving and validating relay and direct URLs, opening the Direct / Relay QR sheet without leaking the pairing token onto screen, and rotating the pairing token, alongside `TestDesignTokens`, `TestGlassInk`, `TestCatalogsAgree`, and `TestNoThreeDots`.
 - iOS pairing, path-preserving URLs, TLS pinning, foreground probe, and pipelined writes: unit tests in `ios/GoRexTests` (`PairingTests`, `ConnectionTests`, `HostTests`) built and executed with `xcodebuild` on the iOS Simulator.
 - Real-device verification: deploy on the user's home router public IP and measure cellular connect time, Wi-Fi to 5G switch recovery, and typing echo latency.
 
 ## Phases
 
-1. Direct TLS listener, stateless `windrex-relay`, iOS native TLS pinning, foreground liveness probes, and pipelined ordered writes (this PR).
-2. Remove `ios/tailnet` and simplify onboarding UI (#19) after cellular real-device verification.
+1. Direct TLS listener, stateless `windrex-relay`, iOS native TLS pinning, foreground liveness probes, and pipelined ordered writes (#22).
+2. Desktop Settings › Server GUI for direct TLS / self-hosted relay configuration, live status, token rotation, and QR pairing (#25).
+3. Remove `ios/tailnet` and simplify onboarding UI (#19) after cellular real-device verification.

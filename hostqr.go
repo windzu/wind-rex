@@ -34,6 +34,11 @@ type hostPairQR struct {
 	// direct is that its address is the second one, for devices that dial
 	// this machine directly (Reachable at).
 	direct bool
+	// directTLS is this machine's native TLS direct / self-hosted relay
+	// pairing code (rexapi.DirectConfig.PairURL). It carries the Bearer
+	// pairing token in its fragment, so the token stays inside the QR image
+	// and concealed clipboard writes, never shown on screen or logged.
+	directTLS bool
 	// tab is the code the dialog shows when the listener has a web link
 	// too: 0 the address's own code, 1 the page's (rexapi.WebOrigin).
 	tab int
@@ -86,6 +91,38 @@ func (a *App) openLocalPairQR() {
 			page.webTrusted = trustsWebOrigin(rexapi.TailnetDir(), rexapi.WebOrigin)
 		}
 		remoteUI.pairQR = page
+	}
+}
+
+// directPairURL returns this machine's active Direct TLS / Self-Hosted Relay
+// pairing URL when direct/relay access is enabled and ready.
+func (a *App) directPairURL() string {
+	if !directReady(remoteUI.direct, remoteUI.directStatus) {
+		return ""
+	}
+	name, _, _ := a.hostIdentity()
+	return remoteUI.direct.PairURL(remoteUI.directStatus, name)
+}
+
+// openDirectPairQR opens the pairing QR dialog for direct TLS / self-hosted
+// relay access. The pairing token stays in the QR image and concealed
+// clipboard writes only.
+func (a *App) openDirectPairQR() {
+	link := a.directPairURL()
+	if link == "" {
+		return
+	}
+	img := qrImage(link)
+	if img == nil {
+		return
+	}
+	name, _, _ := a.hostIdentity()
+	remoteUI.pairQR = &hostPairQR{
+		host:      name,
+		address:   link,
+		image:     img,
+		open:      true,
+		directTLS: true,
 	}
 }
 
@@ -221,7 +258,9 @@ func pairQRCode(c *ui.Context, img ui.ImageSource, label string) {
 
 func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 	title := locales.HostsRexQRTitle(page.host)
-	if page.rexGo {
+	if page.directTLS {
+		title = locales.RemoteDirectTLSQRTitle(page.host)
+	} else if page.rexGo {
 		title = locales.RemoteRexGoQRTitle(page.host)
 	}
 	// The web tab's code opens a browser, not Rex: it says so.
@@ -279,7 +318,9 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			pairQRCode(c, page.webImage, title)
 		case page.image != nil:
 			hint := locales.HostsRexQRHint()
-			if page.direct {
+			if page.directTLS {
+				hint = locales.RemoteDirectTLSQRHint()
+			} else if page.direct {
 				hint = locales.RemoteDirectQRHint()
 			} else if page.rexGo {
 				hint = locales.RemoteRexGoQRHint()
@@ -321,7 +362,11 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 					label = locales.HostsRexQRCopied()
 				}
 				if ui.Button(c.Key("copy"), label).Clicked() {
-					err := mygo.Clipboard.Write(transfer.TextData(page.address))
+					var opts mygo.ClipboardOptions
+					if page.directTLS || strings.Contains(page.address, "#") {
+						opts.Concealed = true
+					}
+					err := mygo.Clipboard.Write(transfer.TextData(page.address), opts)
 					page.copied, page.copyFailed = err == nil, err != nil
 				}
 			}

@@ -6378,6 +6378,362 @@ func (msgs Messages) RemoteDirectQRHint() string {
 	return Catalog.Format(msgs.locale, "remoteDirectQRHint", nil)
 }
 
+// RemoteDirectTitle says "Direct / Relay Access"
+// in the language the app shows.
+//
+// Title of the Settings › Server group for direct TLS and self-hosted
+// windrex-relay access.
+func RemoteDirectTitle() string { return In(i18n.Locale()).RemoteDirectTitle() }
+
+// RemoteDirectTitle says "Direct / Relay Access"
+// in the language of msgs.
+//
+// Title of the Settings › Server group for direct TLS and self-hosted
+// windrex-relay access.
+func (msgs Messages) RemoteDirectTitle() string {
+	return Catalog.Format(msgs.locale, "remoteDirectTitle", nil)
+}
+
+// RemoteDirectNote says "Reach this machine from WindRex on iPhone over cellular networks using direct TLS or a self-hosted relay. Shares sett…"
+// in the language the app shows.
+//
+// Footnote of the Direct / Relay Access group on Settings › Server.
+func RemoteDirectNote() string { return In(i18n.Locale()).RemoteDirectNote() }
+
+// RemoteDirectNote says "Reach this machine from WindRex on iPhone over cellular networks using direct TLS or a self-hosted relay. Shares sett…"
+// in the language of msgs.
+//
+// Footnote of the Direct / Relay Access group on Settings › Server.
+func (msgs Messages) RemoteDirectNote() string {
+	return Catalog.Format(msgs.locale, "remoteDirectNote", nil)
+}
+
+// RemoteDirectSwitch says "Enable direct TLS / relay access"
+// in the language the app shows.
+//
+// Switch: turn direct TLS and self-hosted relay access on or off.
+func RemoteDirectSwitch() string { return In(i18n.Locale()).RemoteDirectSwitch() }
+
+// RemoteDirectSwitch says "Enable direct TLS / relay access"
+// in the language of msgs.
+//
+// Switch: turn direct TLS and self-hosted relay access on or off.
+func (msgs Messages) RemoteDirectSwitch() string {
+	return Catalog.Format(msgs.locale, "remoteDirectSwitch", nil)
+}
+
+// RemoteDirectOff says "Off"
+// in the language the app shows.
+//
+// Direct / Relay Access state: turned off.
+func RemoteDirectOff() string { return In(i18n.Locale()).RemoteDirectOff() }
+
+// RemoteDirectOff says "Off"
+// in the language of msgs.
+//
+// Direct / Relay Access state: turned off.
+func (msgs Messages) RemoteDirectOff() string {
+	return Catalog.Format(msgs.locale, "remoteDirectOff", nil)
+}
+
+// RemoteDirectWaiting says "On, waiting for the WindRex server"
+// in the language the app shows.
+//
+// Direct / Relay Access state: enabled, waiting for the gateway to report
+// status.
+func RemoteDirectWaiting() string { return In(i18n.Locale()).RemoteDirectWaiting() }
+
+// RemoteDirectWaiting says "On, waiting for the WindRex server"
+// in the language of msgs.
+//
+// Direct / Relay Access state: enabled, waiting for the gateway to report
+// status.
+func (msgs Messages) RemoteDirectWaiting() string {
+	return Catalog.Format(msgs.locale, "remoteDirectWaiting", nil)
+}
+
+// RemoteDirectUnconfigured says "On, enter a relay URL or direct public URL"
+// in the language the app shows.
+//
+// Direct / Relay Access state: enabled, but neither a relay URL nor a
+// direct public URL is configured.
+func RemoteDirectUnconfigured() string { return In(i18n.Locale()).RemoteDirectUnconfigured() }
+
+// RemoteDirectUnconfigured says "On, enter a relay URL or direct public URL"
+// in the language of msgs.
+//
+// Direct / Relay Access state: enabled, but neither a relay URL nor a
+// direct public URL is configured.
+func (msgs Messages) RemoteDirectUnconfigured() string {
+	return Catalog.Format(msgs.locale, "remoteDirectUnconfigured", nil)
+}
+
+// RemoteDirectListening says "Listening on {url}"
+// in the language the app shows.
+//
+// Direct / Relay Access state: local TLS listener is active.
+func RemoteDirectListening(url string) string { return In(i18n.Locale()).RemoteDirectListening(url) }
+
+// RemoteDirectListening says "Listening on {url}"
+// in the language of msgs.
+//
+// Direct / Relay Access state: local TLS listener is active.
+func (msgs Messages) RemoteDirectListening(url string) string {
+	return Catalog.Format(msgs.locale, "remoteDirectListening", map[string]any{"url": url})
+}
+
+// RemoteDirectRelayConnected says "Connected to relay"
+// in the language the app shows.
+//
+// Direct / Relay Access state: outbound tunnel to the self-hosted relay is
+// connected.
+func RemoteDirectRelayConnected() string { return In(i18n.Locale()).RemoteDirectRelayConnected() }
+
+// RemoteDirectRelayConnected says "Connected to relay"
+// in the language of msgs.
+//
+// Direct / Relay Access state: outbound tunnel to the self-hosted relay is
+// connected.
+func (msgs Messages) RemoteDirectRelayConnected() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayConnected", nil)
+}
+
+// RemoteDirectRelayConnecting says "Connecting to relay…"
+// in the language the app shows.
+//
+// Direct / Relay Access state: outbound tunnel to the self-hosted relay is
+// connecting.
+func RemoteDirectRelayConnecting() string { return In(i18n.Locale()).RemoteDirectRelayConnecting() }
+
+// RemoteDirectRelayConnecting says "Connecting to relay…"
+// in the language of msgs.
+//
+// Direct / Relay Access state: outbound tunnel to the self-hosted relay is
+// connecting.
+func (msgs Messages) RemoteDirectRelayConnecting() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayConnecting", nil)
+}
+
+// RemoteDirectError says "Error: {error}"
+// in the language the app shows.
+//
+// Direct / Relay Access state: direct listener error.
+func RemoteDirectError(error string) string { return In(i18n.Locale()).RemoteDirectError(error) }
+
+// RemoteDirectError says "Error: {error}"
+// in the language of msgs.
+//
+// Direct / Relay Access state: direct listener error.
+func (msgs Messages) RemoteDirectError(error string) string {
+	return Catalog.Format(msgs.locale, "remoteDirectError", map[string]any{"error": error})
+}
+
+// RemoteDirectRelayError says "Relay error: {error}"
+// in the language the app shows.
+//
+// Direct / Relay Access state: outbound relay connection error.
+func RemoteDirectRelayError(error string) string {
+	return In(i18n.Locale()).RemoteDirectRelayError(error)
+}
+
+// RemoteDirectRelayError says "Relay error: {error}"
+// in the language of msgs.
+//
+// Direct / Relay Access state: outbound relay connection error.
+func (msgs Messages) RemoteDirectRelayError(error string) string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayError", map[string]any{"error": error})
+}
+
+// RemoteDirectRelayURL says "Relay URL"
+// in the language the app shows.
+//
+// Field label: self-hosted windrex-relay URL.
+func RemoteDirectRelayURL() string { return In(i18n.Locale()).RemoteDirectRelayURL() }
+
+// RemoteDirectRelayURL says "Relay URL"
+// in the language of msgs.
+//
+// Field label: self-hosted windrex-relay URL.
+func (msgs Messages) RemoteDirectRelayURL() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayURL", nil)
+}
+
+// RemoteDirectRelayToken says "Relay token"
+// in the language the app shows.
+//
+// Field label: optional registration secret for the self-hosted relay.
+func RemoteDirectRelayToken() string { return In(i18n.Locale()).RemoteDirectRelayToken() }
+
+// RemoteDirectRelayToken says "Relay token"
+// in the language of msgs.
+//
+// Field label: optional registration secret for the self-hosted relay.
+func (msgs Messages) RemoteDirectRelayToken() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayToken", nil)
+}
+
+// RemoteDirectRelayPin says "Relay cert pin"
+// in the language the app shows.
+//
+// Field label: optional base64url SHA-256 certificate pin for a self-signed
+// relay.
+func RemoteDirectRelayPin() string { return In(i18n.Locale()).RemoteDirectRelayPin() }
+
+// RemoteDirectRelayPin says "Relay cert pin"
+// in the language of msgs.
+//
+// Field label: optional base64url SHA-256 certificate pin for a self-signed
+// relay.
+func (msgs Messages) RemoteDirectRelayPin() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayPin", nil)
+}
+
+// RemoteDirectOptional says "Optional"
+// in the language the app shows.
+//
+// Placeholder for optional Direct / Relay Access fields.
+func RemoteDirectOptional() string { return In(i18n.Locale()).RemoteDirectOptional() }
+
+// RemoteDirectOptional says "Optional"
+// in the language of msgs.
+//
+// Placeholder for optional Direct / Relay Access fields.
+func (msgs Messages) RemoteDirectOptional() string {
+	return Catalog.Format(msgs.locale, "remoteDirectOptional", nil)
+}
+
+// RemoteDirectRelayNote says "Connect outbound to a self-hosted windrex-relay server without opening inbound ports on this machine."
+// in the language the app shows.
+//
+// Hint under the self-hosted relay fields.
+func RemoteDirectRelayNote() string { return In(i18n.Locale()).RemoteDirectRelayNote() }
+
+// RemoteDirectRelayNote says "Connect outbound to a self-hosted windrex-relay server without opening inbound ports on this machine."
+// in the language of msgs.
+//
+// Hint under the self-hosted relay fields.
+func (msgs Messages) RemoteDirectRelayNote() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayNote", nil)
+}
+
+// RemoteDirectPublicURL says "Direct public URL"
+// in the language the app shows.
+//
+// Field label: public https:// URL advertised in direct TLS pairing QR
+// codes.
+func RemoteDirectPublicURL() string { return In(i18n.Locale()).RemoteDirectPublicURL() }
+
+// RemoteDirectPublicURL says "Direct public URL"
+// in the language of msgs.
+//
+// Field label: public https:// URL advertised in direct TLS pairing QR
+// codes.
+func (msgs Messages) RemoteDirectPublicURL() string {
+	return Catalog.Format(msgs.locale, "remoteDirectPublicURL", nil)
+}
+
+// RemoteDirectListen says "Listen address"
+// in the language the app shows.
+//
+// Field label: local TCP bind address for the direct TLS listener.
+func RemoteDirectListen() string { return In(i18n.Locale()).RemoteDirectListen() }
+
+// RemoteDirectListen says "Listen address"
+// in the language of msgs.
+//
+// Field label: local TCP bind address for the direct TLS listener.
+func (msgs Messages) RemoteDirectListen() string {
+	return Catalog.Format(msgs.locale, "remoteDirectListen", nil)
+}
+
+// RemoteDirectTLSNote says "Direct HTTPS endpoint reachable from your iPhone, such as through router port forwarding."
+// in the language the app shows.
+//
+// Hint under the direct TLS fields.
+func RemoteDirectTLSNote() string { return In(i18n.Locale()).RemoteDirectTLSNote() }
+
+// RemoteDirectTLSNote says "Direct HTTPS endpoint reachable from your iPhone, such as through router port forwarding."
+// in the language of msgs.
+//
+// Hint under the direct TLS fields.
+func (msgs Messages) RemoteDirectTLSNote() string {
+	return Catalog.Format(msgs.locale, "remoteDirectTLSNote", nil)
+}
+
+// RemoteDirectCertPin says "TLS cert pin"
+// in the language the app shows.
+//
+// Fact row label: SHA-256 pin of the active direct TLS certificate.
+func RemoteDirectCertPin() string { return In(i18n.Locale()).RemoteDirectCertPin() }
+
+// RemoteDirectCertPin says "TLS cert pin"
+// in the language of msgs.
+//
+// Fact row label: SHA-256 pin of the active direct TLS certificate.
+func (msgs Messages) RemoteDirectCertPin() string {
+	return Catalog.Format(msgs.locale, "remoteDirectCertPin", nil)
+}
+
+// RemoteDirectRelayQR says "Direct / Relay QR…"
+// in the language the app shows.
+//
+// Button: open the Direct TLS / Self-Hosted Relay pairing QR sheet.
+func RemoteDirectRelayQR() string { return In(i18n.Locale()).RemoteDirectRelayQR() }
+
+// RemoteDirectRelayQR says "Direct / Relay QR…"
+// in the language of msgs.
+//
+// Button: open the Direct TLS / Self-Hosted Relay pairing QR sheet.
+func (msgs Messages) RemoteDirectRelayQR() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayQR", nil)
+}
+
+// RemoteDirectRotateToken says "Rotate Token"
+// in the language the app shows.
+//
+// Button: generate a new direct/relay pairing token and disconnect old
+// clients.
+func RemoteDirectRotateToken() string { return In(i18n.Locale()).RemoteDirectRotateToken() }
+
+// RemoteDirectRotateToken says "Rotate Token"
+// in the language of msgs.
+//
+// Button: generate a new direct/relay pairing token and disconnect old
+// clients.
+func (msgs Messages) RemoteDirectRotateToken() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRotateToken", nil)
+}
+
+// RemoteDirectTLSQRTitle says "Direct / Relay QR for {host}"
+// in the language the app shows.
+//
+// Title of the Direct TLS / Self-Hosted Relay pairing QR dialog.
+func RemoteDirectTLSQRTitle(host string) string {
+	return In(i18n.Locale()).RemoteDirectTLSQRTitle(host)
+}
+
+// RemoteDirectTLSQRTitle says "Direct / Relay QR for {host}"
+// in the language of msgs.
+//
+// Title of the Direct TLS / Self-Hosted Relay pairing QR dialog.
+func (msgs Messages) RemoteDirectTLSQRTitle(host string) string {
+	return Catalog.Format(msgs.locale, "remoteDirectTLSQRTitle", map[string]any{"host": host})
+}
+
+// RemoteDirectTLSQRHint says "Scan this code in WindRex on your iPhone to connect over direct TLS or your self-hosted relay. The code holds this ho…"
+// in the language the app shows.
+//
+// Hint above the Direct TLS / Self-Hosted Relay pairing QR code.
+func RemoteDirectTLSQRHint() string { return In(i18n.Locale()).RemoteDirectTLSQRHint() }
+
+// RemoteDirectTLSQRHint says "Scan this code in WindRex on your iPhone to connect over direct TLS or your self-hosted relay. The code holds this ho…"
+// in the language of msgs.
+//
+// Hint above the Direct TLS / Self-Hosted Relay pairing QR code.
+func (msgs Messages) RemoteDirectTLSQRHint() string {
+	return Catalog.Format(msgs.locale, "remoteDirectTLSQRHint", nil)
+}
+
 // RemotePairAddrFrom says "From {source}"
 // in the language the app shows.
 //

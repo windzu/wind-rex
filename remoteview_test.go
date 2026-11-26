@@ -536,7 +536,7 @@ func TestServerPageWords(t *testing.T) {
 		}
 	}
 	for _, s := range []string{locales.RemoteReachableTitle(), locales.RemoteRelay()} {
-		if tt.HasText(s) {
+		if slices.Contains(tt.Texts(), s) {
 			t.Errorf("%q shows before Show Details; texts %q", s, tt.Texts())
 		}
 	}
@@ -545,7 +545,7 @@ func TestServerPageWords(t *testing.T) {
 	}
 	tt.Frame()
 	for _, s := range []string{locales.RemoteReachableTitle(), locales.RemoteRelay(), locales.RemoteAddByKey()} {
-		if !tt.HasText(s) {
+		if !slices.Contains(tt.Texts(), s) {
 			t.Errorf("no %q under Show Details; texts %q", s, tt.Texts())
 		}
 	}
@@ -617,5 +617,278 @@ func TestConnectPhoneEntry(t *testing.T) {
 		if r.Y+r.H > 540 {
 			t.Errorf("listening: %q lies below the fold (bottom %.1f > 540)", s, r.Y+r.H)
 		}
+	}
+}
+
+// TestDirectRelayStatusAndConfig verifies the Direct / Relay Access section's
+// status states and that Connect iPhone surfaces the Direct / Relay QR button
+// above the fold once Direct/Relay is active and ready.
+func TestDirectRelayStatusAndConfig(t *testing.T) {
+	isolateSettings(t, "")
+	registerFonts()
+	t.Setenv("GOREX_DIR", t.TempDir())
+	t.Cleanup(stopRemotePoll)
+	a := &App{}
+	settingsUI.section = "server"
+	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
+	fetchDirect()
+
+	tt := ui.NewTester(a.settingsView, 780, 2200)
+	tt.Frame()
+	for _, s := range []string{
+		locales.RemoteDirectTitle(), locales.RemoteDirectSwitch(), locales.RemoteDirectOff(),
+		locales.RemoteDirectRelayURL(), locales.RemoteDirectRelayToken(), locales.RemoteDirectRelayPin(),
+		locales.RemoteDirectPublicURL(), locales.RemoteDirectListen(),
+	} {
+		if !tt.HasText(s) {
+			t.Errorf("off: missing %q in %q", s, tt.Texts())
+		}
+	}
+	if tt.HasText(locales.RemoteDirectRelayQR()) {
+		t.Errorf("off: Direct / Relay QR button should stay hidden; texts %q", tt.Texts())
+	}
+
+	// Enabled without URLs reports unconfigured state.
+	remoteUI.direct = rexapi.DirectConfig{Enabled: true, Token: "test-token"}
+	remoteUI.directStatus = rexapi.DirectStatus{}
+	tt.Frame()
+	if !tt.HasText(locales.RemoteDirectUnconfigured()) {
+		t.Errorf("unconfigured: missing %q in %q", locales.RemoteDirectUnconfigured(), tt.Texts())
+	}
+
+	// Enabled with relay URL waiting to connect.
+	remoteUI.direct = rexapi.DirectConfig{Enabled: true, RelayURL: "https://relay.example.com:7443", HostID: "host12345678", Token: "test-token"}
+	tt.Frame()
+	if !tt.HasText(locales.RemoteDirectRelayConnecting()) {
+		t.Errorf("connecting: missing %q in %q", locales.RemoteDirectRelayConnecting(), tt.Texts())
+	}
+	if tt.HasText(locales.RemoteDirectRelayQR()) {
+		t.Errorf("connecting: QR button should stay hidden until relay connects")
+	}
+
+	// Relay connected: shows status and surfaces Direct / Relay QR above the fold.
+	remoteUI.directStatus = rexapi.DirectStatus{Running: true, RelayConnected: true}
+	tt.SetSize(780, 540)
+	tt.Frame()
+	if !tt.HasText(locales.RemoteDirectRelayConnected()) {
+		t.Errorf("connected: missing %q in %q", locales.RemoteDirectRelayConnected(), tt.Texts())
+	}
+	qrRect, ok := tt.Find(locales.RemoteDirectRelayQR())
+	if !ok {
+		t.Fatalf("connected: missing %q in %q", locales.RemoteDirectRelayQR(), tt.Texts())
+	}
+	if qrRect.Y+qrRect.H > 540 {
+		t.Errorf("connected: Direct / Relay QR lies below the fold (bottom %.1f > 540)", qrRect.Y+qrRect.H)
+	}
+
+	// Relay error and direct TLS listening states.
+	tt.SetSize(780, 2200)
+	remoteUI.directStatus = rexapi.DirectStatus{Running: true, RelayError: "connection refused"}
+	tt.Frame()
+	if !tt.HasText(locales.RemoteDirectRelayError("connection refused")) {
+		t.Errorf("relay error: missing message in %q", tt.Texts())
+	}
+
+	remoteUI.direct = rexapi.DirectConfig{Enabled: true, PublicURL: "https://203.0.113.10:7443", Listen: ":7443", Token: "test-token"}
+	remoteUI.directStatus = rexapi.DirectStatus{Running: true, Listening: "[::]:7443", SelfSigned: true, CertPin: "abc123pin"}
+	tt.Frame()
+	for _, s := range []string{locales.RemoteDirectListening("https://[::]:7443"), locales.RemoteDirectCertPin(), "abc123pin", locales.RemoteDirectRelayQR()} {
+		if !tt.HasText(s) {
+			t.Errorf("direct listening: missing %q in %q", s, tt.Texts())
+		}
+	}
+
+	remoteUI.directStatus = rexapi.DirectStatus{Running: true, Error: "address already in use"}
+	tt.Frame()
+	if !tt.HasText(locales.RemoteDirectError("address already in use")) {
+		t.Errorf("direct error: missing message in %q", tt.Texts())
+	}
+}
+
+// TestDirectRelaySaveAndValidate verifies saving self-hosted relay and direct
+// TLS settings, rejecting invalid URLs, preserving CLI-rotated tokens, and
+// toggling enable/disable in direct.json.
+func TestDirectRelaySaveAndValidate(t *testing.T) {
+	isolateSettings(t, "")
+	registerFonts()
+	t.Setenv("GOREX_DIR", t.TempDir())
+	t.Cleanup(stopRemotePoll)
+	a := &App{}
+	settingsUI.section = "server"
+	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
+	fetchDirect()
+
+	tt := ui.NewTester(a.settingsView, 780, 2400)
+	tt.Frame()
+	saveLabel := locales.RemoteDirectTitle() + ": " + locales.RemoteLanSave()
+
+	// Invalid relay URL is refused and surfaced inline without persisting.
+	remoteUI.directRelayURL = "not-a-valid-url"
+	remoteUI.directEdited = true
+	tt.Frame()
+	if err := tt.Click(saveLabel); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	if remoteUI.directErr == "" || !tt.HasText(remoteUI.directErr) {
+		t.Fatalf("invalid relay URL was not refused: err=%q texts=%q", remoteUI.directErr, tt.Texts())
+	}
+	dir := rexapi.TailnetDir()
+	if saved, _ := rexapi.LoadDirect(dir); saved.RelayURL != "" {
+		t.Fatalf("invalid relay URL was persisted: %+v", saved)
+	}
+
+	// Valid relay URL + relay token saves to direct.json and generates Token + HostID.
+	remoteUI.directRelayURL = "  https://relay.example.com:7443  "
+	remoteUI.directRelaySecret = "relay-secret-token"
+	remoteUI.directEdited = true
+	tt.Frame()
+	if err := tt.Click(saveLabel); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	if remoteUI.directErr != "" || remoteUI.directEdited {
+		t.Fatalf("valid relay save failed: err=%q edited=%v", remoteUI.directErr, remoteUI.directEdited)
+	}
+	saved, err := rexapi.LoadDirect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.RelayURL != "https://relay.example.com:7443" || saved.RelaySecret != "relay-secret-token" || saved.Token == "" || saved.HostID == "" {
+		t.Fatalf("saved relay config = %+v", saved)
+	}
+
+	// Simulate a CLI token rotation on disk and confirm GUI Save preserves it.
+	cliConf := saved
+	cliConf.Token = rexapi.NewLANToken()
+	if err := rexapi.SaveDirect(dir, cliConf); err != nil {
+		t.Fatal(err)
+	}
+	remoteUI.directPublicURL = "https://203.0.113.10:7443"
+	remoteUI.directListen = ""
+	remoteUI.directEdited = true
+	tt.Frame()
+	if err := tt.Click(saveLabel); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	saved, err = rexapi.LoadDirect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Token != cliConf.Token {
+		t.Errorf("saveDirect overwrote CLI-rotated token: got %q, want %q", saved.Token, cliConf.Token)
+	}
+	if saved.Listen != ":7443" {
+		t.Errorf("saveDirect did not default listen port when public URL set: got %q", saved.Listen)
+	}
+
+	// Toggle switch enables Direct / Relay in direct.json.
+	// The switch sits at the right of its title and status line.
+	swTitle, ok := tt.Find(locales.RemoteDirectSwitch())
+	if !ok {
+		t.Fatalf("no %q in %q", locales.RemoteDirectSwitch(), tt.Texts())
+	}
+	for y := swTitle.Y - 6; y < swTitle.Y+swTitle.H+20 && !remoteUI.direct.Enabled; y += 4 {
+		for x := float32(775); x > swTitle.X+60 && !remoteUI.direct.Enabled; x -= 6 {
+			tt.ClickAt(x, y)
+			tt.Frame()
+		}
+	}
+	saved, _ = rexapi.LoadDirect(dir)
+	if !saved.Enabled {
+		t.Errorf("enable switch did not persist Enabled=true: %+v", saved)
+	}
+}
+
+// TestDirectRelayQRSheetAndRotate verifies opening the Direct / Relay QR sheet
+// without leaking the secret pairing token on screen, rotating the pairing
+// token via the Rotate Token button, and auto-closing the QR sheet when the
+// token changes or the relay disconnects.
+func TestDirectRelayQRSheetAndRotate(t *testing.T) {
+	isolateSettings(t, "")
+	registerFonts()
+	t.Setenv("GOREX_DIR", t.TempDir())
+	t.Cleanup(stopRemotePoll)
+	qr := remoteUI.pairQR
+	t.Cleanup(func() { remoteUI.pairQR = qr })
+
+	dir := rexapi.TailnetDir()
+	if err := rexapi.SaveDirect(dir, rexapi.DirectConfig{
+		Enabled:  true,
+		RelayURL: "https://relay.example.com:7443",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := rexapi.LoadDirect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldToken := saved.Token
+	if oldToken == "" || saved.HostID == "" {
+		t.Fatalf("SaveDirect did not populate token/hostID: %+v", saved)
+	}
+
+	a := &App{}
+	settingsUI.section = "server"
+	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
+	fetchDirect()
+	remoteUI.directStatus = rexapi.DirectStatus{Running: true, RelayConnected: true}
+
+	tt := ui.NewTester(a.settingsView, 780, 2400)
+	tt.Frame()
+	if err := tt.Click(locales.RemoteDirectRelayQR()); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	if remoteUI.pairQR == nil || !remoteUI.pairQR.directTLS || remoteUI.pairQR.image == nil {
+		t.Fatalf("Direct / Relay QR sheet did not open: %+v", remoteUI.pairQR)
+	}
+	if !strings.Contains(remoteUI.pairQR.address, "#k="+oldToken) || !strings.Contains(remoteUI.pairQR.address, "/h/"+saved.HostID+"/") {
+		t.Errorf("unexpected QR pairing URL: %q", remoteUI.pairQR.address)
+	}
+	if !tt.HasText(locales.RemoteDirectTLSQRHint()) {
+		t.Errorf("missing QR hint in %q", tt.Texts())
+	}
+	for _, s := range tt.Texts() {
+		if strings.Contains(s, oldToken) {
+			t.Errorf("pairing token leaked onto screen: %q", s)
+		}
+	}
+
+	// Close QR sheet, rotate token, and verify new token is persisted.
+	if err := tt.Click(locales.HostsRexQRClose()); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	if remoteUI.pairQR != nil {
+		t.Fatal("Close did not close Direct / Relay QR sheet")
+	}
+
+	if err := tt.Click(locales.RemoteDirectRotateToken()); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	rotated, err := rexapi.LoadDirect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.Token == "" || rotated.Token == oldToken {
+		t.Fatalf("token did not rotate: old=%q new=%q", oldToken, rotated.Token)
+	}
+	if remoteUI.direct.Token != rotated.Token {
+		t.Errorf("remoteUI.direct.Token = %q, want %q", remoteUI.direct.Token, rotated.Token)
+	}
+
+	// Open QR again with rotated token, then verify disconnect auto-closes it.
+	a.openDirectPairQR()
+	tt.Frame()
+	if remoteUI.pairQR == nil || !strings.Contains(remoteUI.pairQR.address, "#k="+rotated.Token) {
+		t.Fatalf("reopened QR missing rotated token: %+v", remoteUI.pairQR)
+	}
+	remoteUI.directStatus.RelayConnected = false
+	tt.Frame()
+	if remoteUI.pairQR != nil {
+		t.Error("Direct / Relay QR stayed open after relay disconnected")
 	}
 }
