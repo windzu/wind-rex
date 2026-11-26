@@ -24,8 +24,14 @@ type hostPairQR struct {
 	// pairing token in its fragment, so the token stays inside the QR image
 	// and concealed clipboard writes, never shown on screen or logged.
 	directTLS bool
-	// tab is the code the dialog shows when the listener has a web link
-	// too: 0 the address's own code, 1 the page's (rexapi.WebOrigin).
+	// fleetAddress and fleetImage hold the one-scan Relay Fleet URL (#r=...)
+	// when RelayURL, RelaySecret, and RelayTrust are configured. When present,
+	// tab 0 is Relay Fleet and tab 1 is This Host.
+	fleetAddress string
+	fleetImage   ui.ImageSource
+	// tab is the code the dialog shows when a second code is offered:
+	// for LAN + web: 0 = this address, 1 = web page;
+	// for Direct/Relay + Fleet: 0 = Relay Fleet, 1 = This Host.
 	tab int
 	// webImage is the code for the page at rexapi.WebOrigin, opened with
 	// this listener's address, certificate hash and pairing token
@@ -74,9 +80,19 @@ func (a *App) directPairURL() string {
 	return remoteUI.direct.PairURL(remoteUI.directStatus, name)
 }
 
+// directFleetPairURL returns this machine's one-scan Relay Fleet URL (#r=...)
+// when direct/relay access is ready and RelayTrust + RelaySecret are enabled.
+func (a *App) directFleetPairURL() string {
+	if !directReady(remoteUI.direct, remoteUI.directStatus) {
+		return ""
+	}
+	return remoteUI.direct.FleetPairURL("")
+}
+
 // openDirectPairQR opens the pairing QR dialog for direct TLS / self-hosted
-// relay access. The pairing token stays in the QR image and concealed
-// clipboard writes only.
+// relay access. When Relay Fleet access is active, it also builds the #r=
+// Fleet QR and shows a two-tab switcher (Relay Fleet vs This Host). Secrets
+// stay inside the QR images and concealed clipboard writes only.
 func (a *App) openDirectPairQR() {
 	link := a.directPairURL()
 	if link == "" {
@@ -87,13 +103,21 @@ func (a *App) openDirectPairQR() {
 		return
 	}
 	name, _, _ := a.hostIdentity()
-	remoteUI.pairQR = &hostPairQR{
-		host:      name,
+	displayHost := remoteUI.direct.ResolvedHostName(name)
+	page := &hostPairQR{
+		host:      displayHost,
 		address:   link,
 		image:     img,
 		open:      true,
 		directTLS: true,
 	}
+	if fleetLink := a.directFleetPairURL(); fleetLink != "" {
+		if fleetImg := qrImage(fleetLink); fleetImg != nil {
+			page.fleetAddress = fleetLink
+			page.fleetImage = fleetImg
+		}
+	}
+	remoteUI.pairQR = page
 }
 
 // openWebLink opens a page in the browser. A test replaces it, as the test
@@ -163,9 +187,16 @@ func pairQRCode(c *ui.Context, img ui.ImageSource, label string) {
 }
 
 func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
+	fleet := page.directTLS && page.fleetImage != nil
+	showingFleet := fleet && page.tab == 0
+
 	title := locales.HostsRexQRTitle(page.host)
 	if page.directTLS {
-		title = locales.RemoteDirectTLSQRTitle(page.host)
+		if showingFleet {
+			title = locales.RemoteDirectFleetQRTitle()
+		} else {
+			title = locales.RemoteDirectTLSQRTitle(page.host)
+		}
 	}
 	// The web tab's code opens a browser, not Rex: it says so.
 	if page.webImage != nil && page.tab == 1 {
@@ -180,11 +211,23 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			Border(1, k.panelBorder)).
 			Role(ui.RoleDialog).Label(title)
 		ui.Text(c, title).FontSize(fontTitle).FontWeight(700).TextColor(k.text)
-		// A listener with a web link offers both codes: this address's,
-		// for Rex, and the page's, for a browser on the same network.
+		// A listener with a web link or Relay Fleet offers both codes via
+		// a two-tab segmented switcher.
 		web := page.webImage != nil
-		if web {
-			ui.Segmented(c, &page.tab, locales.HostsPairCodeAddress(), locales.HostsPairCodePage()).Label(title).Changed()
+		if fleet {
+			if ui.Segmented(c, &page.tab, locales.RemoteDirectQRTabFleet(), locales.RemoteDirectQRTabHost()).Label(title).Changed() {
+				page.copied, page.copyFailed = false, false
+			}
+		} else if web {
+			if ui.Segmented(c, &page.tab, locales.HostsPairCodeAddress(), locales.HostsPairCodePage()).Label(title).Changed() {
+				page.copied, page.copyFailed = false, false
+			}
+		}
+		activeAddr := page.address
+		activeImg := page.image
+		if showingFleet {
+			activeAddr = page.fleetAddress
+			activeImg = page.fleetImage
 		}
 		switch {
 		case web && page.tab == 1:
@@ -218,15 +261,17 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			}
 			ui.Text(c, locales.HostsPairWebScan()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
 			pairQRCode(c, page.webImage, title)
-		case page.image != nil:
+		case activeImg != nil:
 			hint := locales.HostsLocalLanRexQRHint()
-			if page.directTLS {
+			if showingFleet {
+				hint = locales.RemoteDirectFleetQRHint()
+			} else if page.directTLS {
 				hint = locales.RemoteDirectTLSQRHint()
 			}
 			ui.Text(c, hint).FontSize(fontCallout).TextColor(k.textMuted).LineHeight(1.35)
-			pairQRCode(c, page.image, title)
-			// The pairing token stays in the code and the copy, off the screen.
-			shown, _, _ := strings.Cut(page.address, "#")
+			pairQRCode(c, activeImg, title)
+			// The pairing token / relay secret stays in the code and the copy, off the screen.
+			shown, _, _ := strings.Cut(activeAddr, "#")
 			ui.Text(c, shown).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.text).SingleLine().Label(shown)
 		default:
 			ui.Text(c, locales.HostsRexQRUnavailable()).FontSize(fontCallout).TextColor(k.textMuted).LineHeight(1.35)
@@ -240,17 +285,17 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			}
 			// The web tab's code holds the token too: a copy of the other
 			// address's link would be a different code than the one shown.
-			if page.image != nil && page.address != "" && !(web && page.tab == 1) {
+			if activeImg != nil && activeAddr != "" && !(web && page.tab == 1) {
 				label := locales.HostsRexQRCopy()
 				if page.copied {
 					label = locales.HostsRexQRCopied()
 				}
 				if ui.Button(c.Key("copy"), label).Clicked() {
 					var opts mygo.ClipboardOptions
-					if page.directTLS || strings.Contains(page.address, "#") {
+					if page.directTLS || strings.Contains(activeAddr, "#") {
 						opts.Concealed = true
 					}
-					err := mygo.Clipboard.Write(transfer.TextData(page.address), opts)
+					err := mygo.Clipboard.Write(transfer.TextData(activeAddr), opts)
 					page.copied, page.copyFailed = err == nil, err != nil
 				}
 			}

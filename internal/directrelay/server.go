@@ -70,12 +70,14 @@ type HostInfo struct {
 	Name        string    `json:"name"`
 	Path        string    `json:"path"`
 	ConnectedAt time.Time `json:"connected_at"`
+	FleetAuth   bool      `json:"fleet_auth,omitempty"`
 }
 
 type hostEntry struct {
 	id          string
 	name        string
 	connectedAt time.Time
+	fleetAuth   bool
 	mux         *Mux
 }
 
@@ -161,6 +163,7 @@ func (s *Server) Hosts() []HostInfo {
 			Name:        entry.name,
 			Path:        "/h/" + entry.id,
 			ConnectedAt: entry.connectedAt,
+			FleetAuth:   entry.fleetAuth,
 		})
 	}
 	s.mu.RUnlock()
@@ -219,6 +222,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hostName := hostDisplayName(r, hostID)
+	fleetAuth := parseBoolParam(r.URL.Query().Get("fleet_auth"))
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols:       []string{RelaySubprotocol},
 		InsecureSkipVerify: true,
@@ -233,6 +237,7 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		id:          hostID,
 		name:        hostName,
 		connectedAt: s.nowUTC(),
+		fleetAuth:   fleetAuth,
 		mux:         m,
 	}
 	s.mu.Lock()
@@ -300,6 +305,11 @@ func (s *Server) handleClient(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+func parseBoolParam(raw string) bool {
+	s := strings.TrimSpace(raw)
+	return s == "1" || strings.EqualFold(s, "true")
 }
 
 func bearerMatches(r *http.Request, secret string) bool {

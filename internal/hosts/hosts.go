@@ -34,6 +34,10 @@ type Host struct {
 	// Kills are the sessions closed here while the host was away, to end
 	// there once connected again, though GoRex quit meanwhile.
 	Kills []string `json:"kills,omitempty"`
+	// RelayID and RelayHostID link a fleet-discovered host back to its saved
+	// relay entry in relays.json (docs/NET-010-relay-fleet-discovery.md).
+	RelayID     string `json:"relay_id,omitempty"`
+	RelayHostID string `json:"relay_host_id,omitempty"`
 }
 
 // Label is the name the host shows by: its alias, else its name.

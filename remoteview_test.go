@@ -477,3 +477,95 @@ func TestDirectRelayQRSheetAndRotate(t *testing.T) {
 		t.Error("Direct / Relay QR stayed open after relay disconnected")
 	}
 }
+
+// TestDirectRelayFleetControlsAndQRTabs verifies Display Name, the Allow Relay
+// Fleet access switch, and the two-tab Relay Fleet / This Host QR dialog on
+// Settings › Server (docs/NET-010-relay-fleet-discovery.md).
+func TestDirectRelayFleetControlsAndQRTabs(t *testing.T) {
+	isolateSettings(t, "")
+	registerFonts()
+	t.Setenv("GOREX_DIR", t.TempDir())
+	t.Cleanup(stopRemotePoll)
+	qr := remoteUI.pairQR
+	t.Cleanup(func() { remoteUI.pairQR = qr })
+
+	const secret = "test-relay-secret"
+	const pin = "an5ZArj8H5A9Xvdo174igXtA3zF8Uz6G0te-EkPK8rg"
+	dir := rexapi.StateDir()
+	if err := rexapi.SaveDirect(dir, rexapi.DirectConfig{
+		Enabled:      true,
+		RelayURL:     "https://relay.example.com:7443",
+		RelaySecret:  secret,
+		RelayCertPin: pin,
+		HostName:     "alice-laptop",
+		RelayTrust:   true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := rexapi.LoadDirect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := &App{}
+	settingsUI.section = "server"
+	fetchDirect()
+	remoteUI.directStatus = rexapi.DirectStatus{Running: true, RelayConnected: true}
+
+	tt := ui.NewTester(a.settingsView, 780, 2400)
+	tt.Frame()
+	for _, s := range []string{locales.RemoteDirectHostName(), locales.RemoteDirectRelayTrust(), locales.RemoteDirectRelayTrustNote()} {
+		if !tt.HasText(s) {
+			t.Errorf("server page missing %q in %q", s, tt.Texts())
+		}
+	}
+
+	// Open QR dialog: shows two-tab switcher defaulting to Relay Fleet (#r=).
+	if err := tt.Click(locales.RemoteDirectRelayQR()); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	tt.Frame()
+	page := remoteUI.pairQR
+	if page == nil || page.fleetImage == nil || page.image == nil {
+		t.Fatalf("expected two-tab Fleet/Host QR page, got %+v", page)
+	}
+	if !strings.HasPrefix(page.fleetAddress, "https://relay.example.com:7443/#r="+secret) {
+		t.Fatalf("unexpected fleetAddress = %q", page.fleetAddress)
+	}
+	for _, s := range []string{locales.RemoteDirectFleetQRTitle(), locales.RemoteDirectQRTabFleet(), locales.RemoteDirectQRTabHost(), locales.RemoteDirectFleetQRHint()} {
+		if !tt.HasText(s) {
+			t.Errorf("fleet QR tab missing %q in %q", s, tt.Texts())
+		}
+	}
+	for _, s := range tt.Texts() {
+		if strings.Contains(s, secret) || strings.Contains(s, saved.Token) {
+			t.Errorf("secret leaked on Fleet QR dialog: %q", s)
+		}
+	}
+
+	// Switch to This Host tab (#k=).
+	if err := tt.Click(locales.RemoteDirectQRTabHost()); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	tt.Frame()
+	if page.tab != 1 {
+		t.Fatalf("expected tab 1 (This Host), got %d", page.tab)
+	}
+	if !tt.HasText(locales.RemoteDirectTLSQRTitle("alice-laptop")) || !tt.HasText(locales.RemoteDirectTLSQRHint()) {
+		t.Errorf("This Host tab missing title/hint in %q", tt.Texts())
+	}
+	for _, s := range tt.Texts() {
+		if strings.Contains(s, secret) || strings.Contains(s, saved.Token) {
+			t.Errorf("secret leaked on This Host QR tab: %q", s)
+		}
+	}
+
+	// Disabling RelayTrust closes the Fleet QR sheet automatically.
+	remoteUI.direct.RelayTrust = false
+	tt.Frame()
+	if remoteUI.pairQR != nil {
+		t.Error("QR sheet stayed open after RelayTrust was turned off")
+	}
+}

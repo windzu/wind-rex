@@ -38,6 +38,7 @@ var remoteUI struct {
 	// shared on disk with "gorex rexapi direct".
 	direct            rexapi.DirectConfig
 	directStatus      rexapi.DirectStatus
+	directHostName    string
 	directRelayURL    string
 	directRelaySecret string
 	directRelayPin    string
@@ -45,6 +46,7 @@ var remoteUI struct {
 	directListen      string
 	directEdited      bool
 	directErr         string
+	focusDirect       bool
 	pairQR            *hostPairQR
 }
 
@@ -67,6 +69,9 @@ func (a *App) showSection(id string) {
 		a.startRemotePoll()
 		startServerInfoPoll()
 	}
+	if id == "hosts" {
+		a.loadRelaysUI()
+	}
 }
 
 func stopRemotePoll() {
@@ -77,9 +82,10 @@ func stopRemotePoll() {
 	page.stop, page.err, page.copied = nil, nil, ""
 	page.focusLAN = false
 	page.direct, page.directStatus = rexapi.DirectConfig{}, rexapi.DirectStatus{}
+	page.directHostName = ""
 	page.directRelayURL, page.directRelaySecret, page.directRelayPin = "", "", ""
 	page.directPublicURL, page.directListen = "", ""
-	page.directEdited, page.directErr = false, ""
+	page.directEdited, page.directErr, page.focusDirect = false, "", false
 }
 
 func (a *App) startRemotePoll() {
@@ -130,6 +136,7 @@ func fetchDirect() {
 	c, _ := rexapi.LoadDirect(dir)
 	remoteUI.direct = c
 	if !remoteUI.directEdited {
+		remoteUI.directHostName = c.HostName
 		remoteUI.directRelayURL = c.RelayURL
 		remoteUI.directRelaySecret = c.RelaySecret
 		remoteUI.directRelayPin = c.RelayCertPin
@@ -146,13 +153,16 @@ func saveDirect(c rexapi.DirectConfig) bool {
 	dir := rexapi.StateDir()
 	if cur, err := rexapi.LoadDirect(dir); err == nil {
 		cur.Enabled = c.Enabled
+		cur.HostName = strings.TrimSpace(c.HostName)
 		cur.RelayURL = strings.TrimSpace(c.RelayURL)
 		cur.RelaySecret = strings.TrimSpace(c.RelaySecret)
 		cur.RelayCertPin = strings.TrimSpace(c.RelayCertPin)
+		cur.RelayTrust = c.RelayTrust
 		cur.PublicURL = strings.TrimSpace(c.PublicURL)
 		cur.Listen = strings.TrimSpace(c.Listen)
 		c = cur
 	} else {
+		c.HostName = strings.TrimSpace(c.HostName)
 		c.RelayURL = strings.TrimSpace(c.RelayURL)
 		c.RelaySecret = strings.TrimSpace(c.RelaySecret)
 		c.RelayCertPin = strings.TrimSpace(c.RelayCertPin)
@@ -174,6 +184,7 @@ func saveDirect(c rexapi.DirectConfig) bool {
 		c = saved
 	}
 	remoteUI.direct = c
+	remoteUI.directHostName = c.HostName
 	remoteUI.directRelayURL = c.RelayURL
 	remoteUI.directRelaySecret = c.RelaySecret
 	remoteUI.directRelayPin = c.RelayCertPin
@@ -309,6 +320,7 @@ func (a *App) directSettings(c *ui.Context, k *colors) {
 					next := conf
 					next.Enabled = on
 					if on && page.directEdited {
+						next.HostName = page.directHostName
 						next.RelayURL = page.directRelayURL
 						next.RelaySecret = page.directRelaySecret
 						next.RelayCertPin = page.directRelayPin
@@ -340,7 +352,14 @@ func (a *App) directSettings(c *ui.Context, k *colors) {
 		if st.CertPin != "" {
 			factRow(c, k, locales.RemoteDirectCertPin(), st.CertPin)
 		}
+		defaultName, _, _ := a.hostIdentity()
 		groupRow(c, k, "direct-relay").Gap(10).Children(func() {
+			rowLine(c, k, locales.RemoteDirectHostName(), func() {
+				if ui.TextInput(c.Key("direct-host-name"), &page.directHostName).Placeholder(defaultName).
+					Label(locales.RemoteDirectHostName()).Width(260).Changed() {
+					page.directEdited, page.directErr = true, ""
+				}
+			})
 			rowLine(c, k, locales.RemoteDirectRelayURL(), func() {
 				if ui.TextInput(c.Key("direct-relay-url"), &page.directRelayURL).Placeholder("https://relay.example.com:7443").
 					Label(locales.RemoteDirectRelayURL()).Font(monoFamily()).Width(260).Changed() {
@@ -348,7 +367,7 @@ func (a *App) directSettings(c *ui.Context, k *colors) {
 				}
 			})
 			rowLine(c, k, locales.RemoteDirectRelayToken(), func() {
-				if ui.TextInput(c.Key("direct-relay-secret"), &page.directRelaySecret).Placeholder(locales.RemoteDirectOptional()).
+				if ui.TextInput(c.Key("direct-relay-secret"), &page.directRelaySecret).Password().Placeholder(locales.RemoteDirectOptional()).
 					Label(locales.RemoteDirectRelayToken()).Font(monoFamily()).Width(260).Changed() {
 					page.directEdited, page.directErr = true, ""
 				}
@@ -357,6 +376,24 @@ func (a *App) directSettings(c *ui.Context, k *colors) {
 				if ui.TextInput(c.Key("direct-relay-pin"), &page.directRelayPin).Placeholder(locales.RemoteDirectOptional()).
 					Label(locales.RemoteDirectRelayPin()).Font(monoFamily()).Width(260).Changed() {
 					page.directEdited, page.directErr = true, ""
+				}
+			})
+			trust := conf.RelayTrust
+			apiLine(c, k, locales.RemoteDirectRelayTrust(), false, func() {
+				rowHint(c, k, locales.RemoteDirectRelayTrustNote())
+			}, func() {
+				if ui.Switch(c.Key("direct-relay-trust"), &trust).Label(locales.RemoteDirectRelayTrust()).Changed() {
+					next := conf
+					next.RelayTrust = trust
+					if page.directEdited {
+						next.HostName = page.directHostName
+						next.RelayURL = page.directRelayURL
+						next.RelaySecret = page.directRelaySecret
+						next.RelayCertPin = page.directRelayPin
+						next.PublicURL = page.directPublicURL
+						next.Listen = page.directListen
+					}
+					saveDirect(next)
 				}
 			})
 			rowHint(c, k, locales.RemoteDirectRelayNote())
@@ -376,13 +413,19 @@ func (a *App) directSettings(c *ui.Context, k *colors) {
 			})
 			rowHint(c, k, locales.RemoteDirectTLSNote())
 		})
-		groupRow(c, k, "direct-actions").Children(func() {
+		actionsRow := groupRow(c, k, "direct-actions")
+		if page.focusDirect {
+			page.focusDirect = false
+			actionsRow.ScrollIntoView()
+		}
+		actionsRow.Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Spacer(c)
 				if ui.Button(c.Key("direct-save"), locales.RemoteLanSave()).
 					Label(locales.RemoteDirectTitle() + ": " + locales.RemoteLanSave()).
 					Disabled(!page.directEdited).Clicked() {
 					next := conf
+					next.HostName = page.directHostName
 					next.RelayURL = page.directRelayURL
 					next.RelaySecret = page.directRelaySecret
 					next.RelayCertPin = page.directRelayPin

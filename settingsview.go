@@ -138,6 +138,7 @@ func (a *App) openSettings() {
 		stopServerInfoPoll()
 		closeAddHost()
 		closeHostRename()
+		resetRelaysUI()
 		remoteUI.pairQR = nil
 		shortcutsUI = shortcutsState{}
 		if a.st != nil && a.st.recording {
@@ -253,7 +254,7 @@ func (a *App) settingsView(c *ui.Context) {
 	if page := remoteUI.pairQR; page != nil {
 		// A code of this machine closes once its address no longer works.
 		if lan := localRexPair(); page.local && page.address != lan ||
-			page.directTLS && page.address != a.directPairURL() {
+			page.directTLS && (page.address != a.directPairURL() || page.fleetAddress != a.directFleetPairURL()) {
 			remoteUI.pairQR = nil
 		} else {
 			hostPairQRSheet(c, k, page)

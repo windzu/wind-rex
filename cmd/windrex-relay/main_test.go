@@ -27,15 +27,18 @@ func TestFormatStartupInfo(t *testing.T) {
 	if !strings.Contains(withSecret, "host discovery: enabled at GET /api/hosts") {
 		t.Fatalf("missing enabled discovery note: %q", withSecret)
 	}
-	if !strings.Contains(withSecret, "--secret <secret>") {
-		t.Fatalf("missing secret placeholder in connect hint: %q", withSecret)
+	if !strings.Contains(withSecret, "--secret <secret> --name <host-name> --trust-relay") {
+		t.Fatalf("missing fleet flags in connect hint: %q", withSecret)
+	}
+	if !strings.Contains(withSecret, "#r=<secret>&p=abc123pin") {
+		t.Fatalf("missing fleet URL template: %q", withSecret)
 	}
 
 	withoutSecret := formatStartupInfo("https", "0.0.0.0:7443", ":7443", "abc123pin", false, false)
 	if !strings.Contains(withoutSecret, "host discovery: disabled") {
 		t.Fatalf("missing disabled discovery note: %q", withoutSecret)
 	}
-	if strings.Contains(withoutSecret, "--secret") {
-		t.Fatalf("unexpected --secret hint when secret is unset: %q", withoutSecret)
+	if strings.Contains(withoutSecret, "--secret") || strings.Contains(withoutSecret, "#r=") {
+		t.Fatalf("unexpected secret/fleet hint when secret is unset: %q", withoutSecret)
 	}
 }

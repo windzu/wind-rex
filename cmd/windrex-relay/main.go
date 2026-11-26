@@ -103,9 +103,12 @@ func formatStartupInfo(scheme, addr, listen, pin string, customCert, hasSecret b
 		b.WriteString("connect a host with:\n")
 		fmt.Fprintf(&b, "  gorex rexapi direct relay --url https://<your-public-host-or-ip>%s --pin %s", portSuffix(listen), pin)
 		if hasSecret {
-			b.WriteString(" --secret <secret>")
+			b.WriteString(" --secret <secret> --name <host-name> --trust-relay")
 		}
 		b.WriteByte('\n')
+		if hasSecret {
+			fmt.Fprintf(&b, "fleet discovery URL template:\n  https://<your-public-host-or-ip>%s/#r=<secret>&p=%s\n", portSuffix(listen), pin)
+		}
 	}
 	return b.String()
 }

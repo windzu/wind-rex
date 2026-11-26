@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"gorex/internal/directrelay"
 	"gorex/internal/rex"
 	"gorex/locales"
 )
@@ -24,6 +25,7 @@ var hostsUI struct {
 	address, name, autoName string
 	formErr                 func() string // what is wrong, said when drawn
 	stage                   addStage
+	addingFleet             bool               // true while checking a #r= Relay Fleet URL
 	cancel                  context.CancelFunc // stops the attempt under way
 	removing                string             // the id of the host Remove asks about
 	renaming                string             // the id of the host whose alias is edited
@@ -52,7 +54,7 @@ func (a *App) openSettingsAt(id string) {
 func (a *App) openAddHost() {
 	cancelAddHost()
 	page := &hostsUI
-	page.adding, page.address, page.name, page.autoName = true, "", "", ""
+	page.adding, page.addingFleet, page.address, page.name, page.autoName = true, false, "", "", ""
 	page.formErr = nil
 }
 
@@ -64,13 +66,14 @@ func cancelAddHost() {
 		page.cancel = nil
 	}
 	page.stage = addForm
+	page.addingFleet = false
 }
 
 // closeAddHost closes the sheet, forgetting the address.
 func closeAddHost() {
 	cancelAddHost()
 	page := &hostsUI
-	page.adding, page.address, page.name, page.autoName, page.formErr = false, "", "", "", nil
+	page.adding, page.addingFleet, page.address, page.name, page.autoName, page.formErr = false, false, "", "", "", nil
 }
 
 // sameDirectHost reports whether a and b are Direct TLS / Relay pairing URLs
@@ -87,6 +90,15 @@ func sameDirectHost(a, b string) bool {
 // validateHost returns what is wrong with a host to add, "" if nothing.
 func validateHost(address, name string, hosts []*hostConn) string {
 	address, name = strings.TrimSpace(address), strings.TrimSpace(name)
+	if directrelay.IsFleetURL(address) {
+		if _, err := directrelay.ParseFleetURL(address); err != nil {
+			if errors.Is(err, directrelay.ErrInvalidFleetPin) {
+				return locales.HostsBadDirectPin()
+			}
+			return locales.HostsBadFleetAddress()
+		}
+		return ""
+	}
 	direct := rex.IsDirectTarget(address)
 	if direct {
 		t, err := rex.ParseDirectTarget(address)
@@ -127,14 +139,49 @@ func nameTaken(name string, h *hostConn, hosts []*hostConn) bool {
 	})
 }
 
-// submitHost checks the sheet's fields, and tries the host: it is saved
-// once it answers.
+// submitHost checks the sheet's fields, and tries the host (or Relay Fleet
+// URL): it is saved once it answers.
 func (a *App) submitHost() {
 	page := &hostsUI
 	if page.stage != addForm {
 		return
 	}
 	address, name, hosts := strings.TrimSpace(page.address), strings.TrimSpace(page.name), a.hosts
+	if directrelay.IsFleetURL(address) {
+		target, err := directrelay.ParseFleetURL(address)
+		if err != nil {
+			if errors.Is(err, directrelay.ErrInvalidFleetPin) {
+				page.formErr = locales.HostsBadDirectPin
+			} else {
+				page.formErr = locales.HostsBadFleetAddress
+			}
+			return
+		}
+		if name == "" {
+			name = target.DefaultLabel()
+			page.name = name
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		page.stage, page.addingFleet, page.cancel, page.formErr = addConnecting, true, cancel, nil
+		update := a.settingsUpdate()
+		go func() {
+			list, derr := discoverRelayHosts(ctx, target.RelayURL, target.Secret, target.Pin)
+			update(func() {
+				if ctx.Err() != nil {
+					return
+				}
+				page.cancel = nil
+				cancel()
+				if derr != nil {
+					page.stage, page.addingFleet, page.formErr = addForm, false, fleetErrorFunc(derr)
+					return
+				}
+				closeAddHost()
+				a.upsertRelay(target, name, list)
+			})
+		}()
+		return
+	}
 	if name == "" && rex.IsDirectTarget(address) {
 		if t, err := rex.ParseDirectTarget(address); err == nil {
 			name = t.DefaultName()
@@ -206,6 +253,7 @@ func pairHost(ctx context.Context, s savedHost, report func(func()), done func()
 
 func (a *App) hostsSettings(c *ui.Context, k *colors) {
 	page := &hostsUI
+	a.ensureRelaysLoaded()
 	settingsGroup(c, k, "", locales.HostsNote(), "", func() {
 		if len(a.hosts) == 0 {
 			groupRow(c, k, nil).Children(func() {
@@ -221,6 +269,7 @@ func (a *App) hostsSettings(c *ui.Context, k *colors) {
 			a.openAddHost()
 		}
 	})
+	a.relaysSettings(c, k)
 	if page.adding {
 		a.addHostSheet(c, k)
 	}
@@ -447,9 +496,13 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 		ui.Text(c, locales.HostsAddTitle()).FontSize(fontTitle).FontWeight(700).TextColor(k.text)
 		switch page.stage {
 		case addConnecting:
+			msg := locales.HostsConnectingTo(strings.TrimSpace(page.name))
+			if page.addingFleet {
+				msg = locales.HostsFleetChecking(strings.TrimSpace(page.name))
+			}
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(7, 7).Radius(capsule(7)).Background(k.attention)
-				ui.Text(c, locales.HostsConnectingTo(strings.TrimSpace(page.name))).FontSize(fontBody).TextColor(k.textMuted)
+				ui.Text(c, msg).FontSize(fontBody).TextColor(k.textMuted)
 			})
 		default:
 			ui.Text(c, locales.HostsAddNote()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
@@ -468,13 +521,23 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 				return ui.TextInput(c.Key("address"), &page.address).Password().Font(monoFamily()).
 					Placeholder(locales.HostsAddressPlaceholder()).Label(locales.HostsAddress()).AutoFocus()
 			}) {
-				if t, err := rex.ParseDirectTarget(page.address); err == nil {
+				if directrelay.IsFleetURL(page.address) {
+					if ft, err := directrelay.ParseFleetURL(page.address); err == nil {
+						if def := ft.DefaultLabel(); def != "" && (strings.TrimSpace(page.name) == "" || page.name == page.autoName) {
+							page.name, page.autoName = def, def
+						}
+					}
+				} else if t, err := rex.ParseDirectTarget(page.address); err == nil {
 					if def := t.DefaultName(); def != "" && (strings.TrimSpace(page.name) == "" || page.name == page.autoName) {
 						page.name, page.autoName = def, def
 					}
 				}
 			}
-			if rex.IsDirectTarget(page.address) {
+			if directrelay.IsFleetURL(page.address) {
+				if ft, err := directrelay.ParseFleetURL(page.address); err == nil {
+					ui.Text(c, locales.HostsFleetDetected(ft.RelayURL)).FontSize(fontSubhead).TextColor(k.textMuted).Margin(-6, 0, 0, 0).SingleLine().Ellipsis("…")
+				}
+			} else if rex.IsDirectTarget(page.address) {
 				if t, err := rex.ParseDirectTarget(page.address); err == nil {
 					hint := locales.HostsDirectDetected(t.DisplayAddress())
 					if t.IsRelay {

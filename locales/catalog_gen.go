@@ -3748,6 +3748,270 @@ func (msgs Messages) HostsRelayDetected(endpoint string) string {
 	return Catalog.Format(msgs.locale, "hostsRelayDetected", map[string]any{"endpoint": endpoint})
 }
 
+// HostsFleetDetected says "Relay Fleet: {endpoint}"
+// in the language the app shows.
+//
+// Hint in the add host sheet after pasting a valid Relay Fleet URL
+// (#r=…), showing only the sanitized relay endpoint.
+func HostsFleetDetected(endpoint string) string {
+	return In(i18n.Locale()).HostsFleetDetected(endpoint)
+}
+
+// HostsFleetDetected says "Relay Fleet: {endpoint}"
+// in the language of msgs.
+//
+// Hint in the add host sheet after pasting a valid Relay Fleet URL
+// (#r=…), showing only the sanitized relay endpoint.
+func (msgs Messages) HostsFleetDetected(endpoint string) string {
+	return Catalog.Format(msgs.locale, "hostsFleetDetected", map[string]any{"endpoint": endpoint})
+}
+
+// HostsBadFleetAddress says "That Relay Fleet URL is missing its relay token (#r=…) or is invalid."
+// in the language the app shows.
+//
+// Error: a pasted Relay Fleet URL is malformed or missing its #r= secret.
+func HostsBadFleetAddress() string { return In(i18n.Locale()).HostsBadFleetAddress() }
+
+// HostsBadFleetAddress says "That Relay Fleet URL is missing its relay token (#r=…) or is invalid."
+// in the language of msgs.
+//
+// Error: a pasted Relay Fleet URL is malformed or missing its #r= secret.
+func (msgs Messages) HostsBadFleetAddress() string {
+	return Catalog.Format(msgs.locale, "hostsBadFleetAddress", nil)
+}
+
+// HostsFleetChecking says "Connecting to relay {relay}…"
+// in the language the app shows.
+//
+// Add sheet: verifying a Relay Fleet URL against GET /api/hosts.
+func HostsFleetChecking(relay string) string { return In(i18n.Locale()).HostsFleetChecking(relay) }
+
+// HostsFleetChecking says "Connecting to relay {relay}…"
+// in the language of msgs.
+//
+// Add sheet: verifying a Relay Fleet URL against GET /api/hosts.
+func (msgs Messages) HostsFleetChecking(relay string) string {
+	return Catalog.Format(msgs.locale, "hostsFleetChecking", map[string]any{"relay": relay})
+}
+
+// HostsFleetTitle says "Relay Fleets"
+// in the language the app shows.
+//
+// Settings › Remote Hosts group title for saved self-hosted relays and
+// discovered fleet hosts.
+func HostsFleetTitle() string { return In(i18n.Locale()).HostsFleetTitle() }
+
+// HostsFleetTitle says "Relay Fleets"
+// in the language of msgs.
+//
+// Settings › Remote Hosts group title for saved self-hosted relays and
+// discovered fleet hosts.
+func (msgs Messages) HostsFleetTitle() string {
+	return Catalog.Format(msgs.locale, "hostsFleetTitle", nil)
+}
+
+// HostsFleetNote says "Paste a Relay Fleet URL (#r=…) in Add Remote Host… to discover and import online hosts sharing your self-hosted r…"
+// in the language the app shows.
+//
+// Footnote of the Relay Fleets group on Settings › Remote Hosts.
+func HostsFleetNote() string { return In(i18n.Locale()).HostsFleetNote() }
+
+// HostsFleetNote says "Paste a Relay Fleet URL (#r=…) in Add Remote Host… to discover and import online hosts sharing your self-hosted r…"
+// in the language of msgs.
+//
+// Footnote of the Relay Fleets group on Settings › Remote Hosts.
+func (msgs Messages) HostsFleetNote() string {
+	return Catalog.Format(msgs.locale, "hostsFleetNote", nil)
+}
+
+// HostsFleetRefreshing says "Discovering hosts…"
+// in the language the app shows.
+//
+// Relay Fleets status line while querying GET /api/hosts.
+func HostsFleetRefreshing() string { return In(i18n.Locale()).HostsFleetRefreshing() }
+
+// HostsFleetRefreshing says "Discovering hosts…"
+// in the language of msgs.
+//
+// Relay Fleets status line while querying GET /api/hosts.
+func (msgs Messages) HostsFleetRefreshing() string {
+	return Catalog.Format(msgs.locale, "hostsFleetRefreshing", nil)
+}
+
+// HostsFleetOnlineCount says "{n, plural, =0 {No online hosts} one {# online host} other {# online hosts}}"
+// in the language the app shows.
+//
+// Relay Fleets status line reporting how many hosts are currently online on
+// the relay.
+func HostsFleetOnlineCount(n int) string { return In(i18n.Locale()).HostsFleetOnlineCount(n) }
+
+// HostsFleetOnlineCount says "{n, plural, =0 {No online hosts} one {# online host} other {# online hosts}}"
+// in the language of msgs.
+//
+// Relay Fleets status line reporting how many hosts are currently online on
+// the relay.
+func (msgs Messages) HostsFleetOnlineCount(n int) string {
+	return Catalog.Format(msgs.locale, "hostsFleetOnlineCount", map[string]any{"n": n})
+}
+
+// HostsFleetRefresh says "Refresh"
+// in the language the app shows.
+//
+// Button: re-query GET /api/hosts for a saved relay.
+func HostsFleetRefresh() string { return In(i18n.Locale()).HostsFleetRefresh() }
+
+// HostsFleetRefresh says "Refresh"
+// in the language of msgs.
+//
+// Button: re-query GET /api/hosts for a saved relay.
+func (msgs Messages) HostsFleetRefresh() string {
+	return Catalog.Format(msgs.locale, "hostsFleetRefresh", nil)
+}
+
+// HostsFleetAddAll says "Add All ({n})"
+// in the language the app shows.
+//
+// Button: import and connect all newly discovered fleet_auth hosts on a
+// relay.
+func HostsFleetAddAll(n int) string { return In(i18n.Locale()).HostsFleetAddAll(n) }
+
+// HostsFleetAddAll says "Add All ({n})"
+// in the language of msgs.
+//
+// Button: import and connect all newly discovered fleet_auth hosts on a
+// relay.
+func (msgs Messages) HostsFleetAddAll(n int) string {
+	return Catalog.Format(msgs.locale, "hostsFleetAddAll", map[string]any{"n": n})
+}
+
+// HostsFleetAddOne says "Add"
+// in the language the app shows.
+//
+// Button: import and connect one discovered fleet_auth host.
+func HostsFleetAddOne() string { return In(i18n.Locale()).HostsFleetAddOne() }
+
+// HostsFleetAddOne says "Add"
+// in the language of msgs.
+//
+// Button: import and connect one discovered fleet_auth host.
+func (msgs Messages) HostsFleetAddOne() string {
+	return Catalog.Format(msgs.locale, "hostsFleetAddOne", nil)
+}
+
+// HostsFleetAdded says "Added"
+// in the language the app shows.
+//
+// Badge on a discovered relay host that is already in Remote Hosts.
+func HostsFleetAdded() string { return In(i18n.Locale()).HostsFleetAdded() }
+
+// HostsFleetAdded says "Added"
+// in the language of msgs.
+//
+// Badge on a discovered relay host that is already in Remote Hosts.
+func (msgs Messages) HostsFleetAdded() string {
+	return Catalog.Format(msgs.locale, "hostsFleetAdded", nil)
+}
+
+// HostsFleetThisMachine says "This machine"
+// in the language the app shows.
+//
+// Badge on a discovered relay host matching this machine's own host_id.
+func HostsFleetThisMachine() string { return In(i18n.Locale()).HostsFleetThisMachine() }
+
+// HostsFleetThisMachine says "This machine"
+// in the language of msgs.
+//
+// Badge on a discovered relay host matching this machine's own host_id.
+func (msgs Messages) HostsFleetThisMachine() string {
+	return Catalog.Format(msgs.locale, "hostsFleetThisMachine", nil)
+}
+
+// HostsFleetNeedsQR says "Single-host QR only"
+// in the language the app shows.
+//
+// Badge on a discovered relay host that has Relay Fleet access disabled.
+func HostsFleetNeedsQR() string { return In(i18n.Locale()).HostsFleetNeedsQR() }
+
+// HostsFleetNeedsQR says "Single-host QR only"
+// in the language of msgs.
+//
+// Badge on a discovered relay host that has Relay Fleet access disabled.
+func (msgs Messages) HostsFleetNeedsQR() string {
+	return Catalog.Format(msgs.locale, "hostsFleetNeedsQR", nil)
+}
+
+// HostsFleetRemoveAsk says "Remove relay {relay}? Already-added remote hosts and their sessions stay."
+// in the language the app shows.
+//
+// Inline confirmation before removing a saved relay from relays.json.
+func HostsFleetRemoveAsk(relay string) string { return In(i18n.Locale()).HostsFleetRemoveAsk(relay) }
+
+// HostsFleetRemoveAsk says "Remove relay {relay}? Already-added remote hosts and their sessions stay."
+// in the language of msgs.
+//
+// Inline confirmation before removing a saved relay from relays.json.
+func (msgs Messages) HostsFleetRemoveAsk(relay string) string {
+	return Catalog.Format(msgs.locale, "hostsFleetRemoveAsk", map[string]any{"relay": relay})
+}
+
+// HostsFleetAuthFailed says "The relay rejected the fleet token. Copy a fresh Relay Fleet URL from Settings › Server."
+// in the language the app shows.
+//
+// Error when GET /api/hosts returns 401 Unauthorized.
+func HostsFleetAuthFailed() string { return In(i18n.Locale()).HostsFleetAuthFailed() }
+
+// HostsFleetAuthFailed says "The relay rejected the fleet token. Copy a fresh Relay Fleet URL from Settings › Server."
+// in the language of msgs.
+//
+// Error when GET /api/hosts returns 401 Unauthorized.
+func (msgs Messages) HostsFleetAuthFailed() string {
+	return Catalog.Format(msgs.locale, "hostsFleetAuthFailed", nil)
+}
+
+// HostsFleetDisabled says "Host discovery is disabled on that relay. Start windrex-relay with -secret."
+// in the language the app shows.
+//
+// Error when GET /api/hosts returns 404 Not Found.
+func HostsFleetDisabled() string { return In(i18n.Locale()).HostsFleetDisabled() }
+
+// HostsFleetDisabled says "Host discovery is disabled on that relay. Start windrex-relay with -secret."
+// in the language of msgs.
+//
+// Error when GET /api/hosts returns 404 Not Found.
+func (msgs Messages) HostsFleetDisabled() string {
+	return Catalog.Format(msgs.locale, "hostsFleetDisabled", nil)
+}
+
+// HostsFleetPinMismatch says "The relay's TLS certificate does not match the pinned fingerprint."
+// in the language the app shows.
+//
+// Error when the relay server leaf TLS certificate does not match the
+// pinned SHA-256 fingerprint.
+func HostsFleetPinMismatch() string { return In(i18n.Locale()).HostsFleetPinMismatch() }
+
+// HostsFleetPinMismatch says "The relay's TLS certificate does not match the pinned fingerprint."
+// in the language of msgs.
+//
+// Error when the relay server leaf TLS certificate does not match the
+// pinned SHA-256 fingerprint.
+func (msgs Messages) HostsFleetPinMismatch() string {
+	return Catalog.Format(msgs.locale, "hostsFleetPinMismatch", nil)
+}
+
+// HostsFleetUnreachable says "Could not reach the relay server. Check that windrex-relay is running."
+// in the language the app shows.
+//
+// Error when connecting to the relay server fails.
+func HostsFleetUnreachable() string { return In(i18n.Locale()).HostsFleetUnreachable() }
+
+// HostsFleetUnreachable says "Could not reach the relay server. Check that windrex-relay is running."
+// in the language of msgs.
+//
+// Error when connecting to the relay server fails.
+func (msgs Messages) HostsFleetUnreachable() string {
+	return Catalog.Format(msgs.locale, "hostsFleetUnreachable", nil)
+}
+
 // HostsDirectAuthFailed says "The host rejected the pairing token. Copy a fresh pairing URL from Settings › Server on the host."
 // in the language the app shows.
 //
@@ -5274,6 +5538,114 @@ func RemoteDirectTLSQRHint() string { return In(i18n.Locale()).RemoteDirectTLSQR
 // Hint above the Direct TLS / Self-Hosted Relay pairing QR code.
 func (msgs Messages) RemoteDirectTLSQRHint() string {
 	return Catalog.Format(msgs.locale, "remoteDirectTLSQRHint", nil)
+}
+
+// RemoteDirectHostName says "Display name"
+// in the language the app shows.
+//
+// Field label: optional custom display name reported to the relay directory
+// and embedded in pairing QR codes.
+func RemoteDirectHostName() string { return In(i18n.Locale()).RemoteDirectHostName() }
+
+// RemoteDirectHostName says "Display name"
+// in the language of msgs.
+//
+// Field label: optional custom display name reported to the relay directory
+// and embedded in pairing QR codes.
+func (msgs Messages) RemoteDirectHostName() string {
+	return Catalog.Format(msgs.locale, "remoteDirectHostName", nil)
+}
+
+// RemoteDirectRelayTrust says "Allow Relay Fleet access"
+// in the language the app shows.
+//
+// Switch: allow devices holding the shared relay token to auto-discover and
+// connect to this host over the relay.
+func RemoteDirectRelayTrust() string { return In(i18n.Locale()).RemoteDirectRelayTrust() }
+
+// RemoteDirectRelayTrust says "Allow Relay Fleet access"
+// in the language of msgs.
+//
+// Switch: allow devices holding the shared relay token to auto-discover and
+// connect to this host over the relay.
+func (msgs Messages) RemoteDirectRelayTrust() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayTrust", nil)
+}
+
+// RemoteDirectRelayTrustNote says "Let your other devices holding this relay token discover and connect to this host automatically over the relay."
+// in the language the app shows.
+//
+// Hint under the Allow Relay Fleet access switch.
+func RemoteDirectRelayTrustNote() string { return In(i18n.Locale()).RemoteDirectRelayTrustNote() }
+
+// RemoteDirectRelayTrustNote says "Let your other devices holding this relay token discover and connect to this host automatically over the relay."
+// in the language of msgs.
+//
+// Hint under the Allow Relay Fleet access switch.
+func (msgs Messages) RemoteDirectRelayTrustNote() string {
+	return Catalog.Format(msgs.locale, "remoteDirectRelayTrustNote", nil)
+}
+
+// RemoteDirectQRTabFleet says "Relay Fleet"
+// in the language the app shows.
+//
+// Segmented tab in the Direct / Relay QR dialog: the one-scan Relay Fleet
+// QR code (#r=…).
+func RemoteDirectQRTabFleet() string { return In(i18n.Locale()).RemoteDirectQRTabFleet() }
+
+// RemoteDirectQRTabFleet says "Relay Fleet"
+// in the language of msgs.
+//
+// Segmented tab in the Direct / Relay QR dialog: the one-scan Relay Fleet
+// QR code (#r=…).
+func (msgs Messages) RemoteDirectQRTabFleet() string {
+	return Catalog.Format(msgs.locale, "remoteDirectQRTabFleet", nil)
+}
+
+// RemoteDirectQRTabHost says "This Host"
+// in the language the app shows.
+//
+// Segmented tab in the Direct / Relay QR dialog: this single host's pairing
+// QR code (#k=…).
+func RemoteDirectQRTabHost() string { return In(i18n.Locale()).RemoteDirectQRTabHost() }
+
+// RemoteDirectQRTabHost says "This Host"
+// in the language of msgs.
+//
+// Segmented tab in the Direct / Relay QR dialog: this single host's pairing
+// QR code (#k=…).
+func (msgs Messages) RemoteDirectQRTabHost() string {
+	return Catalog.Format(msgs.locale, "remoteDirectQRTabHost", nil)
+}
+
+// RemoteDirectFleetQRTitle says "Relay Fleet QR"
+// in the language the app shows.
+//
+// Title of the Direct / Relay QR dialog when the Relay Fleet tab is
+// selected.
+func RemoteDirectFleetQRTitle() string { return In(i18n.Locale()).RemoteDirectFleetQRTitle() }
+
+// RemoteDirectFleetQRTitle says "Relay Fleet QR"
+// in the language of msgs.
+//
+// Title of the Direct / Relay QR dialog when the Relay Fleet tab is
+// selected.
+func (msgs Messages) RemoteDirectFleetQRTitle() string {
+	return Catalog.Format(msgs.locale, "remoteDirectFleetQRTitle", nil)
+}
+
+// RemoteDirectFleetQRHint says "Scan this code once in WindRex on iPhone or paste the link on Desktop to discover and connect all Relay Fleet hosts a…"
+// in the language the app shows.
+//
+// Hint above the one-scan Relay Fleet QR code.
+func RemoteDirectFleetQRHint() string { return In(i18n.Locale()).RemoteDirectFleetQRHint() }
+
+// RemoteDirectFleetQRHint says "Scan this code once in WindRex on iPhone or paste the link on Desktop to discover and connect all Relay Fleet hosts a…"
+// in the language of msgs.
+//
+// Hint above the one-scan Relay Fleet QR code.
+func (msgs Messages) RemoteDirectFleetQRHint() string {
+	return Catalog.Format(msgs.locale, "remoteDirectFleetQRHint", nil)
 }
 
 // RemoteApiTitle says "Local API"

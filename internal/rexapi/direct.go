@@ -45,6 +45,15 @@ type DirectConfig struct {
 	RelayCertPin string `json:"relay_cert_pin,omitempty"`
 	// HostID identifies this host on the relay (/h/<HostID>). Auto-generated once.
 	HostID string `json:"host_id,omitempty"`
+	// HostName optionally overrides the display name reported to the relay
+	// directory and embedded in single-host pairing QR codes. When empty, falls
+	// back to the sanitized local hostname.
+	HostName string `json:"host_name,omitempty"`
+	// RelayTrust opts this host into Relay Fleet auto-discovery: clients holding
+	// the shared RelaySecret may authenticate over transportRelay using the
+	// deterministic per-host derived fleet token. Never honored on direct TLS
+	// or LAN transports.
+	RelayTrust bool `json:"relay_trust,omitempty"`
 }
 
 // DirectStatus records runtime state of the direct/relay transport in direct-status.json.
@@ -89,6 +98,7 @@ func LoadDirect(dir string) (DirectConfig, error) {
 
 // SaveDirect validates c, populates Token and HostID if missing, and writes direct.json.
 func SaveDirect(dir string, c DirectConfig) error {
+	c.HostName = directrelay.SanitizeHostName(c.HostName)
 	if err := c.check(); err != nil {
 		return err
 	}
@@ -155,6 +165,27 @@ func (c DirectConfig) check() error {
 	return nil
 }
 
+// ResolvedHostName returns the sanitized custom HostName when set, else the
+// sanitized fallback (or local OS hostname without a trailing .local suffix).
+func (c DirectConfig) ResolvedHostName(fallback string) string {
+	if name := directrelay.SanitizeHostName(c.HostName); name != "" {
+		return name
+	}
+	if name := directrelay.SanitizeHostName(fallback); name != "" {
+		return name
+	}
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	h = strings.TrimSpace(h)
+	const suffix = ".local"
+	if len(h) > len(suffix) && strings.EqualFold(h[len(h)-len(suffix):], suffix) {
+		h = h[:len(h)-len(suffix)]
+	}
+	return directrelay.SanitizeHostName(h)
+}
+
 // PairURL returns the pairing URL for iOS (including fragment token, optional
 // leaf certificate pin, and optional host display name).
 func (c DirectConfig) PairURL(s DirectStatus, hostName string) string {
@@ -183,10 +214,25 @@ func (c DirectConfig) PairURL(s DirectStatus, hostName string) string {
 	if pin != "" {
 		q.Set("p", pin)
 	}
-	if hostName = strings.TrimSpace(hostName); hostName != "" {
+	if name := directrelay.SanitizeHostName(c.HostName); name != "" {
+		q.Set("n", name)
+	} else if hostName = strings.TrimSpace(hostName); hostName != "" {
 		q.Set("n", hostName)
 	}
 	return base + "/#" + q.Encode()
+}
+
+// FleetPairURL returns the one-scan Relay Fleet URL (#r=...) when relay mode
+// is enabled with a relay secret and RelayTrust is on.
+func (c DirectConfig) FleetPairURL(label string) string {
+	if !c.Enabled || !c.RelayTrust || strings.TrimSpace(c.RelayURL) == "" || strings.TrimSpace(c.RelaySecret) == "" {
+		return ""
+	}
+	u, err := directrelay.FormatFleetURL(c.RelayURL, c.RelaySecret, c.RelayCertPin, label)
+	if err != nil {
+		return ""
+	}
+	return u
 }
 
 type directListener struct {
@@ -232,7 +278,8 @@ func (d *directListener) apply(c DirectConfig) {
 	directChanged := !d.applied || d.conf.Enabled != c.Enabled || d.conf.Listen != c.Listen ||
 		d.conf.CertFile != c.CertFile || d.conf.KeyFile != c.KeyFile || d.conf.PublicURL != c.PublicURL
 	relayChanged := !d.applied || d.conf.Enabled != c.Enabled || d.conf.RelayURL != c.RelayURL ||
-		d.conf.RelaySecret != c.RelaySecret || d.conf.RelayCertPin != c.RelayCertPin || d.conf.HostID != c.HostID
+		d.conf.RelaySecret != c.RelaySecret || d.conf.RelayCertPin != c.RelayCertPin || d.conf.HostID != c.HostID ||
+		d.conf.HostName != c.HostName || d.conf.RelayTrust != c.RelayTrust
 
 	d.applied = true
 	d.conf = c
@@ -316,10 +363,12 @@ func (d *directListener) startDirectLocked(c DirectConfig) error {
 
 func (d *directListener) startRelayLocked(c DirectConfig) error {
 	tl, err := directrelay.StartTunnel(directrelay.ClientConfig{
-		RelayURL: c.RelayURL,
-		HostID:   c.HostID,
-		Secret:   c.RelaySecret,
-		CertPin:  c.RelayCertPin,
+		RelayURL:  c.RelayURL,
+		HostID:    c.HostID,
+		HostName:  c.HostName,
+		Secret:    c.RelaySecret,
+		CertPin:   c.RelayCertPin,
+		FleetAuth: c.RelayTrust,
 		OnStatus: func(connected bool, statusErr error) {
 			d.mu.Lock()
 			d.relayOK = connected
@@ -391,11 +440,21 @@ func (d *directListener) reportLocked() {
 }
 
 // admit validates the 256-bit Bearer token for direct TLS and stateless relay callers.
+// When RelayTrust is enabled, it also accepts the per-host HMAC-SHA256 derived
+// fleet token strictly on transportRelay (never on transportDirect or other transports).
 func (d *directListener) admit(w http.ResponseWriter, r *http.Request, transport string) (map[string]any, bool) {
 	d.mu.Lock()
 	token := d.conf.Token
+	relayTrust := d.conf.RelayTrust
+	relaySecret := d.conf.RelaySecret
+	hostID := d.conf.HostID
 	d.mu.Unlock()
-	if !tokenMatches(r, token) {
+	admitted := tokenMatches(r, token)
+	if !admitted && transport == transportRelay && relayTrust && relaySecret != "" && hostID != "" {
+		fleetToken := directrelay.DeriveFleetToken(relaySecret, hostID)
+		admitted = tokenMatches(r, fleetToken)
+	}
+	if !admitted {
 		if r.URL.Path == rexTunnelPath {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="windrex"`)
 			writeError(w, http.StatusUnauthorized, "WindRex needs this device's pairing token")

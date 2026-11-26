@@ -87,7 +87,7 @@ Usage:
   windrex-server server status [--json]               show server, session, and transport status
   windrex-server server upgrade [--force]             upgrade a running server in place (keeps shells)
   windrex-server server restart                       restart the server (starts new shells)
-  windrex-server rexapi direct on|relay|qr|status|rotate|off
+  windrex-server rexapi direct on|relay|qr|fleet-qr|status|rotate|off
   windrex-server rexapi lan|web|call
   windrex-server ls|clients|layout|new|split|close|rename|send|paste|capture|events|wait|run
   windrex-server version [--json]
@@ -187,10 +187,12 @@ type serverStatusReport struct {
 type directStatusSummary struct {
 	Enabled        bool   `json:"enabled"`
 	Mode           string `json:"mode"`
+	HostName       string `json:"hostName,omitempty"`
 	Listen         string `json:"listen,omitempty"`
 	PublicURL      string `json:"publicURL,omitempty"`
 	Listening      string `json:"listening,omitempty"`
 	RelayURL       string `json:"relayURL,omitempty"`
+	RelayTrust     bool   `json:"relayTrust,omitempty"`
 	RelayConnected bool   `json:"relayConnected,omitempty"`
 	CertPin        string `json:"certPin,omitempty"`
 	Error          string `json:"error,omitempty"`
@@ -284,10 +286,12 @@ func readDirectSummary(dir string) directStatusSummary {
 	return directStatusSummary{
 		Enabled:        conf.Enabled,
 		Mode:           mode,
+		HostName:       conf.HostName,
 		Listen:         conf.Listen,
 		PublicURL:      conf.PublicURL,
 		Listening:      st.Listening,
 		RelayURL:       conf.RelayURL,
+		RelayTrust:     conf.RelayTrust,
 		RelayConnected: st.RelayConnected,
 		CertPin:        st.CertPin,
 		Error:          st.Error,

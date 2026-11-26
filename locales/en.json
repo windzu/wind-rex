@@ -1241,6 +1241,108 @@
       }
     }
   },
+  "hostsFleetDetected": "Relay Fleet: {endpoint}",
+  "@hostsFleetDetected": {
+    "description": "Hint in the add host sheet after pasting a valid Relay Fleet URL (#r=…), showing only the sanitized relay endpoint.",
+    "placeholders": {
+      "endpoint": {
+        "type": "String",
+        "example": "https://relay.example.com:7443"
+      }
+    }
+  },
+  "hostsBadFleetAddress": "That Relay Fleet URL is missing its relay token (#r=…) or is invalid.",
+  "@hostsBadFleetAddress": {
+    "description": "Error: a pasted Relay Fleet URL is malformed or missing its #r= secret."
+  },
+  "hostsFleetChecking": "Connecting to relay {relay}…",
+  "@hostsFleetChecking": {
+    "description": "Add sheet: verifying a Relay Fleet URL against GET /api/hosts.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.example.com"
+      }
+    }
+  },
+  "hostsFleetTitle": "Relay Fleets",
+  "@hostsFleetTitle": {
+    "description": "Settings › Remote Hosts group title for saved self-hosted relays and discovered fleet hosts."
+  },
+  "hostsFleetNote": "Paste a Relay Fleet URL (#r=…) in Add Remote Host… to discover and import online hosts sharing your self-hosted relay.",
+  "@hostsFleetNote": {
+    "description": "Footnote of the Relay Fleets group on Settings › Remote Hosts."
+  },
+  "hostsFleetRefreshing": "Discovering hosts…",
+  "@hostsFleetRefreshing": {
+    "description": "Relay Fleets status line while querying GET /api/hosts."
+  },
+  "hostsFleetOnlineCount": "{n, plural, =0 {No online hosts} one {# online host} other {# online hosts}}",
+  "@hostsFleetOnlineCount": {
+    "description": "Relay Fleets status line reporting how many hosts are currently online on the relay.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "hostsFleetRefresh": "Refresh",
+  "@hostsFleetRefresh": {
+    "description": "Button: re-query GET /api/hosts for a saved relay."
+  },
+  "hostsFleetAddAll": "Add All ({n})",
+  "@hostsFleetAddAll": {
+    "description": "Button: import and connect all newly discovered fleet_auth hosts on a relay.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "hostsFleetAddOne": "Add",
+  "@hostsFleetAddOne": {
+    "description": "Button: import and connect one discovered fleet_auth host."
+  },
+  "hostsFleetAdded": "Added",
+  "@hostsFleetAdded": {
+    "description": "Badge on a discovered relay host that is already in Remote Hosts."
+  },
+  "hostsFleetThisMachine": "This machine",
+  "@hostsFleetThisMachine": {
+    "description": "Badge on a discovered relay host matching this machine's own host_id."
+  },
+  "hostsFleetNeedsQR": "Single-host QR only",
+  "@hostsFleetNeedsQR": {
+    "description": "Badge on a discovered relay host that has Relay Fleet access disabled."
+  },
+  "hostsFleetRemoveAsk": "Remove relay {relay}? Already-added remote hosts and their sessions stay.",
+  "@hostsFleetRemoveAsk": {
+    "description": "Inline confirmation before removing a saved relay from relays.json.",
+    "placeholders": {
+      "relay": {
+        "type": "String",
+        "example": "relay.example.com"
+      }
+    }
+  },
+  "hostsFleetAuthFailed": "The relay rejected the fleet token. Copy a fresh Relay Fleet URL from Settings › Server.",
+  "@hostsFleetAuthFailed": {
+    "description": "Error when GET /api/hosts returns 401 Unauthorized."
+  },
+  "hostsFleetDisabled": "Host discovery is disabled on that relay. Start windrex-relay with -secret.",
+  "@hostsFleetDisabled": {
+    "description": "Error when GET /api/hosts returns 404 Not Found."
+  },
+  "hostsFleetPinMismatch": "The relay's TLS certificate does not match the pinned fingerprint.",
+  "@hostsFleetPinMismatch": {
+    "description": "Error when the relay server leaf TLS certificate does not match the pinned SHA-256 fingerprint."
+  },
+  "hostsFleetUnreachable": "Could not reach the relay server. Check that windrex-relay is running.",
+  "@hostsFleetUnreachable": {
+    "description": "Error when connecting to the relay server fails."
+  },
   "hostsDirectAuthFailed": "The host rejected the pairing token. Copy a fresh pairing URL from Settings › Server on the host.",
   "@hostsDirectAuthFailed": {
     "description": "Why a Direct TLS or relay host failed to connect: the host rejected the Bearer pairing token."
@@ -1824,6 +1926,34 @@
   "remoteDirectTLSQRHint": "Scan this code in WindRex on your iPhone to connect over direct TLS or your self-hosted relay. The code holds this host's pairing token, a secret: show it only to your own devices.",
   "@remoteDirectTLSQRHint": {
     "description": "Hint above the Direct TLS / Self-Hosted Relay pairing QR code."
+  },
+  "remoteDirectHostName": "Display name",
+  "@remoteDirectHostName": {
+    "description": "Field label: optional custom display name reported to the relay directory and embedded in pairing QR codes."
+  },
+  "remoteDirectRelayTrust": "Allow Relay Fleet access",
+  "@remoteDirectRelayTrust": {
+    "description": "Switch: allow devices holding the shared relay token to auto-discover and connect to this host over the relay."
+  },
+  "remoteDirectRelayTrustNote": "Let your other devices holding this relay token discover and connect to this host automatically over the relay.",
+  "@remoteDirectRelayTrustNote": {
+    "description": "Hint under the Allow Relay Fleet access switch."
+  },
+  "remoteDirectQRTabFleet": "Relay Fleet",
+  "@remoteDirectQRTabFleet": {
+    "description": "Segmented tab in the Direct / Relay QR dialog: the one-scan Relay Fleet QR code (#r=…)."
+  },
+  "remoteDirectQRTabHost": "This Host",
+  "@remoteDirectQRTabHost": {
+    "description": "Segmented tab in the Direct / Relay QR dialog: this single host's pairing QR code (#k=…)."
+  },
+  "remoteDirectFleetQRTitle": "Relay Fleet QR",
+  "@remoteDirectFleetQRTitle": {
+    "description": "Title of the Direct / Relay QR dialog when the Relay Fleet tab is selected."
+  },
+  "remoteDirectFleetQRHint": "Scan this code once in WindRex on iPhone or paste the link on Desktop to discover and connect all Relay Fleet hosts automatically. The code holds your relay token, a secret: show it only to your own devices.",
+  "@remoteDirectFleetQRHint": {
+    "description": "Hint above the one-scan Relay Fleet QR code."
   },
   "remoteApiTitle": "Local API",
   "@remoteApiTitle": {
