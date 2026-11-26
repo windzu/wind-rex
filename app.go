@@ -197,6 +197,13 @@ type App struct {
 	posted []func()
 	// services keeps redraw requests available to menu callbacks.
 	services ui.Services
+	// mods is the modifier state read on the last frame (used to detect
+	// Option+Cmd clicks that bypass Side Preview for external apps).
+	mods ui.Modifiers
+	// preview is the active Side Preview panel, nil when closed.
+	preview *linkPreview
+	// openURLHook overrides Services.OpenURL in unit tests without a UI tester.
+	openURLHook func(string)
 }
 
 func (a *App) post(fn func()) {

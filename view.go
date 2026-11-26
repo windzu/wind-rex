@@ -85,6 +85,7 @@ func (a *App) syncHostTheme(dark bool) {
 
 func (a *App) view(c *ui.Context) {
 	a.services = c.Services()
+	a.mods = c.Modifiers()
 	a.runPosted()
 	a.sidebarMoving = false
 	a.dividerHeld, a.dividerNow = a.dividerNow, false
@@ -202,30 +203,39 @@ func (a *App) titleButtons(c *ui.Context, k *colors, more func()) {
 }
 
 // panes lays out the active tab's panes, left and right of them the room
-// given.
+// given, with the Side Preview panel beside them when open.
 func (a *App) panes(c *ui.Context, k *colors, left, right float32) {
-	col := ui.Column(c).Grow(1).MinHeight(0).MinWidth(0).Padding(0, right, gap, left).ClipX()
-	if t := a.tab(); t != nil {
-		if a.lastTabID != 0 && a.lastTabID != t.ID {
-			if a.active < a.lastTabIdx {
-				a.tabSlideDir = -1
-			} else {
-				a.tabSlideDir = 1
-			}
-		}
-		a.lastTabID = t.ID
-		a.lastTabIdx = a.active
-		if anim := motion(c); anim != nil && a.tabSlideDir != 0 {
-			col.ChildExit(ui.Motion{XPercent: -a.tabSlideDir, Opacity: 0})
-		}
-		col.Children(func() {
-			a.tabContent(c, k, t)
-		})
-	} else {
-		col.Children(func() {
-			a.emptyNoTab(c, k)
-		})
+	if a.preview != nil && a.preview.originPane != nil && a.preview.originPane.closed {
+		a.preview = nil
 	}
+	area := ui.Row(c).Grow(1).MinHeight(0).MinWidth(0).Padding(0, right, gap, left).Gap(gap).AlignItems(ui.Stretch)
+	area.Children(func() {
+		col := ui.Column(c).Grow(1).MinHeight(0).MinWidth(0).ClipX()
+		if t := a.tab(); t != nil {
+			if a.lastTabID != 0 && a.lastTabID != t.ID {
+				if a.active < a.lastTabIdx {
+					a.tabSlideDir = -1
+				} else {
+					a.tabSlideDir = 1
+				}
+			}
+			a.lastTabID = t.ID
+			a.lastTabIdx = a.active
+			if anim := motion(c); anim != nil && a.tabSlideDir != 0 {
+				col.ChildExit(ui.Motion{XPercent: -a.tabSlideDir, Opacity: 0})
+			}
+			col.Children(func() {
+				a.tabContent(c, k, t)
+			})
+		} else {
+			col.Children(func() {
+				a.emptyNoTab(c, k)
+			})
+		}
+		if a.preview != nil {
+			a.linkPreviewPanel(c, k)
+		}
+	})
 }
 
 // emptyNoTab is the empty state of the main area with no tab open

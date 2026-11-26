@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
+	"github.com/egoist/mygo/ui"
 	"golang.org/x/net/publicsuffix"
 	"gorex/locales"
 )
@@ -116,30 +117,13 @@ func (a *App) findCount() string {
 
 var linkLine = regexp.MustCompile(`^(.*?)(:\d+)(?::\d+)?$`)
 
-// openLink opens a link the terminal hands over: a URL goes to the system
-// as the terminal would; a file path, with :line:col trimmed, resolves
-// against the pane's program directory and opens with the system. One
-// printed in a pane of a host is downloaded first (download). A web address
-// without its scheme (webURL) opens over https, unless this machine has
-// the file.
+// openLink opens a link the terminal hands over according to DSK-011:
+// HTTP(S) links open in the system default browser; previewable local and
+// remote files open in WindRex's Side Preview; PDFs, folders, and unsupported
+// formats open in the system default app. Holding Option bypasses Side Preview
+// and opens files directly in the system default app.
 func (a *App) openLink(p *Pane, link string) bool {
-	web, isWeb := webURL(link)
-	if p != nil && p.host != nil {
-		if isWeb {
-			a.services.OpenURL(web)
-			return true
-		}
-		return a.download(p, link)
-	}
-	path, ok := panePath(p, link)
-	if !ok {
-		if isWeb {
-			a.services.OpenURL(web)
-		}
-		return isWeb
-	}
-	a.services.OpenURL(fileURL(path))
-	return true
+	return a.openLinkWith(p, link, a.mods&ui.Alt != 0)
 }
 
 // pathStat is what a stat found of a path printed in a pane of this
@@ -177,7 +161,7 @@ func (a *App) isLink(p *Pane, link string, update func(func())) bool {
 		return !dir
 	}
 	path, ok = resolvePath(p, path)
-	if !ok {
+	if !ok || isUnsafeLocalPath(path) {
 		return false
 	}
 	s, known := a.pathStats[path]

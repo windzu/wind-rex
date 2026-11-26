@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -329,41 +328,47 @@ var downloadsDir = func() (string, error) {
 
 // download takes the file at link, a path printed in p, a pane of a host
 // that transfers files, or a file:// hyperlink, into the Downloads folder
-// here, quarantined as a browser's download, then opens it as a
-// Command-click on a pane of this machine opens a file. A path with
-// :line:col is the file's; a relative one is of the pane's directory
-// there, and one of "~/" of the home there. It reports whether it took
-// the link: a path, not another URL, of a host that transfers files. A
-// click on a file being downloaded does nothing more.
+// here, quarantined as a browser's download, then opens it according to
+// DSK-011 (Side Preview for previewable files, system default app otherwise).
 func (a *App) download(p *Pane, link string) bool {
-	path, ok := linkPath(link)
-	if u, err := url.Parse(link); err == nil && u.Scheme == "file" {
-		// A Windows host's is file:///C:/dir/name.
-		path, ok = u.Path, u.Path != ""
-		if len(path) > 2 && path[2] == ':' {
-			path = path[1:]
-		}
+	plan := classifyLink(p, link, a.mods&ui.Alt != 0)
+	if !plan.remote || (plan.dest != linkDestPreview && plan.dest != linkDestExternal) || plan.rawPath == "" {
+		return false
 	}
-	if !ok || !transfersFiles(p) {
+	return a.downloadWith(p, plan)
+}
+
+// downloadWith downloads plan.rawPath from p's remote host into Downloads,
+// quarantines it, and either populates Side Preview (when plan.dest is
+// linkDestPreview) or opens it in the system default app.
+func (a *App) downloadWith(p *Pane, plan linkPlan) bool {
+	if plan.rawPath == "" || !transfersFiles(p) {
 		return false
 	}
 	c := p.host.current()
 	if c == nil {
 		return false
 	}
-	path = hostPath(p.info.Dir, path)
+	path := hostPath(p.info.Dir, plan.rawPath)
 	ts := p.host.transfersOf(p.SID)
 	for _, x := range ts.list {
 		if x.from == path && !x.ok && x.err == "" {
 			return true
 		}
 	}
-	name := strings.TrimRight(path, `/\`)
-	x := &fileTransfer{name: name[strings.LastIndexAny(name, `/\`)+1:], from: path}
+	name := pathBaseAny(path)
+	x := &fileTransfer{name: name, from: path}
 	ts.list = append(ts.list, x)
+	var pv *linkPreview
+	if plan.dest == linkDestPreview {
+		pv = a.openRemotePreview(p, p.host.label(), name, path, plan.previewKind, plan.line, x)
+	}
 	dir, err := downloadsDir()
 	if err != nil {
 		x.err = err.Error()
+		if pv != nil && a.preview == pv {
+			pv.state, pv.title, pv.detail, pv.transfer = previewError, locales.PreviewRemoteFailedTitle(), x.err, nil
+		}
 		return true
 	}
 	ctx, cancel := context.WithCancel(ts.ctx)
@@ -385,11 +390,23 @@ func (a *App) download(p *Pane, link string) bool {
 			switch {
 			case rex.Folder(err):
 				x.err = locales.PaneDownloadFolder()
+				if pv != nil && a.preview == pv {
+					pv.state, pv.title, pv.detail, pv.transfer = previewError, locales.PreviewRemoteFailedTitle(), x.err, nil
+				}
 			case err != nil:
 				x.err = strings.TrimPrefix(err.Error(), "rex: ")
+				if pv != nil && a.preview == pv {
+					pv.state, pv.title, pv.detail, pv.transfer = previewError, locales.PreviewRemoteFailedTitle(), x.err, nil
+				}
 			default:
 				x.done, x.ok = x.size, true
-				a.services.OpenURL(fileURL(got))
+				if pv != nil {
+					if a.preview == pv {
+						a.loadPreviewFile(pv, got)
+					}
+				} else {
+					a.openExternal(fileURL(got))
+				}
 			}
 		})
 	}()

@@ -206,3 +206,18 @@ func TestPanePath(t *testing.T) {
 		t.Fatal("opened a missing path")
 	}
 }
+
+func TestIsLinkRejectsUnsafeDevicePaths(t *testing.T) {
+	a := &App{}
+	p := &Pane{info: rex.SessionInfo{Dir: t.TempDir()}}
+	called := false
+	update := func(func()) { called = true }
+	for _, bad := range []string{`\\.\pipe\rex`, `//./pipe/rex`, `\??\C:\x`} {
+		if a.isLink(p, bad, update) {
+			t.Errorf("isLink(%q) = true, want false", bad)
+		}
+	}
+	if called {
+		t.Error("isLink stat'ed an unsafe device path")
+	}
+}
