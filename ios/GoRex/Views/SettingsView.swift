@@ -4,6 +4,7 @@ import SwiftUI
 /// page each, the client's label, and a search over the rows' titles.
 struct SettingsView: View {
     @Environment(HostStore.self) private var store
+    @Environment(RelayStore.self) private var relays
     @Environment(\.dismiss) private var dismiss
     @AppStorage("scheme") private var scheme = "dark"
     @AppStorage("theme") private var theme = TerminalTheme.standard
@@ -35,7 +36,9 @@ struct SettingsView: View {
              Item(title: "App Icon", icon: AnyView(appIcon.image(size: 30)), value: String(localized: appIcon.title),
                   page: { AnyView(AppIconView(current: $appIcon)) })],
             [Item(title: "Terminal", icon: tile("apple.terminal.fill", .gray), page: { AnyView(TerminalSettings()) }),
-             Item(title: "Remote Hosts", icon: tile("globe", .orange), page: { AnyView(RemoteHostsView()) })],
+             Item(title: "Remote Hosts", icon: tile("globe", .orange),
+                  value: relays.relays.isEmpty ? nil : String(localized: "\(relays.relays.count) Relays"),
+                  page: { AnyView(RemoteHostsView()) })],
             [Item(title: "Features", icon: tile("sparkles", .blue), page: { AnyView(FeaturesView()) }),
              Item(title: "About", icon: tile("info.circle.fill", .gray),
                   value: "\(version) (\(build))", page: { AnyView(AboutView(version: version, build: build, icon: appIcon)) }),

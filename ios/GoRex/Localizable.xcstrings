@@ -5393,6 +5393,622 @@
           }
         }
       }
+    },
+    "%lld Relays": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Relay"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Relays"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个中继"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld hosts": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld host"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld hosts"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 台主机"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld online hosts require an individual QR code.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld online host requires an individual QR code."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld online hosts require an individual QR code."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 台在线主机需要单独扫描主机二维码。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%@ · Not synced yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 尚未同步"
+          }
+        }
+      }
+    },
+    "%@ · Synced %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · 已同步于 %2$@"
+          }
+        }
+      }
+    },
+    "Address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地址"
+          }
+        }
+      }
+    },
+    "Auto-Sync Hosts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动同步主机"
+          }
+        }
+      }
+    },
+    "Auto-Synced": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已自动同步"
+          }
+        }
+      }
+    },
+    "Auto-sync will stop and the saved relay secret will be deleted. Imported hosts stay in your list.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止自动同步并删除已保存的中继密钥，已导入的主机仍会保留在列表中。"
+          }
+        }
+      }
+    },
+    "Couldn't Sync Relay Fleet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法同步中继机群"
+          }
+        }
+      }
+    },
+    "Deleted relay hosts are ignored on future syncs until you restore them here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除的中继主机在后续同步中会被忽略，可在此恢复。"
+          }
+        }
+      }
+    },
+    "Discovering Relay Fleet…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在发现中继机群…"
+          }
+        }
+      }
+    },
+    "Enter the address of a WindRex server or paste a Relay Fleet link.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 WindRex 服务器地址，或粘贴中继机群链接。"
+          }
+        }
+      }
+    },
+    "Host discovery is disabled on this relay server.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此中继服务器未启用主机发现。"
+          }
+        }
+      }
+    },
+    "Ignored": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忽略"
+          }
+        }
+      }
+    },
+    "Imported %@ from %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 %2$@ 导入 %1$@。"
+          }
+        }
+      }
+    },
+    "Individual QR": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需单机扫码"
+          }
+        }
+      }
+    },
+    "Invalid relay TLS certificate pin.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继 TLS 证书指纹无效。"
+          }
+        }
+      }
+    },
+    "Last Sync": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次同步"
+          }
+        }
+      }
+    },
+    "Never": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从未"
+          }
+        }
+      }
+    },
+    "On your Mac, open WindRex › Settings › Server and click Connect iPhone to show a host or Relay Fleet QR code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 上打开 WindRex › 设置 › 服务器，点击「连接手机」以显示主机或中继机群二维码。"
+          }
+        }
+      }
+    },
+    "Online Hosts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线主机"
+          }
+        }
+      }
+    },
+    "Pinned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已固定指纹"
+          }
+        }
+      }
+    },
+    "Relay": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继"
+          }
+        }
+      }
+    },
+    "Relay Connected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接中继"
+          }
+        }
+      }
+    },
+    "Relay Details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继详情"
+          }
+        }
+      }
+    },
+    "Relay Fleet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继机群"
+          }
+        }
+      }
+    },
+    "Relay Fleet link detected. Adding it saves the relay and automatically imports online hosts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已识别中继机群链接。添加后将保存该中继并自动导入在线主机。"
+          }
+        }
+      }
+    },
+    "Relay attempted an unexpected redirect.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继返回了意外的重定向。"
+          }
+        }
+      }
+    },
+    "Relay host directory response was too large.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继主机列表响应过大。"
+          }
+        }
+      }
+    },
+    "Relay rejected the secret. Scan the updated Relay Fleet QR code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继拒绝了该密钥，请重新扫描最新的中继机群二维码。"
+          }
+        }
+      }
+    },
+    "Relay returned HTTP %lld.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继返回了 HTTP %lld。"
+          }
+        }
+      }
+    },
+    "Relay returned HTTP %lld: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继返回了 HTTP %1$lld：%2$@"
+          }
+        }
+      }
+    },
+    "Relay returned an invalid host list.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继返回了无效的主机列表。"
+          }
+        }
+      }
+    },
+    "Relay secret is missing. Scan the Relay Fleet QR code again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少中继密钥，请重新扫描中继机群二维码。"
+          }
+        }
+      }
+    },
+    "Relays": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继"
+          }
+        }
+      }
+    },
+    "Remove %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除 %@？"
+          }
+        }
+      }
+    },
+    "Remove Relay": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除中继"
+          }
+        }
+      }
+    },
+    "Restore %lld Ignored Hosts": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Restore %lld Ignored Host"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Restore %lld Ignored Hosts"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "恢复 %lld 台已忽略的主机"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Saved %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 %@。"
+          }
+        }
+      }
+    },
+    "Saved %@. Online hosts with fleet auto-connect enabled will appear automatically.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 %@。开启机群自动连接的在线主机将自动出现。"
+          }
+        }
+      }
+    },
+    "Saved relays automatically discover and sync new hosts on pull-to-refresh and app launch.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的中继会在启动应用和下拉刷新时自动发现并同步新主机。"
+          }
+        }
+      }
+    },
+    "Scan a host or Relay Fleet QR code from Settings › Server on your Mac, or paste a pairing link manually.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描 Mac 上「设置 › 服务器」中的主机或中继机群二维码，或手动粘贴配对链接。"
+          }
+        }
+      }
+    },
+    "Sync Now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即同步"
+          }
+        }
+      }
+    },
+    "Sync Relay": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步中继"
+          }
+        }
+      }
+    },
+    "Sync Status": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步状态"
+          }
+        }
+      }
+    },
+    "Synced Hosts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已同步主机"
+          }
+        }
+      }
+    },
+    "Synced from %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步自 %@。"
+          }
+        }
+      }
+    },
+    "Syncing…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在同步…"
+          }
+        }
+      }
+    },
+    "System CA": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统证书"
+          }
+        }
+      }
+    },
+    "TLS Certificate": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TLS 证书"
+          }
+        }
+      }
+    },
+    "Updated %@ from %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 %2$@ 更新 %1$@。"
+          }
+        }
+      }
     }
   }
 }
