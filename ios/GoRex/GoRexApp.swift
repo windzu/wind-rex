@@ -69,14 +69,14 @@ struct GoRexApp: App {
     @State private var away: Date?
 
     /// The notifications start with the app, for a tap that launches it.
-    /// So does the built-in Tailscale, when on: the hosts on it wait for
-    /// it to run. The engine comes before the hosts, which tell it those
-    /// paired over tailcat. The files a run opened from its hosts go. The
-    /// API key and the settings that sync through iCloud come in before
-    /// Ghostty, which reads some. Ghostty, with the downloaded font, starts
-    /// once the list is on screen (startGhostty), not before the first
-    /// frame. The widgets' snapshot follows the hosts from the start, and
-    /// NetworkPath the network.
+    /// TailnetEngine registers its lazy Host hooks before HostStore loads,
+    /// and starts the built-in Tailscale engine only on demand when
+    /// TailnetActivationPolicy says it is needed (docs/NET-005-direct-relay.md,
+    /// Phase 3). The files a run opened from its hosts go. The API key and
+    /// the settings that sync through iCloud come in before Ghostty, which
+    /// reads some. Ghostty, with the downloaded font, starts once the list
+    /// is on screen (startGhostty), not before the first frame. The widgets'
+    /// snapshot follows the hosts from the start, and NetworkPath the network.
     init() {
         OpenedFiles.clean()
         Polish.syncKey()
@@ -106,7 +106,10 @@ struct GoRexApp: App {
         // activities' — run from the start: a start push may wake the
         // app with no terminal ever shown (docs/NET-003-push-relay.md).
         _ = TerminalLive.shared
-        Task { await engine.apply() }
+        let configs = store.hosts.map(\.config)
+        if TailnetActivationPolicy.needsTailscale(hosts: configs, tailnetEnabled: TailnetSettings.isOn) {
+            Task { await engine.apply() }
+        }
     }
 
     /// Starts Ghostty, as in rootshell, not in a terminal's push, but on
