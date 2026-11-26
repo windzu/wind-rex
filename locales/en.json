@@ -1433,7 +1433,7 @@
   "@hostsAddTitle": {
     "description": "Title of the sheet that adds a remote host."
   },
-  "hostsAddNote": "Paste the address that Settings › Server shows on the other machine, with remote access on there, or type its IP address when its Reachable at is on and it is pairing. The address is a secret: anyone with it may ask to pair.",
+  "hostsAddNote": "Paste a Direct TLS / Relay pairing URL or host address from Settings › Server on the other machine, or type its IP address while pairing. Keep this address secret.",
   "@hostsAddNote": {
     "description": "Note of the add sheet. Settings › Server names the other machine's settings page."
   },
@@ -1449,7 +1449,7 @@
   "@hostsAddress": {
     "description": "Label of the field of the host's address."
   },
-  "hostsAddressPlaceholder": "The host's address or IP address",
+  "hostsAddressPlaceholder": "Direct / Relay pairing URL, host address, or IP",
   "@hostsAddressPlaceholder": {
     "description": "Placeholder of the address field, which hides what it holds."
   },
@@ -1480,6 +1480,42 @@
   "hostsBadAddress": "That is not a GoRex remote address or an IP address. Copy it from Settings › Server on the host.",
   "@hostsBadAddress": {
     "description": "Error: the address does not parse."
+  },
+  "hostsBadDirectAddress": "That Direct TLS / Relay URL is missing its pairing token (#k=…). Copy the full link from Settings › Server on the host.",
+  "@hostsBadDirectAddress": {
+    "description": "Error: a pasted Direct TLS or relay pairing URL is missing its pairing token or is malformed."
+  },
+  "hostsBadDirectPin": "That Direct TLS / Relay URL has an invalid TLS certificate pin.",
+  "@hostsBadDirectPin": {
+    "description": "Error: a pasted Direct TLS or relay pairing URL has a malformed TLS certificate SHA-256 pin."
+  },
+  "hostsDirectDetected": "Direct TLS: {endpoint}",
+  "@hostsDirectDetected": {
+    "description": "Hint in the add host sheet after pasting a valid Direct TLS pairing URL, showing only the sanitized endpoint.",
+    "placeholders": {
+      "endpoint": {
+        "type": "String",
+        "example": "https://203.0.113.10:7443"
+      }
+    }
+  },
+  "hostsRelayDetected": "Relay: {endpoint}",
+  "@hostsRelayDetected": {
+    "description": "Hint in the add host sheet after pasting a valid self-hosted relay pairing URL, showing only the sanitized endpoint.",
+    "placeholders": {
+      "endpoint": {
+        "type": "String",
+        "example": "https://relay.example.com:7443/h/host1"
+      }
+    }
+  },
+  "hostsDirectAuthFailed": "The host rejected the pairing token. Copy a fresh pairing URL from Settings › Server on the host.",
+  "@hostsDirectAuthFailed": {
+    "description": "Why a Direct TLS or relay host failed to connect: the host rejected the Bearer pairing token."
+  },
+  "hostsDirectPinMismatch": "The host's TLS certificate does not match the pinned fingerprint.",
+  "@hostsDirectPinMismatch": {
+    "description": "Why a Direct TLS or relay host failed to connect: leaf TLS certificate SHA-256 mismatch."
   },
   "hostsEnterPairName": "Enter a name for this machine.",
   "@hostsEnterPairName": {
@@ -1666,6 +1702,14 @@
   "hostsDiagTagTailnet": "tailnet",
   "@hostsDiagTagTailnet": {
     "description": "Remote Hosts page: tag of a host linked over the tailnet."
+  },
+  "hostsDiagTagDirect": "direct",
+  "@hostsDiagTagDirect": {
+    "description": "Remote Hosts page: tag of a host linked over Direct TLS."
+  },
+  "hostsDiagTagRelay": "relay",
+  "@hostsDiagTagRelay": {
+    "description": "Remote Hosts page: tag of a host linked through a self-hosted relay."
   },
   "hostsDiagConnect": "connect {ms} ms",
   "@hostsDiagConnect": {

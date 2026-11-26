@@ -1704,3 +1704,179 @@ func TestHostPathShows(t *testing.T) {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
+
+// TestAddDirectHostUI tests pasting Direct TLS and Relay pairing URLs in the
+// Add Remote Host sheet: auto-filling the name, hiding Pair as, rejecting
+// invalid URLs/tokens/pins, saving to hosts.json, showing direct/relay badges
+// without tailcat probes, and never leaking #k=<token> in any visible UI text.
+func TestAddDirectHostUI(t *testing.T) {
+	a, tt := hostsPage(t)
+	f := newFakeHost(t, fakeApproved)
+
+	const (
+		directSecret = "DIRECT_SECRET_TOKEN_987654"
+		relaySecret  = "RELAY_SECRET_TOKEN_123456"
+	)
+	goodPin := strings.Repeat("a", 64)
+	badPin := strings.Repeat("b", 64)
+
+	var tailcatProbes atomic.Int32
+	oldTailcat := tailcatStatus
+	tailcatStatus = func(*rex.Client, string) (rex.TailcatStatus, error) {
+		tailcatProbes.Add(1)
+		return rex.TailcatStatus{}, nil
+	}
+	oldPing := hostPing
+	hostPing = func(*rex.Client, time.Duration) (time.Duration, error) {
+		return 14 * time.Millisecond, nil
+	}
+	oldDial := dialHost
+	dialHost = func(ctx context.Context, address string) (*rex.Client, error) {
+		if rex.IsDirectTarget(address) {
+			target, err := rex.ParseDirectTarget(address)
+			if err != nil {
+				return nil, err
+			}
+			if target.Pin == badPin {
+				return nil, rex.ErrDirectPinMismatch
+			}
+			if target.Token != directSecret && target.Token != relaySecret {
+				return nil, rex.ErrDirectAuth
+			}
+			return rex.ConnectSocketKeepalive(f.path)
+		}
+		return oldDial(ctx, address)
+	}
+	t.Cleanup(func() { dialHost, tailcatStatus, hostPing = oldDial, oldTailcat, oldPing })
+
+	assertNoSecretInUI := func(secret string) {
+		t.Helper()
+		for _, txt := range tt.Texts() {
+			if strings.Contains(txt, secret) {
+				t.Fatalf("UI text leaked secret %q: %q", secret, txt)
+			}
+		}
+	}
+
+	// Open Add Remote Host sheet.
+	if err := tt.Click(locales.HostsAdd()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+
+	// Missing token in https:// URL is rejected.
+	hostsUI.address = "https://203.0.113.10:7443/"
+	tt.Frame()
+	if err := tt.Click(locales.RemoteAdd()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText(locales.HostsBadDirectAddress()) {
+		t.Fatalf("expected missing-token error; texts %q", tt.Texts())
+	}
+
+	// Malformed pin in https:// URL is rejected.
+	hostsUI.address = "https://203.0.113.10:7443/#k=" + directSecret + "&p=shortpin"
+	tt.Frame()
+	if err := tt.Click(locales.RemoteAdd()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText(locales.HostsBadDirectPin()) {
+		t.Fatalf("expected invalid-pin error; texts %q", tt.Texts())
+	}
+	assertNoSecretInUI(directSecret)
+
+	// Wrong token returns HostsDirectAuthFailed and does not save.
+	wrongTok := "WRONG_DIRECT_SECRET_000"
+	hostsUI.address = "https://203.0.113.10:7443/#k=" + wrongTok + "&p=" + goodPin + "&n=alice-laptop"
+	hostsUI.name = ""
+	tt.Frame()
+	a.submitHost()
+	waitFor(t, tt, "auth failure", func() bool { return hostsUI.stage == addForm && hostsUI.formErr != nil })
+	if !tt.HasText(locales.HostsDirectAuthFailed()) {
+		t.Fatalf("expected auth error; texts %q", tt.Texts())
+	}
+	assertNoSecretInUI(wrongTok)
+	if len(a.hosts) != 0 {
+		t.Fatal("host saved despite auth failure")
+	}
+
+	// Wrong pin returns HostsDirectPinMismatch and does not save.
+	hostsUI.address = "https://203.0.113.10:7443/#k=" + directSecret + "&p=" + badPin + "&n=alice-laptop"
+	hostsUI.name = ""
+	tt.Frame()
+	a.submitHost()
+	waitFor(t, tt, "pin mismatch", func() bool { return hostsUI.stage == addForm && hostsUI.formErr != nil })
+	if !tt.HasText(locales.HostsDirectPinMismatch()) {
+		t.Fatalf("expected pin mismatch error; texts %q", tt.Texts())
+	}
+	assertNoSecretInUI(directSecret)
+	if len(a.hosts) != 0 {
+		t.Fatal("host saved despite pin mismatch")
+	}
+
+	// Valid Direct TLS URL: typing auto-fills name, hides Pair as, shows sanitized preview, saves & connects.
+	directURL := "https://203.0.113.10:7443/#k=" + directSecret + "&p=" + goodPin + "&n=alice-laptop"
+	a.openAddHost()
+	tt.Frame()
+	tt.Type(directURL)
+	tt.Frame()
+	if hostsUI.name != "alice-laptop" {
+		t.Fatalf("auto-filled name = %q, want alice-laptop", hostsUI.name)
+	}
+	if tt.HasText(locales.HostsPairAs()) {
+		t.Fatalf("Pair as should be hidden for Direct TLS URL; texts %q", tt.Texts())
+	}
+	if !tt.HasText(locales.HostsDirectDetected("https://203.0.113.10:7443")) {
+		t.Fatalf("missing sanitized direct preview; texts %q", tt.Texts())
+	}
+	assertNoSecretInUI(directSecret)
+
+	if err := tt.Click(locales.RemoteAdd()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, tt, "direct host saved", func() bool { return len(a.hosts) == 1 && !hostsUI.adding })
+	if hostsUI.address != "" {
+		t.Error("sheet retained address after saving")
+	}
+	waitFor(t, tt, "direct host connected", func() bool {
+		return a.hosts[0].state == hostConnected && tt.HasText(locales.HostsDiagTagDirect()) && tt.HasText("203.0.113.10:7443")
+	})
+	assertNoSecretInUI(directSecret)
+	if tailcatProbes.Load() != 0 {
+		t.Errorf("tailcatStatus called %d times for direct host, want 0", tailcatProbes.Load())
+	}
+
+	// Duplicate direct endpoint (even with a different #n=) is rejected.
+	dupURL := "https://203.0.113.10:7443/#k=" + directSecret + "&p=" + goodPin + "&n=other-name"
+	if got := validateHost(dupURL, "other-name", "", a.hosts); got != locales.HostsAlreadySaved() {
+		t.Errorf("duplicate direct host validation = %q, want %q", got, locales.HostsAlreadySaved())
+	}
+
+	// Valid Relay URL saves and shows relay badge without leaking secret token.
+	relayURL := "https://relay.example.com:7443/h/host_1234/#k=" + relaySecret + "&p=" + goodPin + "&n=build-box"
+	a.openAddHost()
+	tt.Frame()
+	tt.Type(relayURL)
+	tt.Frame()
+	if hostsUI.name != "build-box" {
+		t.Fatalf("auto-filled relay name = %q, want build-box", hostsUI.name)
+	}
+	if !tt.HasText(locales.HostsRelayDetected("https://relay.example.com:7443/h/host_1234")) {
+		t.Fatalf("missing sanitized relay preview; texts %q", tt.Texts())
+	}
+	assertNoSecretInUI(relaySecret)
+
+	if err := tt.Click(locales.RemoteAdd()); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, tt, "relay host saved", func() bool { return len(a.hosts) == 2 && !hostsUI.adding })
+	waitFor(t, tt, "relay host connected", func() bool {
+		return a.hosts[1].state == hostConnected && tt.HasText(locales.HostsDiagTagRelay()) && tt.HasText("relay.example.com:7443")
+	})
+	assertNoSecretInUI(relaySecret)
+	if hs, err := loadHosts(); err != nil || len(hs) != 2 || hs[0].Address != directURL || hs[1].Address != relayURL {
+		t.Fatalf("hosts.json = %+v, err = %v", hs, err)
+	}
+}

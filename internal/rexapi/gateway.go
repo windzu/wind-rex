@@ -83,6 +83,9 @@ type Options struct {
 	// and turns it on again if it was on when it last stopped. Without
 	// it, the server.tailscale methods fail with not_supported.
 	TailnetDir string
+	// RexSocket, when set, overrides rex.SocketPath() for the authenticated
+	// native session tunnel (/api/v1/rex-tunnel).
+	RexSocket string
 }
 
 // Gateway serves Rex's API over one GoRex server.

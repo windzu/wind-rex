@@ -147,7 +147,14 @@ var tailnetIP = regexp.MustCompile(`(?i)fd7a:115c:a1e0(?::(?::)?[0-9a-f]{1,4}){0
 func scrub(s string, addrs ...string) string {
 	for _, a := range addrs {
 		if a != "" {
-			s = strings.ReplaceAll(s, a, "<address>")
+			if IsDirectTarget(a) {
+				if tok := directToken(a); tok != "" {
+					s = strings.ReplaceAll(s, tok, "<redacted>")
+				}
+				s = strings.ReplaceAll(s, a, SanitizeDirectTarget(a))
+			} else {
+				s = strings.ReplaceAll(s, a, "<address>")
+			}
 		}
 	}
 	s = tailnetIP.ReplaceAllString(s, "<redacted>")
@@ -210,10 +217,16 @@ func relayRegion(relay string) *tailcfg.DERPRegion {
 	}
 }
 
-// ValidRemoteAddress tells whether s reads as a tailcat address.
+// ValidRemoteAddress tells whether s reads as a tailcat address or a Direct
+// TLS / Relay pairing URL.
 func ValidRemoteAddress(s string) bool {
-	_, err := tailcat.ParseAddr(tailcat.Addr(strings.TrimSpace(s)))
-	return strings.TrimSpace(s) != "" && err == nil
+	s = strings.TrimSpace(s)
+	if IsDirectTarget(s) {
+		_, err := ParseDirectTarget(s)
+		return err == nil
+	}
+	_, err := tailcat.ParseAddr(tailcat.Addr(s))
+	return s != "" && err == nil
 }
 
 // Fingerprint is a short form of a public key, the first 8 and last 4 of
@@ -895,6 +908,9 @@ func ConnectRemote(ctx context.Context, addr string) (*Client, error) {
 	addr = strings.TrimSpace(addr)
 	if IsTailnetTarget(addr) {
 		return connectTailnet(ctx, addr)
+	}
+	if IsDirectTarget(addr) {
+		return ConnectDirect(ctx, addr)
 	}
 	a := tailcat.Addr(addr)
 	if a == "" {

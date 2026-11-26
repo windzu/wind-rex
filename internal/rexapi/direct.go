@@ -396,6 +396,11 @@ func (d *directListener) admit(w http.ResponseWriter, r *http.Request, transport
 	token := d.conf.Token
 	d.mu.Unlock()
 	if !tokenMatches(r, token) {
+		if r.URL.Path == rexTunnelPath {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="windrex"`)
+			writeError(w, http.StatusUnauthorized, "WindRex needs this device's pairing token")
+			return nil, false
+		}
 		writeRefusal(w, "WindRex needs this device's pairing token")
 		return nil, false
 	}

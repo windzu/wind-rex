@@ -361,6 +361,12 @@ const (
 func connectHost(ctx context.Context, address string) (c *rex.Client, hello rex.Hello, why func() string, fail hostFailure) {
 	c, err := dialHost(ctx, address)
 	if err != nil {
+		switch {
+		case errors.Is(err, rex.ErrDirectAuth):
+			return nil, hello, locales.HostsDirectAuthFailed, failOther
+		case errors.Is(err, rex.ErrDirectPinMismatch):
+			return nil, hello, locales.HostsDirectPinMismatch, failOther
+		}
 		return nil, hello, locales.HostsUnreachable, failUnreachable
 	}
 	if hello, err = c.Hello(); err != nil {

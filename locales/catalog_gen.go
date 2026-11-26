@@ -4466,14 +4466,14 @@ func (msgs Messages) HostsAddTitle() string {
 	return Catalog.Format(msgs.locale, "hostsAddTitle", nil)
 }
 
-// HostsAddNote says "Paste the address that Settings › Server shows on the other machine, with remote access on there, or type its IP ad…"
+// HostsAddNote says "Paste a Direct TLS / Relay pairing URL or host address from Settings › Server on the other machine, or type its IP …"
 // in the language the app shows.
 //
 // Note of the add sheet. Settings › Server names the other machine's
 // settings page.
 func HostsAddNote() string { return In(i18n.Locale()).HostsAddNote() }
 
-// HostsAddNote says "Paste the address that Settings › Server shows on the other machine, with remote access on there, or type its IP ad…"
+// HostsAddNote says "Paste a Direct TLS / Relay pairing URL or host address from Settings › Server on the other machine, or type its IP …"
 // in the language of msgs.
 //
 // Note of the add sheet. Settings › Server names the other machine's
@@ -4528,13 +4528,13 @@ func (msgs Messages) HostsAddress() string {
 	return Catalog.Format(msgs.locale, "hostsAddress", nil)
 }
 
-// HostsAddressPlaceholder says "The host's address or IP address"
+// HostsAddressPlaceholder says "Direct / Relay pairing URL, host address, or IP"
 // in the language the app shows.
 //
 // Placeholder of the address field, which hides what it holds.
 func HostsAddressPlaceholder() string { return In(i18n.Locale()).HostsAddressPlaceholder() }
 
-// HostsAddressPlaceholder says "The host's address or IP address"
+// HostsAddressPlaceholder says "Direct / Relay pairing URL, host address, or IP"
 // in the language of msgs.
 //
 // Placeholder of the address field, which hides what it holds.
@@ -4638,6 +4638,106 @@ func HostsBadAddress() string { return In(i18n.Locale()).HostsBadAddress() }
 // Error: the address does not parse.
 func (msgs Messages) HostsBadAddress() string {
 	return Catalog.Format(msgs.locale, "hostsBadAddress", nil)
+}
+
+// HostsBadDirectAddress says "That Direct TLS / Relay URL is missing its pairing token (#k=…). Copy the full link from Settings › Server on the…"
+// in the language the app shows.
+//
+// Error: a pasted Direct TLS or relay pairing URL is missing its pairing
+// token or is malformed.
+func HostsBadDirectAddress() string { return In(i18n.Locale()).HostsBadDirectAddress() }
+
+// HostsBadDirectAddress says "That Direct TLS / Relay URL is missing its pairing token (#k=…). Copy the full link from Settings › Server on the…"
+// in the language of msgs.
+//
+// Error: a pasted Direct TLS or relay pairing URL is missing its pairing
+// token or is malformed.
+func (msgs Messages) HostsBadDirectAddress() string {
+	return Catalog.Format(msgs.locale, "hostsBadDirectAddress", nil)
+}
+
+// HostsBadDirectPin says "That Direct TLS / Relay URL has an invalid TLS certificate pin."
+// in the language the app shows.
+//
+// Error: a pasted Direct TLS or relay pairing URL has a malformed TLS
+// certificate SHA-256 pin.
+func HostsBadDirectPin() string { return In(i18n.Locale()).HostsBadDirectPin() }
+
+// HostsBadDirectPin says "That Direct TLS / Relay URL has an invalid TLS certificate pin."
+// in the language of msgs.
+//
+// Error: a pasted Direct TLS or relay pairing URL has a malformed TLS
+// certificate SHA-256 pin.
+func (msgs Messages) HostsBadDirectPin() string {
+	return Catalog.Format(msgs.locale, "hostsBadDirectPin", nil)
+}
+
+// HostsDirectDetected says "Direct TLS: {endpoint}"
+// in the language the app shows.
+//
+// Hint in the add host sheet after pasting a valid Direct TLS pairing URL,
+// showing only the sanitized endpoint.
+func HostsDirectDetected(endpoint string) string {
+	return In(i18n.Locale()).HostsDirectDetected(endpoint)
+}
+
+// HostsDirectDetected says "Direct TLS: {endpoint}"
+// in the language of msgs.
+//
+// Hint in the add host sheet after pasting a valid Direct TLS pairing URL,
+// showing only the sanitized endpoint.
+func (msgs Messages) HostsDirectDetected(endpoint string) string {
+	return Catalog.Format(msgs.locale, "hostsDirectDetected", map[string]any{"endpoint": endpoint})
+}
+
+// HostsRelayDetected says "Relay: {endpoint}"
+// in the language the app shows.
+//
+// Hint in the add host sheet after pasting a valid self-hosted relay
+// pairing URL, showing only the sanitized endpoint.
+func HostsRelayDetected(endpoint string) string {
+	return In(i18n.Locale()).HostsRelayDetected(endpoint)
+}
+
+// HostsRelayDetected says "Relay: {endpoint}"
+// in the language of msgs.
+//
+// Hint in the add host sheet after pasting a valid self-hosted relay
+// pairing URL, showing only the sanitized endpoint.
+func (msgs Messages) HostsRelayDetected(endpoint string) string {
+	return Catalog.Format(msgs.locale, "hostsRelayDetected", map[string]any{"endpoint": endpoint})
+}
+
+// HostsDirectAuthFailed says "The host rejected the pairing token. Copy a fresh pairing URL from Settings › Server on the host."
+// in the language the app shows.
+//
+// Why a Direct TLS or relay host failed to connect: the host rejected the
+// Bearer pairing token.
+func HostsDirectAuthFailed() string { return In(i18n.Locale()).HostsDirectAuthFailed() }
+
+// HostsDirectAuthFailed says "The host rejected the pairing token. Copy a fresh pairing URL from Settings › Server on the host."
+// in the language of msgs.
+//
+// Why a Direct TLS or relay host failed to connect: the host rejected the
+// Bearer pairing token.
+func (msgs Messages) HostsDirectAuthFailed() string {
+	return Catalog.Format(msgs.locale, "hostsDirectAuthFailed", nil)
+}
+
+// HostsDirectPinMismatch says "The host's TLS certificate does not match the pinned fingerprint."
+// in the language the app shows.
+//
+// Why a Direct TLS or relay host failed to connect: leaf TLS certificate
+// SHA-256 mismatch.
+func HostsDirectPinMismatch() string { return In(i18n.Locale()).HostsDirectPinMismatch() }
+
+// HostsDirectPinMismatch says "The host's TLS certificate does not match the pinned fingerprint."
+// in the language of msgs.
+//
+// Why a Direct TLS or relay host failed to connect: leaf TLS certificate
+// SHA-256 mismatch.
+func (msgs Messages) HostsDirectPinMismatch() string {
+	return Catalog.Format(msgs.locale, "hostsDirectPinMismatch", nil)
 }
 
 // HostsEnterPairName says "Enter a name for this machine."
@@ -5118,6 +5218,34 @@ func HostsDiagTagTailnet() string { return In(i18n.Locale()).HostsDiagTagTailnet
 // Remote Hosts page: tag of a host linked over the tailnet.
 func (msgs Messages) HostsDiagTagTailnet() string {
 	return Catalog.Format(msgs.locale, "hostsDiagTagTailnet", nil)
+}
+
+// HostsDiagTagDirect says "direct"
+// in the language the app shows.
+//
+// Remote Hosts page: tag of a host linked over Direct TLS.
+func HostsDiagTagDirect() string { return In(i18n.Locale()).HostsDiagTagDirect() }
+
+// HostsDiagTagDirect says "direct"
+// in the language of msgs.
+//
+// Remote Hosts page: tag of a host linked over Direct TLS.
+func (msgs Messages) HostsDiagTagDirect() string {
+	return Catalog.Format(msgs.locale, "hostsDiagTagDirect", nil)
+}
+
+// HostsDiagTagRelay says "relay"
+// in the language the app shows.
+//
+// Remote Hosts page: tag of a host linked through a self-hosted relay.
+func HostsDiagTagRelay() string { return In(i18n.Locale()).HostsDiagTagRelay() }
+
+// HostsDiagTagRelay says "relay"
+// in the language of msgs.
+//
+// Remote Hosts page: tag of a host linked through a self-hosted relay.
+func (msgs Messages) HostsDiagTagRelay() string {
+	return Catalog.Format(msgs.locale, "hostsDiagTagRelay", nil)
 }
 
 // HostsDiagConnect says "connect {ms} ms"
