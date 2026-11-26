@@ -1,0 +1,25 @@
+# Optional environment overrides in /etc/default/windrex-relay:
+#   WINDREX_RELAY_LISTEN=:7443
+#   WINDREX_RELAY_SECRET=<shared-registration-secret>
+[Unit]
+Description=WindRex stateless relay server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=windrex-relay
+Group=windrex-relay
+Environment=WINDREX_RELAY_LISTEN=:7443
+EnvironmentFile=-/etc/default/windrex-relay
+StateDirectory=windrex-relay
+ExecStart=/usr/local/bin/windrex-relay -listen ${WINDREX_RELAY_LISTEN} -data-dir /var/lib/windrex-relay
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+# Install to ~/.config/systemd/user/windrex-relay.service, then run:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now windrex-relay
+[Unit]
+Description=WindRex stateless relay server (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=WINDREX_RELAY_LISTEN=:7443
+EnvironmentFile=-%h/.config/windrex-relay/env
+ExecStart=%h/.local/bin/windrex-relay -listen ${WINDREX_RELAY_LISTEN} -data-dir %h/.config/windrex-relay
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

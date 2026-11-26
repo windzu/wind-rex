@@ -39,7 +39,7 @@ linters:
       - path: internal/rex/(server|remote_test)\.go$
         text: "SA2001:"
       # Intentional entrypoints / generated helpers / Windows self-upgrade exit / TestMain.
-      - path: ^(main\.go|tools/|internal/rexproto/gen\.go|internal/rex/upgrade_windows\.go)|_test\.go$
+      - path: ^(main\.go|cmd/|tools/|internal/rexproto/gen\.go|internal/rex/upgrade_windows\.go)|_test\.go$
         text: "use of `os\\.Exit` forbidden"
       # Tests may use http.DefaultClient / fmt.Print helpers freely.
       - path: _test\.go$

@@ -1,0 +1,19 @@
+# Install to ~/.config/systemd/user/windrex-server.service, then run:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now windrex-server
+# To keep sessions alive after logging out of SSH:
+#   loginctl enable-linger "$USER"
+[Unit]
+Description=WindRex headless session server (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/windrex-server -server
+ExecReload=%h/.local/bin/windrex-server server upgrade
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
