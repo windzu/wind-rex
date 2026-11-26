@@ -3085,5 +3085,107 @@
   "settingsIconPacksCount": "{count, plural, one {# icon} other {# icons}}",
   "@settingsIconPacksCount": {
     "description": "Icon count label under an installed icon pack."
+  },
+  "previewOpenDefault": "Open in Default App",
+  "@previewOpenDefault": {
+    "description": "Button in Side Preview that opens the previewed file in the system default application."
+  },
+  "previewClose": "Close Preview",
+  "@previewClose": {
+    "description": "Tooltip and accessibility label of the Side Preview close button."
+  },
+  "previewDownloading": "Downloading from {host}…",
+  "@previewDownloading": {
+    "description": "Status heading in Side Preview while downloading a file from a remote host.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "office-mac"
+      }
+    }
+  },
+  "previewEmptyFile": "This file is empty.",
+  "@previewEmptyFile": {
+    "description": "Shown in Side Preview when a previewable text or Markdown file has zero bytes."
+  },
+  "previewTooLargeTitle": "File is too large to preview",
+  "@previewTooLargeTitle": {
+    "description": "Heading in Side Preview when a file exceeds the in-window preview size cap."
+  },
+  "previewTooLargeDetail": "File size is {size} (limit {limit}). Open it in the default app instead.",
+  "@previewTooLargeDetail": {
+    "description": "Detail in Side Preview explaining why an oversized file was not loaded inline.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "4.2 MB"
+      },
+      "limit": {
+        "type": "String",
+        "example": "2.0 MB"
+      }
+    }
+  },
+  "previewBinaryTitle": "Binary file cannot be previewed",
+  "@previewBinaryTitle": {
+    "description": "Heading in Side Preview when a file contains binary content."
+  },
+  "previewBinaryDetail": "This file contains binary data. Open it in the default app instead.",
+  "@previewBinaryDetail": {
+    "description": "Detail in Side Preview advising the user to open a binary file externally."
+  },
+  "previewImageFailedTitle": "Could not preview image",
+  "@previewImageFailedTitle": {
+    "description": "Heading in Side Preview when an image file fails to decode."
+  },
+  "previewNotFoundTitle": "File not found",
+  "@previewNotFoundTitle": {
+    "description": "Heading in Side Preview when a clicked local file path does not exist."
+  },
+  "previewUnreadableTitle": "Could not read file",
+  "@previewUnreadableTitle": {
+    "description": "Heading in Side Preview when a clicked local file cannot be read."
+  },
+  "previewUnsafePathTitle": "Path blocked",
+  "@previewUnsafePathTitle": {
+    "description": "Heading in Side Preview when a terminal link targets a blocked device or pipe path."
+  },
+  "previewUnsafePathDetail": "Device and pipe paths are not opened from terminal links.",
+  "@previewUnsafePathDetail": {
+    "description": "Detail in Side Preview explaining why a device or pipe path was refused."
+  },
+  "previewRemoteFailedTitle": "Remote file transfer failed",
+  "@previewRemoteFailedTitle": {
+    "description": "Heading in Side Preview when a remote file cannot be downloaded."
+  },
+  "previewRemoteUnsupported": "{host} does not support file transfers. Update WindRex on that host to preview or download files.",
+  "@previewRemoteUnsupported": {
+    "description": "Detail in Side Preview when the remote host lacks the file transfer capability.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "office-mac"
+      }
+    }
+  },
+  "previewRemoteOffline": "{host} is not connected. Reconnect to preview or download this file.",
+  "@previewRemoteOffline": {
+    "description": "Detail in Side Preview when the remote host is currently disconnected.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "office-mac"
+      }
+    }
+  },
+  "previewLineBadge": "Line {line}",
+  "@previewLineBadge": {
+    "description": "Badge in Side Preview showing the clicked :line suffix of a file link.",
+    "placeholders": {
+      "line": {
+        "type": "int",
+        "example": "42"
+      }
+    }
   }
 }

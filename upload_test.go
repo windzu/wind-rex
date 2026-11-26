@@ -552,10 +552,12 @@ func clicked(t *testing.T, a *App, tt *ui.Tester, p *Pane, link string) *fileTra
 }
 
 // TestDownloadFromHost Command-clicks paths printed in a pane of a host:
-// each file comes into Downloads, renamed when the name is taken, and
-// opens; a relative path is of the shell's directory there, "~/" of the
-// home there, and :line:col is trimmed. A folder and a missing file say
-// why until clicked. A URL is the system's.
+// each file comes into Downloads, renamed when the name is taken, quarantined,
+// and routed by DSK-011 (Side Preview for previewable files, default app for
+// non-previewable files like PDFs); a relative path is of the shell's directory
+// there, "~/" of the home there, and :line:col is trimmed. A folder and a
+// missing file say why until clicked. An HTTP(S) URL opens in the browser
+// without starting a download.
 func TestDownloadFromHost(t *testing.T) {
 	a, tt := newTestApp(t)
 	there := testDir(t)
@@ -565,6 +567,7 @@ func TestDownloadFromHost(t *testing.T) {
 	os.WriteFile(filepath.Join(there, "sub", "notes.go"), []byte("package x"), 0o644)
 	os.Mkdir(filepath.Join(there, "folder"), 0o755)
 	os.WriteFile(filepath.Join(there, "linked.txt"), []byte("linked"), 0o644)
+	os.WriteFile(filepath.Join(there, "spec.pdf"), []byte("%PDF-1.4\n"), 0o644)
 	_, _, p := remotePane(t, a, tt, there)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -573,12 +576,17 @@ func TestDownloadFromHost(t *testing.T) {
 	downloads := downloadsHere(t)
 	os.WriteFile(filepath.Join(downloads, "report.txt"), []byte("old"), 0o644)
 
-	for _, c := range []struct{ link, name, want string }{
-		{"report.txt", "report (1).txt", "report"},
-		{"sub/notes.go:12:3", "notes.go", "package x"},
-		{"~/h.txt", "h.txt", "home"},
-		{(&url.URL{Scheme: "file", Host: "office-mac", Path: filepath.ToSlash(filepath.Join(there, "linked.txt"))}).String(), "linked.txt", "linked"},
+	for _, c := range []struct {
+		link, name, want string
+		preview          bool
+	}{
+		{"report.txt", "report (1).txt", "report", true},
+		{"sub/notes.go:12:3", "notes.go", "package x", true},
+		{"~/h.txt", "h.txt", "home", true},
+		{(&url.URL{Scheme: "file", Host: "office-mac", Path: filepath.ToSlash(filepath.Join(there, "linked.txt"))}).String(), "linked.txt", "linked", true},
+		{"spec.pdf", "spec.pdf", "%PDF-1.4\n", false},
 	} {
+		a.closePreview()
 		x := clicked(t, a, tt, p, c.link)
 		path := filepath.Join(downloads, c.name)
 		if !x.ok {
@@ -586,6 +594,12 @@ func TestDownloadFromHost(t *testing.T) {
 		}
 		if b, err := os.ReadFile(path); err != nil || string(b) != c.want {
 			t.Errorf("%s: %q, %v", c.link, b, err)
+		}
+		if c.preview {
+			if a.preview == nil || a.preview.state != previewReady || a.preview.localPath != path {
+				t.Errorf("%s not previewed: %+v", path, a.preview)
+			}
+			a.openPreviewExternal()
 		}
 		if !slices.Contains(tt.OpenedURLs(), fileURL(path)) {
 			t.Errorf("%s not opened: %q", path, tt.OpenedURLs())
@@ -606,11 +620,15 @@ func TestDownloadFromHost(t *testing.T) {
 	if x := clicked(t, a, tt, p, "missing.txt"); !strings.Contains(x.err, "no such file") && !strings.Contains(x.err, "cannot find the file") {
 		t.Errorf("a missing file: %+v", x)
 	}
-	if a.openLink(p, "https://example.com/a.txt") {
-		t.Error("a URL is downloaded")
+	transfersBefore := len(listOf(p))
+	if !a.openLink(p, "https://example.com/a.txt") {
+		t.Error("an HTTP(S) URL is not opened")
 	}
-	if len(tt.OpenedURLs()) != opened {
-		t.Errorf("opened %q", tt.OpenedURLs()[opened:])
+	if len(listOf(p)) != transfersBefore {
+		t.Error("a URL started a download")
+	}
+	if got := tt.OpenedURLs()[opened:]; !slices.Equal(got, []string{"https://example.com/a.txt"}) {
+		t.Errorf("opened %q, want [https://example.com/a.txt]", got)
 	}
 	tt.Advance(transferShown)
 	tt.Frame()
@@ -680,30 +698,37 @@ func TestDownloadCancelled(t *testing.T) {
 }
 
 // TestOpenLinkOnlyFromHostsTaking downloads only from a host connected
-// that transfers files; a link in a pane of this machine opens here, as
-// before.
+// that transfers files; an unsupported or disconnected host starts no transfer
+// and shows a clear Side Preview error state. A previewable link in a local
+// pane opens in Side Preview (with one-click handoff to the default app).
 func TestOpenLinkOnlyFromHostsTaking(t *testing.T) {
 	a, tt := newTestApp(t)
 	local := a.tab().Focus
 	downloads := downloadsHere(t)
 	here := dropped(t, "here.txt", "x")[0]
-	if !a.openLink(local, here) || !slices.Equal(tt.OpenedURLs(), []string{fileURL(here)}) || len(listOf(local)) != 0 {
-		t.Errorf("a local link: opened %q, transfers %v", tt.OpenedURLs(), listOf(local))
+	if !a.openLink(local, here) || a.preview == nil || a.preview.localPath != here || len(listOf(local)) != 0 {
+		t.Errorf("a local link: preview %+v, transfers %v", a.preview, listOf(local))
 	}
+	a.openPreviewExternal()
+	if !slices.Equal(tt.OpenedURLs(), []string{fileURL(here)}) {
+		t.Errorf("external handoff: opened %q", tt.OpenedURLs())
+	}
+	a.closePreview()
 	there := testDir(t)
 	t.Cleanup(func() { os.RemoveAll(there) })
 	os.WriteFile(filepath.Join(there, "f.txt"), []byte("f"), 0o644)
 	h, proxy, p := remotePane(t, a, tt, there)
 	caps := h.hello.Capabilities
 	h.hello.Capabilities = nil
-	if a.openLink(p, "f.txt") || len(listOf(p)) != 0 {
-		t.Error("a download from a host that transfers no files")
+	if !a.openLink(p, "f.txt") || len(listOf(p)) != 0 || a.preview == nil || a.preview.state != previewError {
+		t.Errorf("unsupported host: transfers %v, preview %+v", listOf(p), a.preview)
 	}
+	a.closePreview()
 	h.hello.Capabilities = caps
 	proxy.setDown(true)
 	waitFor(t, tt, "the host to go", func() bool { return h.current() == nil })
-	if a.openLink(p, "f.txt") || len(listOf(p)) != 0 {
-		t.Error("a download from a host not connected")
+	if !a.openLink(p, "f.txt") || len(listOf(p)) != 0 || a.preview == nil || a.preview.state != previewError {
+		t.Errorf("offline host: transfers %v, preview %+v", listOf(p), a.preview)
 	}
 	if entries, _ := os.ReadDir(downloads); len(entries) != 0 || len(tt.OpenedURLs()) != 1 {
 		t.Errorf("downloads %v, opened %q", entries, tt.OpenedURLs())

@@ -9079,3 +9079,261 @@ func SettingsIconPacksCount(count int) string { return In(i18n.Locale()).Setting
 func (msgs Messages) SettingsIconPacksCount(count int) string {
 	return Catalog.Format(msgs.locale, "settingsIconPacksCount", map[string]any{"count": count})
 }
+
+// PreviewOpenDefault says "Open in Default App"
+// in the language the app shows.
+//
+// Button in Side Preview that opens the previewed file in the system
+// default application.
+func PreviewOpenDefault() string { return In(i18n.Locale()).PreviewOpenDefault() }
+
+// PreviewOpenDefault says "Open in Default App"
+// in the language of msgs.
+//
+// Button in Side Preview that opens the previewed file in the system
+// default application.
+func (msgs Messages) PreviewOpenDefault() string {
+	return Catalog.Format(msgs.locale, "previewOpenDefault", nil)
+}
+
+// PreviewClose says "Close Preview"
+// in the language the app shows.
+//
+// Tooltip and accessibility label of the Side Preview close button.
+func PreviewClose() string { return In(i18n.Locale()).PreviewClose() }
+
+// PreviewClose says "Close Preview"
+// in the language of msgs.
+//
+// Tooltip and accessibility label of the Side Preview close button.
+func (msgs Messages) PreviewClose() string {
+	return Catalog.Format(msgs.locale, "previewClose", nil)
+}
+
+// PreviewDownloading says "Downloading from {host}…"
+// in the language the app shows.
+//
+// Status heading in Side Preview while downloading a file from a remote
+// host.
+func PreviewDownloading(host string) string { return In(i18n.Locale()).PreviewDownloading(host) }
+
+// PreviewDownloading says "Downloading from {host}…"
+// in the language of msgs.
+//
+// Status heading in Side Preview while downloading a file from a remote
+// host.
+func (msgs Messages) PreviewDownloading(host string) string {
+	return Catalog.Format(msgs.locale, "previewDownloading", map[string]any{"host": host})
+}
+
+// PreviewEmptyFile says "This file is empty."
+// in the language the app shows.
+//
+// Shown in Side Preview when a previewable text or Markdown file has zero
+// bytes.
+func PreviewEmptyFile() string { return In(i18n.Locale()).PreviewEmptyFile() }
+
+// PreviewEmptyFile says "This file is empty."
+// in the language of msgs.
+//
+// Shown in Side Preview when a previewable text or Markdown file has zero
+// bytes.
+func (msgs Messages) PreviewEmptyFile() string {
+	return Catalog.Format(msgs.locale, "previewEmptyFile", nil)
+}
+
+// PreviewTooLargeTitle says "File is too large to preview"
+// in the language the app shows.
+//
+// Heading in Side Preview when a file exceeds the in-window preview size
+// cap.
+func PreviewTooLargeTitle() string { return In(i18n.Locale()).PreviewTooLargeTitle() }
+
+// PreviewTooLargeTitle says "File is too large to preview"
+// in the language of msgs.
+//
+// Heading in Side Preview when a file exceeds the in-window preview size
+// cap.
+func (msgs Messages) PreviewTooLargeTitle() string {
+	return Catalog.Format(msgs.locale, "previewTooLargeTitle", nil)
+}
+
+// PreviewTooLargeDetail says "File size is {size} (limit {limit}). Open it in the default app instead."
+// in the language the app shows.
+//
+// Detail in Side Preview explaining why an oversized file was not loaded
+// inline.
+func PreviewTooLargeDetail(size string, limit string) string {
+	return In(i18n.Locale()).PreviewTooLargeDetail(size, limit)
+}
+
+// PreviewTooLargeDetail says "File size is {size} (limit {limit}). Open it in the default app instead."
+// in the language of msgs.
+//
+// Detail in Side Preview explaining why an oversized file was not loaded
+// inline.
+func (msgs Messages) PreviewTooLargeDetail(size string, limit string) string {
+	return Catalog.Format(msgs.locale, "previewTooLargeDetail", map[string]any{"size": size, "limit": limit})
+}
+
+// PreviewBinaryTitle says "Binary file cannot be previewed"
+// in the language the app shows.
+//
+// Heading in Side Preview when a file contains binary content.
+func PreviewBinaryTitle() string { return In(i18n.Locale()).PreviewBinaryTitle() }
+
+// PreviewBinaryTitle says "Binary file cannot be previewed"
+// in the language of msgs.
+//
+// Heading in Side Preview when a file contains binary content.
+func (msgs Messages) PreviewBinaryTitle() string {
+	return Catalog.Format(msgs.locale, "previewBinaryTitle", nil)
+}
+
+// PreviewBinaryDetail says "This file contains binary data. Open it in the default app instead."
+// in the language the app shows.
+//
+// Detail in Side Preview advising the user to open a binary file
+// externally.
+func PreviewBinaryDetail() string { return In(i18n.Locale()).PreviewBinaryDetail() }
+
+// PreviewBinaryDetail says "This file contains binary data. Open it in the default app instead."
+// in the language of msgs.
+//
+// Detail in Side Preview advising the user to open a binary file
+// externally.
+func (msgs Messages) PreviewBinaryDetail() string {
+	return Catalog.Format(msgs.locale, "previewBinaryDetail", nil)
+}
+
+// PreviewImageFailedTitle says "Could not preview image"
+// in the language the app shows.
+//
+// Heading in Side Preview when an image file fails to decode.
+func PreviewImageFailedTitle() string { return In(i18n.Locale()).PreviewImageFailedTitle() }
+
+// PreviewImageFailedTitle says "Could not preview image"
+// in the language of msgs.
+//
+// Heading in Side Preview when an image file fails to decode.
+func (msgs Messages) PreviewImageFailedTitle() string {
+	return Catalog.Format(msgs.locale, "previewImageFailedTitle", nil)
+}
+
+// PreviewNotFoundTitle says "File not found"
+// in the language the app shows.
+//
+// Heading in Side Preview when a clicked local file path does not exist.
+func PreviewNotFoundTitle() string { return In(i18n.Locale()).PreviewNotFoundTitle() }
+
+// PreviewNotFoundTitle says "File not found"
+// in the language of msgs.
+//
+// Heading in Side Preview when a clicked local file path does not exist.
+func (msgs Messages) PreviewNotFoundTitle() string {
+	return Catalog.Format(msgs.locale, "previewNotFoundTitle", nil)
+}
+
+// PreviewUnreadableTitle says "Could not read file"
+// in the language the app shows.
+//
+// Heading in Side Preview when a clicked local file cannot be read.
+func PreviewUnreadableTitle() string { return In(i18n.Locale()).PreviewUnreadableTitle() }
+
+// PreviewUnreadableTitle says "Could not read file"
+// in the language of msgs.
+//
+// Heading in Side Preview when a clicked local file cannot be read.
+func (msgs Messages) PreviewUnreadableTitle() string {
+	return Catalog.Format(msgs.locale, "previewUnreadableTitle", nil)
+}
+
+// PreviewUnsafePathTitle says "Path blocked"
+// in the language the app shows.
+//
+// Heading in Side Preview when a terminal link targets a blocked device or
+// pipe path.
+func PreviewUnsafePathTitle() string { return In(i18n.Locale()).PreviewUnsafePathTitle() }
+
+// PreviewUnsafePathTitle says "Path blocked"
+// in the language of msgs.
+//
+// Heading in Side Preview when a terminal link targets a blocked device or
+// pipe path.
+func (msgs Messages) PreviewUnsafePathTitle() string {
+	return Catalog.Format(msgs.locale, "previewUnsafePathTitle", nil)
+}
+
+// PreviewUnsafePathDetail says "Device and pipe paths are not opened from terminal links."
+// in the language the app shows.
+//
+// Detail in Side Preview explaining why a device or pipe path was refused.
+func PreviewUnsafePathDetail() string { return In(i18n.Locale()).PreviewUnsafePathDetail() }
+
+// PreviewUnsafePathDetail says "Device and pipe paths are not opened from terminal links."
+// in the language of msgs.
+//
+// Detail in Side Preview explaining why a device or pipe path was refused.
+func (msgs Messages) PreviewUnsafePathDetail() string {
+	return Catalog.Format(msgs.locale, "previewUnsafePathDetail", nil)
+}
+
+// PreviewRemoteFailedTitle says "Remote file transfer failed"
+// in the language the app shows.
+//
+// Heading in Side Preview when a remote file cannot be downloaded.
+func PreviewRemoteFailedTitle() string { return In(i18n.Locale()).PreviewRemoteFailedTitle() }
+
+// PreviewRemoteFailedTitle says "Remote file transfer failed"
+// in the language of msgs.
+//
+// Heading in Side Preview when a remote file cannot be downloaded.
+func (msgs Messages) PreviewRemoteFailedTitle() string {
+	return Catalog.Format(msgs.locale, "previewRemoteFailedTitle", nil)
+}
+
+// PreviewRemoteUnsupported says "{host} does not support file transfers. Update WindRex on that host to preview or download files."
+// in the language the app shows.
+//
+// Detail in Side Preview when the remote host lacks the file transfer
+// capability.
+func PreviewRemoteUnsupported(host string) string {
+	return In(i18n.Locale()).PreviewRemoteUnsupported(host)
+}
+
+// PreviewRemoteUnsupported says "{host} does not support file transfers. Update WindRex on that host to preview or download files."
+// in the language of msgs.
+//
+// Detail in Side Preview when the remote host lacks the file transfer
+// capability.
+func (msgs Messages) PreviewRemoteUnsupported(host string) string {
+	return Catalog.Format(msgs.locale, "previewRemoteUnsupported", map[string]any{"host": host})
+}
+
+// PreviewRemoteOffline says "{host} is not connected. Reconnect to preview or download this file."
+// in the language the app shows.
+//
+// Detail in Side Preview when the remote host is currently disconnected.
+func PreviewRemoteOffline(host string) string { return In(i18n.Locale()).PreviewRemoteOffline(host) }
+
+// PreviewRemoteOffline says "{host} is not connected. Reconnect to preview or download this file."
+// in the language of msgs.
+//
+// Detail in Side Preview when the remote host is currently disconnected.
+func (msgs Messages) PreviewRemoteOffline(host string) string {
+	return Catalog.Format(msgs.locale, "previewRemoteOffline", map[string]any{"host": host})
+}
+
+// PreviewLineBadge says "Line {line}"
+// in the language the app shows.
+//
+// Badge in Side Preview showing the clicked :line suffix of a file link.
+func PreviewLineBadge(line int) string { return In(i18n.Locale()).PreviewLineBadge(line) }
+
+// PreviewLineBadge says "Line {line}"
+// in the language of msgs.
+//
+// Badge in Side Preview showing the clicked :line suffix of a file link.
+func (msgs Messages) PreviewLineBadge(line int) string {
+	return Catalog.Format(msgs.locale, "previewLineBadge", map[string]any{"line": line})
+}

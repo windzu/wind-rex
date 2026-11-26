@@ -723,5 +723,22 @@
   "settingsIconPacksInstalling": "安装中…",
   "settingsIconPacksInstalledBadge": "已安装",
   "settingsIconPacksRemove": "移除",
-  "settingsIconPacksCount": "{count} 个图标"
+  "settingsIconPacksCount": "{count} 个图标",
+  "previewOpenDefault": "在默认应用中打开",
+  "previewClose": "关闭预览",
+  "previewDownloading": "正在从 {host} 下载…",
+  "previewEmptyFile": "此文件为空。",
+  "previewTooLargeTitle": "文件过大，无法侧边预览",
+  "previewTooLargeDetail": "文件大小为 {size}（预览上限 {limit}）。请改用默认应用打开。",
+  "previewBinaryTitle": "二进制文件无法侧边预览",
+  "previewBinaryDetail": "此文件包含二进制内容，请改用默认应用打开。",
+  "previewImageFailedTitle": "无法预览图片",
+  "previewNotFoundTitle": "文件不存在",
+  "previewUnreadableTitle": "无法读取文件",
+  "previewUnsafePathTitle": "路径已阻止",
+  "previewUnsafePathDetail": "出于安全原因，不会从终端链接打开设备或管道路径。",
+  "previewRemoteFailedTitle": "远程文件传输失败",
+  "previewRemoteUnsupported": "{host} 暂不支持文件传输。请更新该主机上的 WindRex 后再预览或下载文件。",
+  "previewRemoteOffline": "{host} 未连接。重新连接后再预览或下载此文件。",
+  "previewLineBadge": "第 {line} 行"
 }
