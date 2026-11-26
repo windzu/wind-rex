@@ -850,6 +850,26 @@
         }
       }
     },
+    "Loading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载"
+          }
+        }
+      }
+    },
+    "Loading failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载失败"
+          }
+        }
+      }
+    },
     "Filter": {
       "localizations": {
         "zh-Hans": {
