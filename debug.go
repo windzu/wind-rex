@@ -325,6 +325,38 @@ func (a *App) debug(dir, line string) {
 		if w := settingsUI.win; w != nil {
 			w.Update(func() { a.showSection(arg) })
 		}
+	case "ssize": // W H: resizes the settings window
+		if w := settingsUI.win; w != nil {
+			cw, ch, _ := strings.Cut(arg, " ")
+			w.SetSize(atoi(cw), atoi(ch))
+		}
+	case "direct-qr": // [fleet|host|focus|close]: scrolls to Direct/Relay or opens/switches the Direct / Relay QR dialog
+		if w := settingsUI.win; w != nil {
+			w.Update(func() {
+				switch arg {
+				case "close":
+					remoteUI.pairQR = nil
+					return
+				case "focus":
+					a.showSection("server")
+					fetchDirect()
+					remoteUI.focusDirect = true
+					return
+				}
+				a.showSection("server")
+				fetchDirect()
+				a.openDirectPairQR()
+				if remoteUI.pairQR != nil && remoteUI.pairQR.fleetImage != nil {
+					if arg == "host" {
+						remoteUI.pairQR.tab = 1
+					} else {
+						remoteUI.pairQR.tab = 0
+					}
+				} else {
+					log.Printf("gorex: debug direct-qr: pairQR=%v hasDirect=%v hasFleet=%v", remoteUI.pairQR != nil, a.directPairURL() != "", a.directFleetPairURL() != "")
+				}
+			})
+		}
 	case "hosts": // add NAME ADDRESS, retry NAME, remove NAME: the Remote Hosts page's
 		op, rest, _ := strings.Cut(arg, " ")
 		win.Update(func() {

@@ -33,12 +33,13 @@ var (
 
 // ClientConfig configures a host's outbound tunnel to a stateless relay.
 type ClientConfig struct {
-	RelayURL string
-	HostID   string
-	HostName string
-	Secret   string
-	CertPin  string
-	OnStatus func(connected bool, err error)
+	RelayURL  string
+	HostID    string
+	HostName  string
+	Secret    string
+	CertPin   string
+	FleetAuth bool
+	OnStatus  func(connected bool, err error)
 }
 
 // TunnelListener maintains a persistent outbound connection to a relay server
@@ -80,6 +81,13 @@ func RelayRegisterURL(relayBase, hostID string) (string, error) {
 // RelayRegisterURLWithName constructs the WebSocket URL used by a host to
 // register on a relay, attaching an optional sanitized display name.
 func RelayRegisterURLWithName(relayBase, hostID, hostName string) (string, error) {
+	return RelayRegisterURLWithOptions(relayBase, hostID, hostName, false)
+}
+
+// RelayRegisterURLWithOptions constructs the WebSocket URL used by a host to
+// register on a relay, attaching an optional sanitized display name and
+// fleet_auth flag.
+func RelayRegisterURLWithOptions(relayBase, hostID, hostName string, fleetAuth bool) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(relayBase))
 	if err != nil || u.Host == "" {
 		return "", errors.New("invalid relay URL")
@@ -100,6 +108,9 @@ func RelayRegisterURLWithName(relayBase, hostID, hostName string) (string, error
 	q.Set("id", hostID)
 	if name := SanitizeHostName(hostName); name != "" {
 		q.Set("name", name)
+	}
+	if fleetAuth {
+		q.Set("fleet_auth", "1")
 	}
 	u.RawQuery = q.Encode()
 	u.Fragment = ""
@@ -284,7 +295,7 @@ func (l *TunnelListener) loop() {
 		if l.ctx.Err() != nil {
 			return
 		}
-		dialURL, err := RelayRegisterURLWithName(l.cfg.RelayURL, l.cfg.HostID, l.resolvedHostName())
+		dialURL, err := RelayRegisterURLWithOptions(l.cfg.RelayURL, l.cfg.HostID, l.resolvedHostName(), l.cfg.FleetAuth)
 		if err != nil {
 			l.report(false, err)
 			return

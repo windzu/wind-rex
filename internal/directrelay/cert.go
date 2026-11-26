@@ -138,6 +138,10 @@ func createSelfSignedCert(dir, certPath, keyPath string, hosts []string, now tim
 	return cert, CertPin(der), nil
 }
 
+// ErrCertPinMismatch is returned when a peer TLS certificate's leaf SHA-256
+// fingerprint does not match the configured pin.
+var ErrCertPinMismatch = errors.New("directrelay: certificate pin mismatch")
+
 // TLSConfigWithPin returns a client tls.Config that accepts a peer certificate
 // if and only if its leaf DER SHA-256 pin matches pin. When pin is empty, it
 // returns nil so standard system CA verification is used.
@@ -154,7 +158,7 @@ func TLSConfigWithPin(pin string) *tls.Config {
 			}
 			got := CertPin(cs.PeerCertificates[0].Raw)
 			if subtle.ConstantTimeCompare([]byte(got), []byte(pin)) != 1 {
-				return errors.New("directrelay: certificate pin mismatch")
+				return ErrCertPinMismatch
 			}
 			return nil
 		},

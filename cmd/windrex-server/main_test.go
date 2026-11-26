@@ -89,6 +89,8 @@ func TestServerStatusStoppedAndSecretRedaction(t *testing.T) {
 		RelayURL:     "https://relay.example.com:7443",
 		RelaySecret:  relaySecret,
 		RelayCertPin: validPin,
+		HostName:     "gpu-node-1",
+		RelayTrust:   true,
 		Token:        secretToken,
 	}); err != nil {
 		t.Fatalf("SaveDirect: %v", err)
@@ -112,7 +114,8 @@ func TestServerStatusStoppedAndSecretRedaction(t *testing.T) {
 	if report.Dir != dir {
 		t.Fatalf("report.Dir = %q, want %q", report.Dir, dir)
 	}
-	if !report.Direct.Enabled || report.Direct.Mode != "relay" || report.Direct.RelayURL != "https://relay.example.com:7443" {
+	if !report.Direct.Enabled || report.Direct.Mode != "relay" || report.Direct.RelayURL != "https://relay.example.com:7443" ||
+		report.Direct.HostName != "gpu-node-1" || !report.Direct.RelayTrust {
 		t.Fatalf("unexpected direct summary: %+v", report.Direct)
 	}
 }

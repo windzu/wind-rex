@@ -8,7 +8,7 @@ metadata:
 
 # NET-008: Authenticated relay host discovery
 
-Status: phase 1 built (relay server, host metadata, and DiscoverHosts helper). Desktop and iOS discovery UI follow in later phases.
+Status: phase 1 built (relay server, host metadata, and DiscoverHosts helper). Fleet auto-discovery and desktop UI continue in [`NET-010`](NET-010-relay-fleet-discovery.md).
 
 This doc adds a stateless, authenticated online host directory to `windrex-relay` so clients sharing a self-hosted relay can list connected hosts without an account server. It extends [`NET-005`](NET-005-direct-relay.md).
 

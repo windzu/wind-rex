@@ -1,6 +1,7 @@
 package rexapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -53,6 +54,88 @@ func TestDirectPairURL(t *testing.T) {
 	}
 	if !strings.Contains(gotRelay, "k=tok999") || !strings.Contains(gotRelay, "p=relayPinXYZ") {
 		t.Fatalf("missing relay params in %s", gotRelay)
+	}
+
+	// Custom HostName overrides passed fallback in PairURL.
+	cr.HostName = "gpu-node-1"
+	gotNamed := cr.PairURL(DirectStatus{Running: true, RelayConnected: true}, "alice-laptop")
+	if !strings.Contains(gotNamed, "n=gpu-node-1") || strings.Contains(gotNamed, "alice-laptop") {
+		t.Fatalf("PairURL did not prefer custom HostName: %s", gotNamed)
+	}
+
+	// FleetPairURL requires Enabled + RelayTrust + RelayURL + RelaySecret.
+	if cr.FleetPairURL("") != "" {
+		t.Fatalf("FleetPairURL without RelayTrust/RelaySecret should be empty")
+	}
+	cr.RelaySecret = "test-relay-secret"
+	cr.RelayCertPin = directrelay.CertPin([]byte("relay-cert"))
+	if cr.FleetPairURL("") != "" {
+		t.Fatalf("FleetPairURL with RelayTrust=false should be empty")
+	}
+	cr.RelayTrust = true
+	gotFleet := cr.FleetPairURL("Home")
+	if !strings.HasPrefix(gotFleet, "https://relay.example.com:7443/#r=test-relay-secret&p="+cr.RelayCertPin+"&n=Home") {
+		t.Fatalf("unexpected FleetPairURL: %s", gotFleet)
+	}
+}
+
+func TestDirectCLIFleetFlagsAndQR(t *testing.T) {
+	t.Setenv("GOREX_DIR", t.TempDir())
+	validPin := directrelay.CertPin([]byte("cli-relay-cert"))
+
+	var out, errOut bytes.Buffer
+	code := directMainIO([]string{
+		"relay",
+		"--url", "https://relay.example.com:7443",
+		"--pin", validPin,
+		"--secret", "test-relay-secret",
+		"--name", "gpu-node-1",
+		"--trust-relay",
+	}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("direct relay exit = %d, stderr=%q", code, errOut.String())
+	}
+	conf, err := LoadDirect(StateDir())
+	if err != nil {
+		t.Fatalf("LoadDirect: %v", err)
+	}
+	if conf.HostName != "gpu-node-1" || !conf.RelayTrust || conf.RelaySecret != "test-relay-secret" {
+		t.Fatalf("saved direct config = %+v", conf)
+	}
+	if !strings.Contains(out.String(), "name: gpu-node-1") || !strings.Contains(out.String(), "relay fleet auth: enabled") {
+		t.Fatalf("unexpected direct relay output: %q", out.String())
+	}
+
+	// direct fleet-qr outputs #r= URL.
+	out.Reset()
+	errOut.Reset()
+	if code := directMainIO([]string{"fleet-qr", "--label", "Lab"}, &out, &errOut); code != 0 {
+		t.Fatalf("direct fleet-qr exit = %d, stderr=%q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "https://relay.example.com:7443/#r=test-relay-secret&p="+validPin+"&n=Lab") {
+		t.Fatalf("fleet-qr output missing #r= URL: %q", out.String())
+	}
+
+	// direct qr --fleet outputs #r= URL too.
+	out.Reset()
+	errOut.Reset()
+	if code := directMainIO([]string{"qr", "--fleet"}, &out, &errOut); code != 0 {
+		t.Fatalf("direct qr --fleet exit = %d, stderr=%q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "https://relay.example.com:7443/#r=test-relay-secret&p="+validPin) {
+		t.Fatalf("qr --fleet output missing #r= URL: %q", out.String())
+	}
+
+	// Disabling --trust-relay makes fleet-qr fail cleanly.
+	out.Reset()
+	errOut.Reset()
+	if code := directMainIO([]string{"relay", "--url", "https://relay.example.com:7443", "--secret", "test-relay-secret", "--trust-relay=false"}, &out, &errOut); code != 0 {
+		t.Fatalf("disable trust-relay exit = %d, stderr=%q", code, errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := directMainIO([]string{"fleet-qr"}, &out, &errOut); code == 0 {
+		t.Fatalf("fleet-qr should fail when trust-relay is false; stdout=%q", out.String())
 	}
 }
 
