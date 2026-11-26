@@ -376,7 +376,7 @@ func TestFollowEmptiedAndGone(t *testing.T) {
 	x := a.ws
 	gone, left := st.newTestSpace(), st.newTestSpace()
 	for i, w := range []*Workspace{gone, left} {
-		w.layout = savedLayout{Tabs: []savedTab{{ID: layout.NewTabID(), Root: &savedNode{URL: "https://example.com/", ID: fmt.Sprint("web", i)}}}}
+		w.layout = savedLayout{Tabs: []savedTab{{ID: layout.NewTabID(), Root: &savedNode{Kind: noteKind, Note: fmt.Sprintf("%032x", i+1)}}}}
 	}
 	other := followApp(t, a)
 	s := savedWorkspaces(t, other)
