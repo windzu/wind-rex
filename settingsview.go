@@ -396,6 +396,7 @@ func (a *App) serverSettings(c *ui.Context, k *colors) {
 	if up {
 		sub = locales.HostConnected(sub)
 	}
+	a.connectPhoneCard(c, k)
 	a.serverGroup(c, k, name, glyph, sub, label, dot, h)
 	// Where this machine's programs reach the server's API, then who may
 	// connect to it from elsewhere.

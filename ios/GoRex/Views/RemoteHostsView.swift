@@ -99,34 +99,23 @@ struct RemoteHostsView: View {
     /// Adds the host of a scanned code, or shows it when it's there
     /// already; a WindRex code pairs first.
     private func pair(_ code: String) -> String? {
-        if let c = HostConfig(tailcat: code) {
-            if let h = c.tailcat.flatMap({ store.host(tailcat: $0.address) }) {
-                sheet = .details(h.config)
-            } else {
-                sheet = .pair(c)
-            }
+        switch HostPairing.resolve(code, existing: store.hosts.map(\.config), transportForURL: TailnetEngine.shared.transport(of:)) {
+        case .pairTailcat(let config):
+            sheet = .pair(config)
             return nil
-        }
-        guard var c = HostConfig(pairing: code) else {
-            return String(localized: "Not a Rex pairing code. Scan the Rex QR code that GoRex or Rex shows.")
-        }
-        if let h = store.host(at: c.url) {
-            // A new code of the same computer brings its new token or cert pin.
-            let newToken = c.lanToken ?? h.config.lanToken
-            let newPin = c.tlsPin ?? h.config.tlsPin
-            if newToken != h.config.lanToken || newPin != h.config.tlsPin {
-                var u = h.config
-                u.lanToken = newToken
-                u.tlsPin = newPin
-                store.update(u)
+        case .existing(let updated):
+            if let cur = store.host(updated.id), cur.config != updated {
+                store.update(updated)
             }
-            sheet = .details(h.config)
-        } else {
-            c.transport = TailnetEngine.shared.transport(of: c.url)
-            store.add(c)
+            sheet = .details(updated)
+            return nil
+        case .added(let config):
+            store.add(config)
             sheet = nil
+            return nil
+        case .invalid(let why):
+            return why
         }
-        return nil
     }
 }
 
@@ -184,7 +173,7 @@ private struct ConnectSheet: View {
     var body: some View {
         VStack(spacing: 12) {
             Text("Connect to Remote Host").font(.title2.bold())
-            Text("Pair automatically via Tailscale, or enter your Rex server details manually.")
+            Text("Scan the WindRex QR code from Settings › Server on your Mac, or enter your server details manually.")
                 .font(.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Spacer(minLength: 12)
             Button(action: manual) { Text("Set Up Manually").frame(maxWidth: .infinity) }
@@ -423,7 +412,7 @@ struct TailcatPairSheet: View {
                 if online {
                     Text("Paired. WindRex is connected.").foregroundStyle(.secondary)
                 } else {
-                    Text("On \(code.name), approve \(TailnetSettings.name) in Settings › Server › Devices only if its fingerprint is this one.")
+                    Text("On \(code.name), open WindRex › Settings › Server and approve \(TailnetSettings.name) only if its fingerprint is this one.")
                         .foregroundStyle(.secondary)
                 }
                 Text(fingerprint).font(.title3.monospaced().bold()).textSelection(.enabled)

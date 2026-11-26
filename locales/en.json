@@ -577,7 +577,7 @@
   "@hostServer": {
     "description": "Host panel row: the session server."
   },
-  "settingsServerCard": "GoRex Server",
+  "settingsServerCard": "WindRex Server",
   "@settingsServerCard": {
     "description": "Settings sidebar: title of the session server's card at the top."
   },
@@ -1148,7 +1148,7 @@
   "remoteConnect": "Let other devices connect",
   "remoteAddDevice": "Add a device",
   "remoteLastSeen": "Last seen {when}",
-  "hostsRexQR": "Rex QR…",
+  "hostsRexQR": "Local / Tailscale QR…",
   "hostsRexQRTitle": "Connect Rex to {host}",
   "hostsRexQRLoading": "Checking the phone endpoint…",
   "hostsRexQRHint": "Scan this code in Rex on a device on the same Tailscale network. The code holds the address only, not a credential.",
@@ -2310,21 +2310,45 @@
   "@remotePairNew": {
     "description": "Remote page button: opens the pairing window, in which a new device can ask to pair."
   },
-  "remoteRexGoQR": "Rex Go QR…",
+  "remoteRexGoQR": "WindRex QR…",
   "@remoteRexGoQR": {
-    "description": "Remote page button: opens the pairing window and shows the QR code that Rex Go, the iPhone app, scans to pair."
+    "description": "Remote page button: opens the pairing window and shows the QR code that WindRex on iPhone scans to pair."
   },
-  "remoteRexGoQRTitle": "Connect Rex Go to {host}",
+  "remoteRexGoQRTitle": "Connect WindRex to {host}",
   "@remoteRexGoQRTitle": {
-    "description": "Title of the dialog with the QR code for Rex Go. {host} is this machine's name."
+    "description": "Title of the dialog with the QR code for WindRex on iPhone. {host} is this machine's name."
   },
-  "remoteRexGoQRHint": "Scan this code in Rex Go, then approve its request under Devices if the fingerprint matches. The code holds this machine's address, a secret: show it only to your own devices.",
+  "remoteRexGoQRHint": "Scan this code in WindRex on your iPhone, then verify the fingerprint and approve the request here. The code holds this machine's address, a secret: show it only to your own devices.",
   "@remoteRexGoQRHint": {
-    "description": "Text over the QR code for Rex Go."
+    "description": "Text over the QR code for WindRex on iPhone."
   },
   "remoteRexGoQRUnavailable": "Remote access has no address yet. Try again once it is listening.",
   "@remoteRexGoQRUnavailable": {
-    "description": "Shown in place of the QR code for Rex Go when the server has no address."
+    "description": "Shown in place of the QR code for WindRex when the server has no address."
+  },
+  "hostConnectPhone": "Connect iPhone…",
+  "@hostConnectPhone": {
+    "description": "Host popover button: opens Settings › Server to pair an iPhone running WindRex."
+  },
+  "remoteConnectPhoneTitle": "Connect iPhone",
+  "@remoteConnectPhoneTitle": {
+    "description": "Title of the above-the-fold phone pairing card on Settings › Server."
+  },
+  "remoteConnectPhoneOff": "Turn on remote access, scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request here.",
+  "@remoteConnectPhoneOff": {
+    "description": "Guided hint on the Connect iPhone card while remote access is off."
+  },
+  "remoteConnectPhoneEnable": "Turn On & Show QR…",
+  "@remoteConnectPhoneEnable": {
+    "description": "Primary button on the Connect iPhone card while remote access is off: enables remote access and opens the WindRex QR code once ready."
+  },
+  "remoteConnectPhoneStarting": "Starting remote access… The WindRex QR code will open automatically once ready.",
+  "@remoteConnectPhoneStarting": {
+    "description": "Guided hint on the Connect iPhone card while waiting for remote access to start."
+  },
+  "remoteConnectPhoneReady": "Ready to pair. Scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request here.",
+  "@remoteConnectPhoneReady": {
+    "description": "Guided hint on the Connect iPhone card while remote access is listening."
   },
   "remoteAddByKeyAsk": "Add by Key…",
   "@remoteAddByKeyAsk": {

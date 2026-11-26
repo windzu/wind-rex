@@ -52,6 +52,8 @@ struct HostListView: View {
     /// waiting is one that waits for Settings to close first.
     @State private var pairing: HostConfig?
     @State private var waiting: HostConfig?
+    /// The QR scanner opened directly from the empty state.
+    @State private var scanning = false
     /// The host whose New Project sheet is open.
     @State private var newProject: Host?
     @State private var addingSpace = false
@@ -144,6 +146,9 @@ struct HostListView: View {
         // As in RemoteHostsView: a sheet on a Mac loses the injected
         // objects, so the store goes back in.
         .sheet(item: $pairing) { TailcatPairSheet(code: $0).environment(store) }
+        .sheet(isPresented: $scanning) {
+            QRScanner(onScan: scanEmptyStateCode)
+        }
         // A host gone, as Demo Mode's, closes the terminals open on it, and
         // this device forgets its projects.
         .onChange(of: store.hosts.map(\.id)) { old, ids in
@@ -285,6 +290,28 @@ struct HostListView: View {
         }
     }
 
+    /// Pairs a QR code scanned directly from the empty home screen.
+    private func scanEmptyStateCode(_ code: String) -> String? {
+        switch HostPairing.resolve(code, existing: store.hosts.map(\.config), transportForURL: TailnetEngine.shared.transport(of:)) {
+        case .pairTailcat(let config):
+            scanning = false
+            pairing = config
+            return nil
+        case .existing(let updated):
+            if let cur = store.host(updated.id), cur.config != updated {
+                store.update(updated)
+            }
+            scanning = false
+            return nil
+        case .added(let config):
+            store.add(config)
+            scanning = false
+            return nil
+        case .invalid(let why):
+            return why
+        }
+    }
+
     /// The app's own scheme: Settings › Interface, else the system's, which
     /// ScreenStyle knows once a window shows.
     private var own: ColorScheme {
@@ -296,10 +323,15 @@ struct HostListView: View {
             if store.hosts.isEmpty {
                 // As tall as the page, so that the welcome sits in its
                 // middle, above the keyboard or the bottom bar.
-                NoHostsView(zoom: zoom, tryDemo: { store.enterDemo() }, addHost: {
-                    settingsSource = .addHost
-                    settings = true
-                })
+                NoHostsView(
+                    zoom: zoom,
+                    scanQR: { scanning = true },
+                    tryDemo: { store.enterDemo() },
+                    addHost: {
+                        settingsSource = .addHost
+                        settings = true
+                    }
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background { Color.page.ignoresSafeArea() }
             } else {
@@ -722,25 +754,26 @@ private struct ListPicker<Content: View>: View {
 private struct NoHostsView: View {
     /// Where Add a Host is the source Settings zooms out of.
     let zoom: Namespace.ID
+    let scanQR: () -> Void
     let tryDemo: () -> Void
     let addHost: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "terminal")
+            Image(systemName: "laptopcomputer.and.iphone")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 2)
             Text("No Hosts Yet")
                 .font(.title2.bold())
-            Text("WindRex connects to the computers where GoRex runs. Try the demo to explore the app before you add one.")
+            Text("On your Mac, open WindRex › Settings › Server and click Connect iPhone to show the pairing QR code.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
             VStack(spacing: 12) {
-                Button { tryDemo() } label: {
-                    Label("Try Demo Mode", systemImage: "play.fill")
+                Button { scanQR() } label: {
+                    Label("Scan QR to Pair", systemImage: "qrcode.viewfinder")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glassProminent)
@@ -756,6 +789,12 @@ private struct NoHostsView: View {
                 .buttonStyle(.glass)
                 .controlSize(.large)
                 .matchedTransitionSource(id: ZoomSource.addHost, in: zoom)
+                Button { tryDemo() } label: {
+                    Label("Try Demo Mode", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.large)
             }
             .frame(maxWidth: 360)
             .padding(.top, 6)

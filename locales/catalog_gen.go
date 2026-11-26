@@ -1786,13 +1786,13 @@ func (msgs Messages) HostServer() string {
 	return Catalog.Format(msgs.locale, "hostServer", nil)
 }
 
-// SettingsServerCard says "GoRex Server"
+// SettingsServerCard says "WindRex Server"
 // in the language the app shows.
 //
 // Settings sidebar: title of the session server's card at the top.
 func SettingsServerCard() string { return In(i18n.Locale()).SettingsServerCard() }
 
-// SettingsServerCard says "GoRex Server"
+// SettingsServerCard says "WindRex Server"
 // in the language of msgs.
 //
 // Settings sidebar: title of the session server's card at the top.
@@ -3372,11 +3372,11 @@ func (msgs Messages) RemoteLastSeen(when string) string {
 	return Catalog.Format(msgs.locale, "remoteLastSeen", map[string]any{"when": when})
 }
 
-// HostsRexQR says "Rex QR…"
+// HostsRexQR says "Local / Tailscale QR…"
 // in the language the app shows.
 func HostsRexQR() string { return In(i18n.Locale()).HostsRexQR() }
 
-// HostsRexQR says "Rex QR…"
+// HostsRexQR says "Local / Tailscale QR…"
 // in the language of msgs.
 func (msgs Messages) HostsRexQR() string {
 	return Catalog.Format(msgs.locale, "hostsRexQR", nil)
@@ -6900,48 +6900,48 @@ func (msgs Messages) RemotePairNew() string {
 	return Catalog.Format(msgs.locale, "remotePairNew", nil)
 }
 
-// RemoteRexGoQR says "Rex Go QR…"
+// RemoteRexGoQR says "WindRex QR…"
 // in the language the app shows.
 //
 // Remote page button: opens the pairing window and shows the QR code that
-// Rex Go, the iPhone app, scans to pair.
+// WindRex on iPhone scans to pair.
 func RemoteRexGoQR() string { return In(i18n.Locale()).RemoteRexGoQR() }
 
-// RemoteRexGoQR says "Rex Go QR…"
+// RemoteRexGoQR says "WindRex QR…"
 // in the language of msgs.
 //
 // Remote page button: opens the pairing window and shows the QR code that
-// Rex Go, the iPhone app, scans to pair.
+// WindRex on iPhone scans to pair.
 func (msgs Messages) RemoteRexGoQR() string {
 	return Catalog.Format(msgs.locale, "remoteRexGoQR", nil)
 }
 
-// RemoteRexGoQRTitle says "Connect Rex Go to {host}"
+// RemoteRexGoQRTitle says "Connect WindRex to {host}"
 // in the language the app shows.
 //
-// Title of the dialog with the QR code for Rex Go. {host} is this machine's
-// name.
+// Title of the dialog with the QR code for WindRex on iPhone. {host} is
+// this machine's name.
 func RemoteRexGoQRTitle(host string) string { return In(i18n.Locale()).RemoteRexGoQRTitle(host) }
 
-// RemoteRexGoQRTitle says "Connect Rex Go to {host}"
+// RemoteRexGoQRTitle says "Connect WindRex to {host}"
 // in the language of msgs.
 //
-// Title of the dialog with the QR code for Rex Go. {host} is this machine's
-// name.
+// Title of the dialog with the QR code for WindRex on iPhone. {host} is
+// this machine's name.
 func (msgs Messages) RemoteRexGoQRTitle(host string) string {
 	return Catalog.Format(msgs.locale, "remoteRexGoQRTitle", map[string]any{"host": host})
 }
 
-// RemoteRexGoQRHint says "Scan this code in Rex Go, then approve its request under Devices if the fingerprint matches. The code holds this mach…"
+// RemoteRexGoQRHint says "Scan this code in WindRex on your iPhone, then verify the fingerprint and approve the request here. The code holds th…"
 // in the language the app shows.
 //
-// Text over the QR code for Rex Go.
+// Text over the QR code for WindRex on iPhone.
 func RemoteRexGoQRHint() string { return In(i18n.Locale()).RemoteRexGoQRHint() }
 
-// RemoteRexGoQRHint says "Scan this code in Rex Go, then approve its request under Devices if the fingerprint matches. The code holds this mach…"
+// RemoteRexGoQRHint says "Scan this code in WindRex on your iPhone, then verify the fingerprint and approve the request here. The code holds th…"
 // in the language of msgs.
 //
-// Text over the QR code for Rex Go.
+// Text over the QR code for WindRex on iPhone.
 func (msgs Messages) RemoteRexGoQRHint() string {
 	return Catalog.Format(msgs.locale, "remoteRexGoQRHint", nil)
 }
@@ -6949,15 +6949,105 @@ func (msgs Messages) RemoteRexGoQRHint() string {
 // RemoteRexGoQRUnavailable says "Remote access has no address yet. Try again once it is listening."
 // in the language the app shows.
 //
-// Shown in place of the QR code for Rex Go when the server has no address.
+// Shown in place of the QR code for WindRex when the server has no address.
 func RemoteRexGoQRUnavailable() string { return In(i18n.Locale()).RemoteRexGoQRUnavailable() }
 
 // RemoteRexGoQRUnavailable says "Remote access has no address yet. Try again once it is listening."
 // in the language of msgs.
 //
-// Shown in place of the QR code for Rex Go when the server has no address.
+// Shown in place of the QR code for WindRex when the server has no address.
 func (msgs Messages) RemoteRexGoQRUnavailable() string {
 	return Catalog.Format(msgs.locale, "remoteRexGoQRUnavailable", nil)
+}
+
+// HostConnectPhone says "Connect iPhone…"
+// in the language the app shows.
+//
+// Host popover button: opens Settings › Server to pair an iPhone running
+// WindRex.
+func HostConnectPhone() string { return In(i18n.Locale()).HostConnectPhone() }
+
+// HostConnectPhone says "Connect iPhone…"
+// in the language of msgs.
+//
+// Host popover button: opens Settings › Server to pair an iPhone running
+// WindRex.
+func (msgs Messages) HostConnectPhone() string {
+	return Catalog.Format(msgs.locale, "hostConnectPhone", nil)
+}
+
+// RemoteConnectPhoneTitle says "Connect iPhone"
+// in the language the app shows.
+//
+// Title of the above-the-fold phone pairing card on Settings › Server.
+func RemoteConnectPhoneTitle() string { return In(i18n.Locale()).RemoteConnectPhoneTitle() }
+
+// RemoteConnectPhoneTitle says "Connect iPhone"
+// in the language of msgs.
+//
+// Title of the above-the-fold phone pairing card on Settings › Server.
+func (msgs Messages) RemoteConnectPhoneTitle() string {
+	return Catalog.Format(msgs.locale, "remoteConnectPhoneTitle", nil)
+}
+
+// RemoteConnectPhoneOff says "Turn on remote access, scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request h…"
+// in the language the app shows.
+//
+// Guided hint on the Connect iPhone card while remote access is off.
+func RemoteConnectPhoneOff() string { return In(i18n.Locale()).RemoteConnectPhoneOff() }
+
+// RemoteConnectPhoneOff says "Turn on remote access, scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request h…"
+// in the language of msgs.
+//
+// Guided hint on the Connect iPhone card while remote access is off.
+func (msgs Messages) RemoteConnectPhoneOff() string {
+	return Catalog.Format(msgs.locale, "remoteConnectPhoneOff", nil)
+}
+
+// RemoteConnectPhoneEnable says "Turn On & Show QR…"
+// in the language the app shows.
+//
+// Primary button on the Connect iPhone card while remote access is off:
+// enables remote access and opens the WindRex QR code once ready.
+func RemoteConnectPhoneEnable() string { return In(i18n.Locale()).RemoteConnectPhoneEnable() }
+
+// RemoteConnectPhoneEnable says "Turn On & Show QR…"
+// in the language of msgs.
+//
+// Primary button on the Connect iPhone card while remote access is off:
+// enables remote access and opens the WindRex QR code once ready.
+func (msgs Messages) RemoteConnectPhoneEnable() string {
+	return Catalog.Format(msgs.locale, "remoteConnectPhoneEnable", nil)
+}
+
+// RemoteConnectPhoneStarting says "Starting remote access… The WindRex QR code will open automatically once ready."
+// in the language the app shows.
+//
+// Guided hint on the Connect iPhone card while waiting for remote access to
+// start.
+func RemoteConnectPhoneStarting() string { return In(i18n.Locale()).RemoteConnectPhoneStarting() }
+
+// RemoteConnectPhoneStarting says "Starting remote access… The WindRex QR code will open automatically once ready."
+// in the language of msgs.
+//
+// Guided hint on the Connect iPhone card while waiting for remote access to
+// start.
+func (msgs Messages) RemoteConnectPhoneStarting() string {
+	return Catalog.Format(msgs.locale, "remoteConnectPhoneStarting", nil)
+}
+
+// RemoteConnectPhoneReady says "Ready to pair. Scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request here."
+// in the language the app shows.
+//
+// Guided hint on the Connect iPhone card while remote access is listening.
+func RemoteConnectPhoneReady() string { return In(i18n.Locale()).RemoteConnectPhoneReady() }
+
+// RemoteConnectPhoneReady says "Ready to pair. Scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request here."
+// in the language of msgs.
+//
+// Guided hint on the Connect iPhone card while remote access is listening.
+func (msgs Messages) RemoteConnectPhoneReady() string {
+	return Catalog.Format(msgs.locale, "remoteConnectPhoneReady", nil)
 }
 
 // RemoteAddByKeyAsk says "Add by Key…"
