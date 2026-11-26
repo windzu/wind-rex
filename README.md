@@ -165,7 +165,7 @@ Useful management commands:
 ./build/wind-rex rexapi direct off      # disable direct / relay access
 ```
 
-WindRex also retains LAN, Tailscale, and Tailcat transports for desktop-to-desktop and legacy pairing; see [`docs/REF-005-rex-api.md`](docs/REF-005-rex-api.md) and [`docs/IOS-002-tailcat.md`](docs/IOS-002-tailcat.md).
+WindRex also retains LAN pairing (`docs/REF-005-rex-api.md`); iOS built-in Tailscale, tailcat, and Hotspot Share were removed in [`docs/NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md).
 
 ### 3. Pair &amp; Connect from iOS, Desktop, or Web
 
@@ -192,7 +192,7 @@ WindRex reads Ghostty configuration (`font-family`, `theme`, `palette`, `cursor-
 
 ## Develop locally
 
-- **iOS** needs full Xcode with an iOS Simulator runtime, Go 1.27.4 or newer, and XcodeGen 2.45.1 or newer. From the repository root run `ios/scripts/build-ghostty-vt.sh` and `ios/scripts/build-tailnet`, then run `xcodegen generate` from `ios/`. Open `ios/GoRex.xcodeproj` and run the `GoRex` scheme on an iPhone simulator (the installed app is **WindRex**). A CLI build uses:
+- **iOS** needs full Xcode with an iOS Simulator runtime and XcodeGen 2.45.1 or newer. From the repository root run `ios/scripts/build-ghostty-vt.sh`, then run `xcodegen generate` from `ios/`. Open `ios/GoRex.xcodeproj` and run the `GoRex` scheme on an iPhone simulator (the installed app is **WindRex**). A CLI build uses:
 
   ```sh
   cd ios && xcodebuild -scheme GoRex -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
@@ -210,7 +210,7 @@ The iOS bundle ID is `wiki.wind.windrex`. Its widget extension is `wiki.wind.win
 - **GitHub Actions TestFlight workflow**: Configure repository variables `WINDREX_APPLE_TEAM_ID`, `WINDREX_ASC_APP_ID`, `ASC_KEY_ID`, and `ASC_ISSUER_ID`, plus repository secret `ASC_KEY_P8`.
 - **Local signing &amp; upload**: Run `ios/scripts/upload` with `WINDREX_RELEASE_SIGNING=local`, `WINDREX_APPLE_TEAM_ID`, `WINDREX_SIGNING_CERTIFICATE` (SHA-1 of the installed distribution certificate), `WINDREX_APP_PROFILE`, and `WINDREX_WIDGET_PROFILE` (App Store profile UUIDs). Set `BUILD` explicitly or let `asc` query App Store Connect for the next build number. `DESTINATION=export` writes the signed IPA to `ios/build/export`.
 - **Publishing to an internal TestFlight group via `asc`**: Also set `WINDREX_ASC_PROFILE`, `WINDREX_ASC_APP_ID`, and `WINDREX_TESTFLIGHT_GROUP_ID`.
-- **Optional hosted services**: Set `WINDREX_WEB_ORIGIN` on the host for hosted Web pairing, `WINDREX_PUSH_RELAY_URL` on the host and iOS build for background Live Activity push updates ([`NET-003`](docs/NET-003-push-relay.md)), and the Web snapshot URL in iOS settings for Hotspot Share.
+- **Optional hosted services**: Set `WINDREX_WEB_ORIGIN` on the host for hosted Web pairing and `WINDREX_PUSH_RELAY_URL` on the host and iOS build for background Live Activity push updates ([`NET-003`](docs/NET-003-push-relay.md)).
 
 ## Architecture &amp; Documentation Map
 
@@ -229,7 +229,7 @@ The iOS bundle ID is `wiki.wind.windrex`. Its widget extension is `wiki.wind.win
 
 ### Key Design &amp; Reference Docs
 
-- **Networking &amp; Remote Access**: [`NET-005-direct-relay.md`](docs/NET-005-direct-relay.md) (Direct TLS &amp; stateless relay) · [`REF-005-rex-api.md`](docs/REF-005-rex-api.md) (Rex API gateway &amp; pairing) · [`IOS-002-tailcat.md`](docs/IOS-002-tailcat.md) (Tailcat) · [`NET-003-push-relay.md`](docs/NET-003-push-relay.md) (Live Activity push relay)
+- **Networking &amp; Remote Access**: [`NET-005-direct-relay.md`](docs/NET-005-direct-relay.md) (Direct TLS &amp; stateless relay) · [`NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md) (Tailscale removal) · [`REF-005-rex-api.md`](docs/REF-005-rex-api.md) (Rex API gateway &amp; pairing) · [`NET-003-push-relay.md`](docs/NET-003-push-relay.md) (Live Activity push relay)
 - **Session Server &amp; CLI**: [`REF-006-session-server.md`](docs/REF-006-session-server.md) (headless terminal &amp; recovery) · [`REF-001-cli.md`](docs/REF-001-cli.md) (CLI &amp; agent skill hooks) · [`REF-004-shared-server.md`](docs/REF-004-shared-server.md) (shared Linux systemd server) · [`REF-003-session-size.md`](docs/REF-003-session-size.md) (multi-client sizing)
 - **Workspace &amp; Clients**: [`MOD-002-projects.md`](docs/MOD-002-projects.md) (spaces, hosts &amp; projects) · [`MOD-001-osc-7501.md`](docs/MOD-001-osc-7501.md) (program status protocol) · [`DSK-003-teleport.md`](docs/DSK-003-teleport.md) (pane Teleport) · [`DSK-009-terminal-settings.md`](docs/DSK-009-terminal-settings.md) (Ghostty &amp; terminal settings) · [`REF-007-web-client.md`](docs/REF-007-web-client.md) (Web client)
 - **iOS Experience &amp; Design**: [`IOS-006-live-activities.md`](docs/IOS-006-live-activities.md) · [`IOS-010-widgets.md`](docs/IOS-010-widgets.md) · [`IOS-012-background-and-network-changes.md`](docs/IOS-012-background-and-network-changes.md) · [`DESIGN.md`](DESIGN.md)
