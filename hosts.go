@@ -24,8 +24,8 @@ import (
 )
 
 // Remote hosts: the session servers of other machines, connected to over
-// tailcat, whose sessions open in tabs of the window beside this
-// machine's. A host's address is a secret, as on the server: it is kept
+// Direct TLS or a self-hosted Relay, whose sessions open in tabs of the window
+// beside this machine's. A host's address carries a Bearer token: it is kept
 // in hosts.json, readable by the user only, and never logged nor shown.
 
 // savedHost is a remote host as hosts.json keeps it.
@@ -38,7 +38,7 @@ func (h *hostConn) label() string { return h.savedHost.Label() }
 func hostsPath() string { return hosts.Path(rex.Dir()) }
 
 // loadHosts reads the saved hosts; none when the file does not exist. A
-// file that does not parse is moved aside, not lost: its addresses are
+// file that does not parse is moved aside, not lost: its addresses carry
 // secrets that cannot be had again but from each host.
 func loadHosts() ([]savedHost, error) {
 	dir := rex.Dir()
@@ -47,7 +47,7 @@ func loadHosts() ([]savedHost, error) {
 		if err != nil {
 			return nil, err
 		}
-		return keptHosts(dir, list), nil
+		return list, nil
 	}
 	path := hosts.Path(dir)
 	bad := path + ".bad-" + time.Now().Format("20060102-150405")
@@ -56,23 +56,6 @@ func loadHosts() ([]savedHost, error) {
 	}
 	os.Chmod(bad, 0o600)
 	return nil, fmt.Errorf("gorex: hosts.json is not valid: moved aside to %s", filepath.Base(bad))
-}
-
-// keptHosts are the hosts the app takes of a file it reads: a host the
-// tailnet's discovery saved, which the user never added, opened, renamed
-// nor gave an icon to, was none the user asked for. It goes from the file
-// too, so that the next load, and the command line, see the hosts the app
-// shows; the machines it names are offered again by the add sheet.
-func keptHosts(dir string, list []savedHost) []savedHost {
-	kept := slices.DeleteFunc(slices.Clone(list), func(h savedHost) bool {
-		return rex.IsTailnetTarget(h.Address) && !h.TailnetOpened && h.Alias == "" && h.Icon == ""
-	})
-	if len(kept) != len(list) {
-		if err := hosts.Save(dir, kept); err != nil {
-			log.Print(err)
-		}
-	}
-	return kept
 }
 
 // saveHosts writes the hosts, readable by the user only, atomically. It
@@ -114,10 +97,8 @@ type hostConn struct {
 	hello   rex.Hello
 	// agents are the known agent CLIs installed on this host (agents.list).
 	agents []rex.AgentInfo
-	// path is how the link to the host runs, as the server measured it
-	// last (rex.TailcatStatus), nil until the first answer; pathAt is
-	// when it was asked last, and pathAsking that an ask is under way.
-	path       *rex.TailcatStatus
+	// pathAt is when pingMs was measured last, and pathAsking that an ask
+	// is under way.
 	pathAt     time.Time
 	pathAsking bool
 	// connectMs is the last connect's dial and hello; pingMs is the
@@ -350,8 +331,6 @@ type hostFailure int
 
 const (
 	failUnreachable hostFailure = iota + 1 // not reached, or the connection lost on the way
-	failRefused                            // the host does not allow this machine
-	failPending                            // nor yet: its user has a request to answer
 	failOther                              // the host said something else
 )
 
@@ -372,12 +351,8 @@ func connectHost(ctx context.Context, address string) (c *rex.Client, hello rex.
 	if hello, err = c.Hello(); err != nil {
 		c.Close()
 		switch {
-		case rex.IsPairingPending(err):
-			return nil, hello, locales.HostsNotAllowed, failPending
-		case rex.IsRefused(err):
-			return nil, hello, locales.HostsNotAllowed, failRefused
 		case strings.Contains(err.Error(), "connection to the server lost"), errors.Is(err, rex.ErrTimeout):
-			// Lost on the way: nothing tells that the host refused.
+			// Lost on the way.
 			return nil, hello, locales.HostsUnreachable, failUnreachable
 		}
 		msg := serverMessage(errors.New(rex.Scrub(err.Error(), address)))
@@ -500,7 +475,7 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 			logged.log(name, nil)
 			update(func() {
 				h.state, h.reason, h.hello, h.closed = hostConnected, nil, hello, nil
-				h.connectMs, h.pingMs, h.path, h.pathAt = int(time.Since(dialAt).Milliseconds()), -1, nil, time.Time{}
+				h.connectMs, h.pingMs, h.pathAt = int(time.Since(dialAt).Milliseconds()), -1, time.Time{}
 				if h.learn(hello) && h.persist != nil {
 					h.persist()
 				}
@@ -780,42 +755,6 @@ func (a *App) removeHost(h *hostConn) {
 	a.syncHosts()
 	h.close()
 	a.saveHosts()
-}
-
-// reconcileTailnet takes the GoRex hosts the tailnet shows, for the sheet
-// that adds one: a machine found there is no host until the user adds it.
-func (a *App) reconcileTailnet(st *rex.TailnetStatus) {
-	hosts := []rex.TailnetHost(nil)
-	if st.Running {
-		hosts = slices.Clone(st.Hosts)
-	}
-	if a.st != nil {
-		a.st.tailnetHosts = hosts
-	} else {
-		a.tailnetHosts = hosts
-	}
-}
-
-// tailnetFound are the GoRex hosts the tailnet showed: the sheet that adds
-// a host offers each, and saves one as the user adds it.
-func (a *App) tailnetFound() []rex.TailnetHost {
-	if a.st != nil {
-		return a.st.tailnetHosts
-	}
-	return a.tailnetHosts
-}
-
-// addFoundHost saves a host the tailnet showed, and connects to it. The
-// node's target is the host's ID too, so that the node found again is the
-// same host here, with its tabs and its project's home. TailnetOpened
-// marks it the user's, as any host here is: a load keeps it (loadHosts).
-func (a *App) addFoundHost(peer rex.TailnetHost) *hostConn {
-	if peer.Name == "" || peer.Target == "" || slices.ContainsFunc(a.hosts, func(h *hostConn) bool {
-		return h.Address == peer.Target
-	}) {
-		return nil
-	}
-	return a.addHost(savedHost{ID: peer.Target, Name: peer.Name, Address: peer.Target, TailnetOpened: true})
 }
 
 // connectHostNow connects to host h now, at the user's asking: a host

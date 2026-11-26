@@ -169,7 +169,7 @@ func startStateGateway(t *testing.T) (*Gateway, string) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	g, err := New(Options{Client: c, TailnetDir: dir})
+	g, err := New(Options{Client: c, StateDir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,8 +264,8 @@ func TestLANAllowsOnlyItsNetworks(t *testing.T) {
 	}
 }
 
-// TestLANRefusesAdministering keeps server.tailscale.* to the local
-// socket: a caller on the local network gets 403.
+// TestLANRefusesAdministering keeps server.stop to the local socket: a
+// caller on the local network gets 403.
 func TestLANRefusesAdministering(t *testing.T) {
 	g, dir := startStateGateway(t)
 	g.lan.apply(LANConfig{Enabled: true, Listen: "127.0.0.1:0", Allow: []string{"127.0.0.0/8"}, Token: testLANToken})
@@ -286,9 +286,9 @@ func TestLANRefusesAdministering(t *testing.T) {
 	if p, _ := who["principal"].(map[string]any); p["kind"] != "anonymous" || p["remote_addr"] != "127.0.0.1" {
 		t.Errorf("whoami principal = %v", who["principal"])
 	}
-	e := failure(t, c.request("t", "server.tailscale.enable", map[string]any{"allow_tailnet_members": false}))
+	e := failure(t, c.request("t", "server.stop", nil))
 	if e["status"] != float64(403) {
-		t.Errorf("server.tailscale.enable over the local network: %v", e)
+		t.Errorf("server.stop over the local network: %v", e)
 	}
 }
 
@@ -350,7 +350,7 @@ func TestServerRunsGateway(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GOREX_DIR", dir)
 	t.Setenv("GOREX_REXAPI_SOCKET", shortSocket(t))
-	state := TailnetDir()
+	state := StateDir()
 	if err := SaveLAN(state, LANConfig{Enabled: true, Listen: "127.0.0.1:0", Allow: []string{"127.0.0.1"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -400,6 +400,12 @@ func TestServerRunsGateway(t *testing.T) {
 	c, _ := rex.ConnectSocket(rex.SocketPath())
 	c.Shutdown()
 	<-served
+}
+
+// gatewayRuns reports whether a gateway serves the local socket.
+func gatewayRuns() bool {
+	_, err := callGateway(SocketPath(), "server.version", nil)
+	return err == nil
 }
 
 // TestStatusListsListeners checks revision 12's listeners: the local

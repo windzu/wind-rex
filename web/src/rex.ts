@@ -76,8 +76,7 @@ export const openWait = 10000;
 const callWait = 30_000;
 
 /**
- * The part of a WebSocket that Control and DataStream use. The browser's
- * is one; the tailnet engine's (tailnet.ts) is another.
+ * The part of a WebSocket that Control and DataStream use.
  */
 export interface SocketLike {
   binaryType: BinaryType;
@@ -90,16 +89,15 @@ export interface SocketLike {
 }
 
 /**
- * How the page reaches a host's gateway (docs/WEB-002-tailscale.md, Hosts and
- * transport): directly, with the browser's WebSocket and fetch, or
- * through the tailnet engine. Paths are the gateway's, such as
+ * How the page reaches a host's gateway: directly, with the browser's
+ * WebSocket / WebTransport and fetch. Paths are the gateway's, such as
  * /api/control.
  */
 export interface Transport {
-  kind: "direct" | "tailnet" | "tailcat";
+  kind: "direct";
   socket(path: string, protocol: string): SocketLike;
   fetch(path: string, init?: RequestInit): Promise<Response>;
-  /** The URL of path the browser can open; only a direct host has one. */
+  /** The URL of path the browser can open. */
   url?(path: string): string;
 }
 

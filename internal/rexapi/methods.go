@@ -147,11 +147,6 @@ var methods = map[string]func(*control, args) (any, *apiError){
 	"server.whoami":                 methodServerWhoami,
 	"server.config_reload":          methodServerConfigReload,
 	"server.stop":                   methodServerStop,
-	"server.tailscale.enable":       methodTailscaleEnable,
-	"server.tailscale.disable":      methodTailscaleDisable,
-	"server.tailscale.login":        methodTailscaleLogin,
-	"server.tailscale.logout":       methodTailscaleLogout,
-	"server.tailscale.rename":       methodTailscaleRename,
 	"help.all":                      methodHelpAll,
 	"hosts.list":                    methodHostsList,
 	"hosts.put":                     methodHostsPut,
@@ -317,13 +312,11 @@ type statusResult struct {
 	StartedAt      string       `json:"started_at"`
 	ExitEmpty      bool         `json:"exit_empty"`
 	SessionCount   int          `json:"session_count"`
-	Tailscale      any          `json:"tailscale,omitempty"`
 	APIRevision    int          `json:"api_revision,omitempty"`
 	APIMinRevision int          `json:"api_min_revision,omitempty"`
 	Config         configResult `json:"config"`
 	// Listeners are the endpoints the gateway accepts connections on,
-	// primary first, as revision 12 reports them. Built-in Tailscale is
-	// not among them: tailscale describes it.
+	// primary first, as revision 12 reports them.
 	Listeners []Listener `json:"listeners,omitempty"`
 }
 
@@ -370,7 +363,7 @@ type configResult struct {
 	Hash       string `json:"hash"`
 }
 
-func (g *Gateway) status(transport string) statusResult {
+func (g *Gateway) status() statusResult {
 	m := g.modelNow()
 	generation, hash, _ := g.keymapSettings()
 	return statusResult{
@@ -382,22 +375,12 @@ func (g *Gateway) status(transport string) statusResult {
 		SessionCount: len(m.sessions),
 		APIRevision:  apiRevision,
 		Config:       configResult{Generation: generation, Hash: hash},
-		Tailscale:    g.tailscaleStatus(transport),
 		Listeners:    g.listenersNow(),
 	}
 }
 
-// tailscaleStatus is server.status's tailscale as a connection over
-// transport sees it, nil when the gateway cannot run built-in Tailscale.
-func (g *Gateway) tailscaleStatus(transport string) any {
-	if g.tailnet == nil {
-		return nil
-	}
-	return g.tailnet.status().over(transport)
-}
-
 func methodServerStatus(c *control, _ args) (any, *apiError) {
-	return c.g.status(c.transport), nil
+	return c.g.status(), nil
 }
 
 // whoamiResult is server.whoami's result.
@@ -652,7 +635,7 @@ func methodSessionBootstrap(c *control, a args) (any, *apiError) {
 	c.rec.setAll(scope)
 	res := bootstrapResult{
 		ClientID:     c.rec.id,
-		ServerStatus: c.g.status(c.transport),
+		ServerStatus: c.g.status(),
 		AttachAll:    bootstrapAttachAll{Sessions: m.list()},
 	}
 	attach := func(s *mSession) attachedSession {

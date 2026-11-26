@@ -38,7 +38,7 @@ export interface SidebarApp {
   closeSpace(c: HostConn, session: string): void;
   /** The space chip's menu. */
   spacesMenu(c: HostConn, session: string): MenuItem[];
-  /** The hosts the page can connect to, in the sidebar's order: the host list's, then the tailnet's. */
+  /** The hosts the page can connect to, in the sidebar's order. */
   hosts(): Host[];
   /** A host's connection, while the page keeps one. */
   conn(id: string): HostConn | undefined;

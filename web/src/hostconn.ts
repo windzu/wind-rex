@@ -11,8 +11,6 @@ import { featureVersion, parseProject, ProjectInfo } from "./projectmodel";
 import { Control, Transport } from "./rex";
 import type { LinkState } from "./settings";
 import * as spaces from "./spaces";
-import type { Tailcat, TailcatHost } from "./tailcat";
-import type { Tailnet, TailnetHost } from "./tailnet";
 import { webTransportAvailable, webTransportProblem } from "./webtransport";
 import { layoutOf, leavesOf } from "./window";
 
@@ -70,11 +68,7 @@ export function backoff(n: number): number {
 /** How long a connection stays up for the failures before to be forgotten (hosts.go's hostHealthy). */
 export const healthyAfter = 10000;
 
-/**
- * How many control connections open at once, page-wide, as tailnet.ts's
- * probesAtOnce: over the tailnet each one is a TLS handshake in the
- * engine, on the page's thread. The others wait their turn.
- */
+/** How many control connections open at once, page-wide. The others wait their turn. */
 export const opensAtOnce = 4;
 let opening = 0;
 const waiting: (() => void)[] = [];
@@ -173,8 +167,6 @@ export class HostConn {
     public host: Host,
     readonly transport: Transport,
     private readonly events: HostEvents,
-    private readonly tailnet: Tailnet,
-    private readonly tailcat: Tailcat,
   ) {}
 
   /** Connects, and again after a drop or a failure, until stop(). */
@@ -377,11 +369,7 @@ export class HostConn {
       if (gen !== this.generation) return;
       const p = h.certHash
         ? await webTransportProblem(h.url, e)
-        : h.kind === "tailnet"
-          ? await this.tailnet.diagnose(h as TailnetHost)
-          : h.kind === "tailcat"
-            ? await this.tailcat.diagnose(h as TailcatHost)
-            : await diagnose(h.url, h.token);
+        : await diagnose(h.url, h.token);
       if (gen !== this.generation) return;
       if (h.certHash && !webTransportAvailable()) {
         // No attempt can mend a browser without WebTransport: say so once.

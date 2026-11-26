@@ -63,7 +63,7 @@ func TestDirectTLSAndRelayGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	stateDir := t.TempDir()
-	g, err := New(Options{Client: c, TailnetDir: stateDir})
+	g, err := New(Options{Client: c, StateDir: stateDir})
 	if err != nil {
 		c.Close()
 		t.Fatal(err)

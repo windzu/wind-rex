@@ -8,9 +8,9 @@ metadata:
 
 # NET-009: Remove built-in Tailscale and Hotspot Share
 
-Status: phase 1 built (iOS removal, Refs #46). Phase 2 (Go, desktop, server, and web removal) not built.
+Status: built — phase 1 (iOS removal, PR #56) and phase 2 (Go, desktop, server, and web removal, Fixes #46).
 
-This doc replaces the removed `IOS-001` (built-in tailnet), `IOS-002` (tailcat), and `IOS-003` (Hotspot Share) designs, and supersedes the Tailscale coexistence sections of [`NET-005`](NET-005-direct-relay.md), [`IOS-012`](IOS-012-background-and-network-changes.md), [`IOS-023`](IOS-023-pairing-entry.md), and [`DSK-010`](DSK-010-trim-browser-and-web.md).
+This doc replaces the removed `IOS-001` (built-in tailnet), `IOS-002` (tailcat), `IOS-003` (Hotspot Share), `DSK-005` (desktop tailnet), `NET-002` (host links), `NET-004` (public relay), `WEB-002` (web Tailscale), and `WEB-006` (web tailcat) designs, and supersedes the Tailscale coexistence sections of [`NET-005`](NET-005-direct-relay.md), [`NET-007`](NET-007-desktop-direct-client.md), [`IOS-012`](IOS-012-background-and-network-changes.md), [`IOS-023`](IOS-023-pairing-entry.md), and [`DSK-010`](DSK-010-trim-browser-and-web.md).
 
 ## Problem
 
@@ -44,12 +44,14 @@ WindRex now supports Direct TLS and self-hosted `windrex-relay` across iOS ([`NE
 5. **Diagnostics and Developer Mode**: `DiagnosticsView` shows failure reason, host metadata, and `ConnectionLog` lines without Tailscale disco pings. `DeveloperModeOverlay` and `NetworkDiagnostics` report OS interfaces, IPv4/IPv6 support, and VPN presence without built-in Tailscale state.
 6. **Upgrade migration**: On launch, `HostStore.init` reads `UserDefaults["hosts"]` element by element. Direct TLS, relay, LAN, and plain OS-routed hosts decode and connect with their Keychain `LANTokens` intact. Unroutable tailcat (`tailcat != nil`, `*.tailcat.invalid`, or `transport == "tailcat"`) and built-in Tailscale (`transport == "tailnet"`) records are dropped and the cleaned list is saved back.
 
-#### Phase 2: Go, Desktop, Server, and Web (planned)
+#### Phase 2: Go, Desktop, Server, and Web
 
-1. Remove `internal/tailnode`, `internal/pairaddr`, `web/tailnet/`, `system_tailnet*.go`, and all Tailscale/tailcat code in `internal/rexapi`, `internal/rex`, `internal/cli`, desktop settings/host dialogs, and `web/src/`.
-2. Tolerantly load desktop `hosts.json` so existing Direct TLS and relay hosts survive while legacy tailcat/tailnet entries are ignored or surfaced cleanly without corrupting `hosts.json`.
-3. Drop `tailscale.com`, `github.com/tailscale/tailcat`, and `golang.org/x/mobile` from `go.mod`, while keeping `github.com/tailscale/peercred` for Unix domain socket peer credential checks.
-4. Remove Hotspot Share hooks (`web/src/share.ts` and `files.json` if unused) from `web/` once Phase 1 has removed `ios/share/`.
+1. Remove `internal/tailnode`, `internal/pairaddr`, `tools/remotectl`, `web/tailnet/`, `web/tailcat/`, `web/jsbridge/`, `system_tailnet*.go`, and all Tailscale/tailcat code in `internal/rexapi`, `internal/rex`, `internal/cli`, `cmd/windrex-server`, desktop settings/host dialogs, and `web/src/`.
+2. Tolerantly load desktop `hosts.json` (`internal/hosts/hosts.go`): filter out legacy `tailscale:`, `tc...`/`tcat://`, and `net:` records on `Load` while keeping all `https://` Direct TLS and relay hosts intact; ignore unused `remote.json`/`tailscale.json` files on disk.
+3. Preserve pre-#46 `MachineID()` stability in `internal/rex/remote.go` using stdlib `crypto/ecdh` X25519 reading/writing `remote-client.json` (`privkey:...` format) with zero `tailscale.com` imports.
+4. Drop `tailscale.com`, `github.com/tailscale/tailcat`, `github.com/tailscale/wireguard-go`, and `golang.org/x/mobile/cmd/{gobind,gomobile}` from `go.mod`, keeping only `github.com/tailscale/peercred` for Unix domain socket peer credential checks on `rexapi.sock`.
+5. Remove Go/WASM tailnet/tailcat build steps from `web/build.mjs` and `web/dev.mjs` so building `web/` has zero Go dependency.
+6. Stripped `linux/amd64` `windrex-server` shrinks from 31 MB to 17 MB (`-45%`).
 
 ### Model
 
@@ -81,9 +83,11 @@ All three irreversible decisions were approved by the owner before implementatio
 - Refactored iOS scripts, workflows, and verification: `ios/scripts/test-notes`, `ios/scripts/upload`, `ios/WhatToTest.md`, `.github/workflows/ios-test.yml`, `.github/workflows/testflight.yml`, `tools/verify/main.go`.
 - Updated tests: `ios/GoRexTests/{HostTests,PairingTests,HostPairingTests,DeveloperModeTests,NetworkPathTests,LANTokenTests,WidgetTests,ConnectionTests}.swift`.
 
-#### Phase 2 (follow-up PR)
+#### Phase 2 (Go, desktop, server, and web)
 
-- Go module, session server, gateway, CLI, desktop UI, and web client cleanup in `go.mod`, `internal/tailnode/`, `internal/pairaddr/`, `internal/rex/`, `internal/rexapi/`, `internal/cli/`, `system_tailnet*.go`, `remoteview.go`, `hosts.go`, `hostsview.go`, `web/tailnet/`, and `web/src/`.
+- Deleted directories: `internal/tailnode/`, `internal/pairaddr/`, `tools/remotectl/`, `web/tailnet/`, `web/tailcat/`, `web/jsbridge/`.
+- Deleted files: `internal/rex/{builtin_tailnet*,system_tailnet*,ownrelay*,pairaddr*,firewall*,remote_ops,remote_tailcat_test,remote_gateway_test}.go`, `internal/rexapi/{tailnet*,tailcat*,tailscale_methods,desktop*}.go`, `remotetailnet.go`, `remotetailnet_test.go`, `reachable_test.go`, `web/src/{tailnet,tailengine,tailstore,tailcat,catengine,catstore,guide}.ts`, `web/test/{tailcat,tailstore}.test.ts`, `docs/{DSK-005-tailnet,NET-002-host-links,NET-004-public-relay,WEB-002-tailscale,WEB-006-tailcat}.md`.
+- Refactored: `internal/hosts/hosts.go`, `internal/rex/`, `internal/rexapi/`, `internal/cli/`, `cmd/windrex-server/`, desktop `remoteview.go`, `hostqr.go`, `hosts.go`, `hostsview.go`, `settingsview.go`, `state.go`, `app.go`, `workspace.go`, `adoptions.go`, `main.go`, `locales/{en,zh-Hans}.json`, `locales/catalog_gen.go`, `web/build.mjs`, `web/dev.mjs`, `web/_headers`, `web/index.html`, `web/locales/{en,zh-Hans}.json`, `web/src/`, `tools/verify/`, and `go.mod`.
 
 ## Alternatives
 
@@ -114,5 +118,5 @@ All three irreversible decisions were approved by the owner before implementatio
 
 ## Phases
 
-1. **Phase 1 — iOS removal**: Remove built-in Tailscale, tailcat, `Tailnet.xcframework`, `ios/tailnet/`, `ios/share/`, Hotspot Share UI, iOS CI Go/Tailnet steps, and obsolete iOS docs; add tolerant pre-#46 host migration (this PR, Refs #46).
-2. **Phase 2 — Go, desktop, server, and web removal**: Remove `internal/tailnode`, `internal/pairaddr`, `system_tailnet*.go`, desktop/server Tailscale/tailcat transports, `web/tailnet/`, and `tailscale.com` / `tailcat` dependencies while keeping `github.com/tailscale/peercred` (follow-up PR, Refs #46).
+1. **Phase 1 — iOS removal**: Remove built-in Tailscale, tailcat, `Tailnet.xcframework`, `ios/tailnet/`, `ios/share/`, Hotspot Share UI, iOS CI Go/Tailnet steps, and obsolete iOS docs; add tolerant pre-#46 host migration (PR #56, Refs #46).
+2. **Phase 2 — Go, desktop, server, and web removal**: Remove `internal/tailnode`, `internal/pairaddr`, `tools/remotectl`, `system_tailnet*.go`, desktop/server Tailscale/tailcat transports, `web/tailnet/`, `web/tailcat/`, `web/jsbridge/`, and `tailscale.com` / `tailcat` / `wireguard-go` / `gomobile` dependencies while keeping `github.com/tailscale/peercred` (this PR, Fixes #46).

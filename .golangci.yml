@@ -45,5 +45,5 @@ linters:
       - path: _test\.go$
         text: "http\\.DefaultClient|fmt\\.Print"
       # CLI & standalone tools intentionally print to stdout.
-      - path: ^(internal/cli/|internal/rexapi/(cli|serve|web)\.go|internal/rex/proto\.go|tools/|web/tailnet/)
+      - path: ^(internal/cli/|internal/rexapi/(cli|serve|web)\.go|internal/rex/proto\.go|tools/)
         text: "fmt\\.Print"

@@ -29,7 +29,7 @@ func (st *store) adoptionHost(ad layout.Adoption) *hostConn {
 	if ad.Machine == "" {
 		return nil
 	}
-	// Of two hosts of the machine, as its LAN and tailnet addresses, the
+	// Of two hosts of the machine, as its LAN and direct addresses, the
 	// connected one.
 	var found *hostConn
 	for _, h := range st.hosts {

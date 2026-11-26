@@ -1,13 +1,11 @@
-// GoRex's web client: the sessions every host's gateway serves, and a
+// WindRex's web client: the sessions every host's gateway serves, and a
 // window's panes, live, over the same API the iOS app speaks. The page is
-// hosted on its own; each host is one the user added (hosts.ts), or one
-// built-in Tailscale found on the tailnet (tailnet.ts). Every host stays
-// connected at once (docs/WEB-003-multihost.md), each in its HostConn.
+// hosted on its own; each host is one the user added (hosts.ts). Every host
+// stays connected at once (docs/WEB-003-multihost.md), each in its HostConn.
 import { Chunk } from "./chunks";
 import { Ghostty } from "./ghostty";
-import type { Guide } from "./guide";
 import { mountCorner } from "./corner";
-import { commandBox, Host, HostLink, HostList, icon, loadHosts, mixedContent, parsePairingLink, Problem, problem as newProblem } from "./hosts";
+import { commandBox, Host, HostLink, HostList, icon, loadHosts, mixedContent, parsePairingLink, Problem } from "./hosts";
 import { HostConn, HostEvents, Session } from "./hostconn";
 import { localize, Msg, msg, onLanguageChange, PlainKey, t } from "./i18n";
 import { commandTitle, keysOf, shortcut } from "./keys";
@@ -18,7 +16,7 @@ import { describe, TerminalView } from "./pane";
 import { ensureLatin, initMaple, mapleFamily, onChunk } from "./maple";
 import { fontFamily, glassOn, paneHeaders, prefs } from "./prefs";
 import { LoadState, ProgressView } from "./progress";
-import { closeTailnet, isTailnetID, loadHostsOff, openTailnet, Place, saveHostsOff, savePlace, startPlace, tailnetOpened } from "./place";
+import { loadHostsOff, Place, saveHostsOff, savePlace, startPlace } from "./place";
 import { programOf } from "./programs";
 import { Control, directTransport } from "./rex";
 import type { Settings } from "./settings";
@@ -26,8 +24,6 @@ import { fetchSharedHosts, SharedGroup } from "./share";
 import { createProjectOps } from "./projectops";
 import { initProjectView } from "./projectsidebar";
 import { hold, initSidebar, paneName, redraw, sidebar as drawSidebar, sidebarBlock, spaceName, windowTitle } from "./sidebar";
-import { Tailcat, TailcatHost } from "./tailcat";
-import { Tailnet, TailnetHost } from "./tailnet";
 import { webTransport } from "./webtransport";
 import { desktopTheme, Theme } from "./terminal";
 import { isLight, startTheme, ThemeEntry, themeColours } from "./themes";
@@ -50,10 +46,9 @@ loader.configure(
 
 /**
  * The parts of the page's code loaded when first used (chunks.ts): the
- * Settings dialog, the Tailscale guide and the first visit's welcome.
+ * Settings dialog and the first visit's welcome.
  */
 const settingsCode = new Chunk("settings", () => t("chunkSettings"), () => import("./settings"));
-const guideCode = new Chunk("guide", () => t("chunkGuide"), () => import("./guide"));
 const welcomeCode = new Chunk("welcome", () => t("chunkWelcome"), () => import("./welcome"));
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -74,13 +69,9 @@ let pending: Place | undefined;
 /** Counts the hosts chosen, so that what waits for one chosen before ends. */
 let generation = 0;
 let hostList: HostList;
-/** Hosts shared by Rex Go over Personal Hotspot, when served by the phone. */
+/** Hosts shared over a gateway path, when served by a host share. */
 let shared: SharedGroup | undefined;
 let settings: Settings | undefined;
-/** Built-in Tailscale, off until the user turns it on; its engine loads only then. */
-const tailnet = new Tailnet();
-const tailcat = new Tailcat();
-let guide: Guide | undefined;
 /** The first screen, while no host is chosen. */
 let welcome: Welcome | undefined;
 /**
@@ -337,17 +328,10 @@ async function main() {
     pick(theme);
     chooseTheme = pick;
     hostList = new HostList($("hosts"), {
-      choose, close: () => shown?.focusKeys(), changed: hostsChanged, tailnet, guide: openGuide,
+      choose, close: () => shown?.focusKeys(), changed: hostsChanged,
       link: linkOf, connect, disconnect, removed, connections: () => conns.size, share: () => shared,
     });
     for (const what of ["tabs", "font"] as const) applyPrefs(what);
-    tailnet.onChange(tailnetChanged);
-    tailcat.onChange(tailcatChanged);
-    window.addEventListener("pagehide", () => {
-      tailnet.dispose();
-      tailcat.dispose();
-    });
-    if (prefs.tailscalePersist && prefs.tailscaleOn) void tailnet.turnOn();
     $("open-settings").onclick = () => withSettings((s) => s.toggle());
     mountCorner($("corner"), () => withSettings((s) => s.toggle()));
     // A change of language says the page's words again in it: the dialogs say theirs themselves.
@@ -417,60 +401,9 @@ function withSettings(f: (s: Settings) => void) {
       chooseTheme: (t) => chooseTheme(t),
       apply: applyPrefs,
       closed: () => shown?.focusKeys(),
-      tailnet,
-      tailcat,
-      guide: openGuide,
     });
     f(settings);
   });
-}
-
-/** Opens the Tailscale guide, in place of the Settings dialog. */
-function openGuide() {
-  settings?.close();
-  guideCode.use((m) => {
-    guide ??= new m.Guide(tailnet, { connect: (h) => hostList.choose(h), closed: () => shown?.focusKeys() });
-    guide.open();
-  });
-}
-
-/** Whether built-in Tailscale ran at its last change. */
-let tailnetRan = false;
-
-/**
- * Built-in Tailscale changed: the host list and Settings show it. A
- * tailnet host connected once connects when it is found. A tailnet host
- * whose connection fails while Tailscale is off waits with its problem,
- * and tries again at once when Tailscale runs again.
- */
-function tailnetChanged() {
-  syncConns();
-  const running = tailnet.status() === "running";
-  if (running && !tailnetRan) for (const c of conns.values()) if (c.host.kind === "tailnet" && c.waiting) c.poke();
-  tailnetRan = running;
-  onboarding();
-  hostList.refresh();
-  sidebar();
-  settings?.update();
-  // The welcome's Tailscale card follows its state, and so does a waiting tailnet place's notice.
-  if (!current) {
-    welcome?.update();
-    if (pending && isTailnetID(pending.host)) drawNotice();
-  }
-}
-
-/**
- * The tailcat device changed: the engine loaded or failed, another tab
- * took the key, or a host's pairing moved. Waiting tailcat connections
- * try again once the engine is ready.
- */
-function tailcatChanged() {
-  if (tailcat.status() === "ready") for (const c of conns.values()) if (c.host.kind === "tailcat" && c.waiting) c.poke();
-  hostList.refresh();
-  settings?.update();
-  if (!current) drawNotice();
-  else if (current?.kind === "tailcat") drawNotice();
-  sidebar();
 }
 
 /** A button of the notice: its words, as a key or said when drawn. */
@@ -481,10 +414,10 @@ let shownNotice: [Problem | undefined, ...NoticeAction[]] | undefined;
 
 /**
  * The first screen has the whole window: no sidebar, no status line. That is while no host is chosen and none
- * exists to choose. Hosts that Tailscale found keep the sidebar, as its host list is where they are chosen.
+ * exists to choose.
  */
 function onboarding() {
-  document.body.classList.toggle("onboarding", !current && !hostList.hosts.length && !(shared?.hosts.length) && !tailnet.hosts.length);
+  document.body.classList.toggle("onboarding", !current && !hostList.hosts.length && !(shared?.hosts.length));
 }
 
 /** Shows the welcome over the empty stage: no host is chosen. Its code loads only then, as on the first visit. */
@@ -494,9 +427,8 @@ function showWelcome() {
   welcomeCode.use((m) => {
     // A host chosen meanwhile has the stage.
     if (gen !== generation || current) return;
-    welcome ??= new m.Welcome({ hosts: hostList, tailnet, guide: openGuide });
+    welcome ??= new m.Welcome({ hosts: hostList });
     const box = $("notice");
-    welcome.update();
     if (box.firstElementChild !== welcome.el) box.replaceChildren(welcome.el);
     box.hidden = false;
   });
@@ -548,36 +480,10 @@ function notice(p?: Problem, ...actions: NoticeAction[]) {
   box.replaceChildren(card);
 }
 
-/** A waiting tailnet place's notices: Tailscale is not running, it is still looking, or it does not find the host. */
-const tailnetWait: Problem = newProblem(() => t("placeTailnetTitle"), () => t("placeTailnetText"));
-const tailnetLooking: Problem = newProblem(() => t("placeTailnetTitle"), () => t("placeTailnetSearchingText"));
-const tailnetGone: Problem = newProblem(() => t("placeTailnetGoneTitle"), () => t("placeTailnetGoneText"));
-
 /**
- * The notice of a place on tailnet host id, while it is not shown: its
- * connection's problem once it has one, else what Tailscale is doing.
- */
-function tailnetPlace(id: string): [Problem | undefined, ...NoticeAction[]] {
-  const c = conns.get(id);
-  if (c) return c.state === "unreachable" && c.problem ? [c.problem, tailscaleSettings] : [undefined];
-  if (tailnet.status() === "in-use-other-tab") {
-    return [
-      newProblem(() => t("tsStatusOtherTab"), () => t("tsHintOtherTab")),
-      { label: "tsTakeOver", run: () => void tailnet.takeOver(), primary: true },
-      tailscaleSettings,
-    ];
-  }
-  if (tailnet.status() !== "running") return [tailnetWait, tailscaleSettings];
-  return tailnet.searching ? [tailnetLooking] : [tailnetGone, tailscaleSettings];
-}
-
-/** Opens Settings at Tailscale, from a notice. */
-const tailscaleSettings: NoticeAction = { label: "noticeTailscaleSettings", run: () => withSettings((s) => s.open("tailscale")) };
-
-/**
- * Shows host h, chosen in the host list, the sidebar or the guide: its
- * last shown window, else its first once it has read its sessions. A host
- * the page keeps no connection to connects; the others stay connected.
+ * Shows host h, chosen in the host list or the sidebar: its last shown
+ * window, else its first once it has read its sessions. A host the page
+ * keeps no connection to connects; the others stay connected.
  */
 function choose(h: Host | undefined, keys = true) {
   generation++;
@@ -589,8 +495,7 @@ function choose(h: Host | undefined, keys = true) {
     return;
   }
   // A host chosen connects, though the user disconnected it before.
-  if (h.kind === "tailnet") openTailnet(h.id);
-  else setOff(h.id, false);
+  setOff(h.id, false);
   const c = ensure(h);
   const last = c.lastWindow;
   if (last && windowOf(c, last.session, last.window)) return pick(c, last.session, last.window, keys);
@@ -625,33 +530,22 @@ function select(h: Host | undefined) {
 
 /**
  * The notice of the selected host only: its problem, else nothing; with
- * no host, the welcome, or a tailnet place that waits for Tailscale.
+ * no host, the welcome.
  */
 function drawNotice() {
   const c = currentConn();
   if (!current) {
-    if (pending && isTailnetID(pending.host)) notice(...tailnetPlace(pending.host));
-    else if (!conns.size) showWelcome();
+    if (!conns.size) showWelcome();
     else notice();
     return;
   }
   if (c?.state === "unreachable" && c.problem) {
-    if (c.host.kind === "tailnet") notice(c.problem, tailscaleSettings);
-    else if (c.host.kind === "tailcat") {
-      const th = c.host as TailcatHost;
-      if (tailcat.inUseOtherTab) {
-        notice(c.problem, { label: "tsTakeOver", run: () => void tailcat.takeOver(), primary: true });
-      } else {
-        notice(c.problem, { label: "tcPair", run: () => void tailcat.pairNow(th) }, { label: "hostEdit", run: () => hostList.open(c.host) });
-      }
-    } else notice(c.problem, { label: "hostEdit", run: () => hostList.open(c.host) });
+    notice(c.problem, { label: "hostEdit", run: () => hostList.open(c.host) });
   } else notice();
 }
 
-/** A host's transport: the browser's to its address, WebTransport with pinned cert, or the tailnet node's. */
+/** A host's transport: the browser's to its address, or WebTransport with pinned cert. */
 function transportOf(h: Host) {
-  if (h.kind === "tailnet") return tailnet.transport(h as TailnetHost);
-  if (h.kind === "tailcat") return tailcat.transport(h as TailcatHost);
   if (h.certHash) return webTransport(h.url, h.certHash, h.token);
   return directTransport(h.url, h.token);
 }
@@ -663,7 +557,7 @@ function transportOf(h: Host) {
  */
 function ensure(h: Host): HostConn {
   let c = conns.get(h.id);
-  if (c && (c.host.url !== h.url || c.host.certHash !== h.certHash || c.host.token !== h.token || c.host.address !== h.address)) {
+  if (c && (c.host.url !== h.url || c.host.certHash !== h.certHash || c.host.token !== h.token)) {
     drop(c);
     c = undefined;
   }
@@ -672,7 +566,7 @@ function ensure(h: Host): HostConn {
     if (current?.id === h.id) current = h;
     return c;
   }
-  c = new HostConn(h, transportOf(h), hostEvents, tailnet, tailcat);
+  c = new HostConn(h, transportOf(h), hostEvents);
   conns.set(h.id, c);
   begin(c);
   return c;
@@ -680,8 +574,7 @@ function ensure(h: Host): HostConn {
 
 /** Starts a host's connection; a host this page can never reach (mixed content) stays with its problem. */
 function begin(c: HostConn) {
-  // A tailnet or tailcat host: no URL the browser opens, so no mixed content.
-  const blocked = c.host.kind !== "tailnet" && c.host.kind !== "tailcat" && mixedContent(c.host.url);
+  const blocked = mixedContent(c.host.url);
   if (blocked) c.block(blocked);
   else c.start();
 }
@@ -706,23 +599,15 @@ function retry(c: HostConn) {
 
 /**
  * Keeps a connection to every host the page keeps (Decisions, 1): each
- * host of the list, and each tailnet host connected once, when built-in
- * Tailscale finds it. A tailnet host stays connected while Tailscale is
- * off: its connection fails, waits and tries again. A host the user
- * disconnected has none (gorex.hostsOff; a tailnet one is no longer
- * connected once).
+ * host of the list and shared hosts, unless disconnected (gorex.hostsOff).
  */
 function syncConns() {
   if (!hostList) return;
   for (const h of hostList.hosts) if (!off.has(h.id)) ensure(h);
   for (const h of shared?.hosts ?? []) if (!off.has(h.id)) ensure(h);
-  if (tailnet.status() === "running") {
-    const opened = tailnetOpened();
-    for (const h of tailnet.hosts) if (opened.has(h.id) || conns.has(h.id) || pending?.host === h.id) ensure(h);
-  }
   const sharedIDs = new Set((shared?.hosts ?? []).map((h) => h.id));
   for (const c of [...conns.values()]) {
-    if (c.host.kind !== "tailnet" && (off.has(c.host.id) || (!hostList.hosts.some((h) => h.id === c.host.id) && !sharedIDs.has(c.host.id)))) drop(c);
+    if (off.has(c.host.id) || (!hostList.hosts.some((h) => h.id === c.host.id) && !sharedIDs.has(c.host.id))) drop(c);
   }
 }
 
@@ -737,15 +622,14 @@ function hostsChanged() {
   sidebar();
 }
 
-/** Connects a host the user disconnected, or a tailnet host found and never connected. The stage stays, unless it shows nothing (the welcome). */
+/** Connects a host the user disconnected. The stage stays, unless it shows nothing (the welcome). */
 function connect(h: Host) {
   if (!current) {
     choose(h, !busyFocus());
     hostsChanged();
     return;
   }
-  if (h.kind === "tailnet") openTailnet(h.id);
-  else setOff(h.id, false);
+  setOff(h.id, false);
   ensure(h);
   hostsChanged();
 }
@@ -757,8 +641,7 @@ function connect(h: Host) {
  * moves off it when it shows it.
  */
 function disconnect(h: Host) {
-  if (h.kind === "tailnet") closeTailnet(h.id);
-  else setOff(h.id, true);
+  setOff(h.id, true);
   if (pending?.host === h.id) pending = undefined;
   const c = conns.get(h.id);
   if (c) drop(c);
@@ -768,7 +651,6 @@ function disconnect(h: Host) {
 
 /** A host removed from the list: its connection ends as it is disconnected, and it is no longer kept as disconnected. */
 function removed(h: Host) {
-  if (h.kind === "tailcat") tailcat.removed(h as TailcatHost);
   setOff(h.id, false);
   if (pending?.host === h.id) pending = undefined;
   syncConns();
@@ -790,12 +672,9 @@ function elsewhere() {
   choose(c?.host, !busyFocus());
 }
 
-/** The hosts in the sidebar's order: the host list's, then the tailnet's by name, connected or found. */
+/** The hosts in the sidebar's order: the host list's, then shared hosts. */
 function sidebarHosts(): Host[] {
-  const ts = new Map<string, Host>();
-  for (const c of conns.values()) if (c.host.kind === "tailnet") ts.set(c.host.id, c.host);
-  if (tailnet.status() === "running") for (const h of tailnet.hosts) if (!ts.has(h.id)) ts.set(h.id, h);
-  return [...(hostList?.hosts ?? []), ...(shared?.hosts ?? []), ...[...ts.values()].sort((a, b) => a.name.localeCompare(b.name))];
+  return [...(hostList?.hosts ?? []), ...(shared?.hosts ?? [])];
 }
 
 /** The hosts' connections in the sidebar's order. */

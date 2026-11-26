@@ -27,12 +27,9 @@ import (
 func main() {
 	// -server runs the session server (rex.ServerMain); other arguments
 	// are AppKit's, as -NSWindowResizeTime, which it reads itself.
-	// The server runs the Rex API gateway while the local network or
-	// built-in Tailscale is on (internal/rexapi).
+	// The server runs the Rex API gateway while Direct TLS / Relay or the
+	// local network listener is on (internal/rexapi).
 	rex.OnServe = rexapi.Supervise
-	rex.RexPairURL = rexapi.PairURL
-	rex.TailnetNode = rexapi.DesktopNode
-	rex.EnableBuiltinTailscale = rexapi.EnableBuiltinTailscale
 	// server.version reports the app's version, marked as GoRex's; a
 	// build outside a bundle has none and keeps the placeholder.
 	if v := mygo.App.Version(); v != "" {

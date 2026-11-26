@@ -14,7 +14,7 @@ func TestLANCommand(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
 	t.Setenv("GOREX_REXAPI_SOCKET", shortSocket(t))
 	quiet(t)
-	dir := TailnetDir()
+	dir := StateDir()
 	for _, step := range []struct {
 		args []string
 		code int
@@ -47,7 +47,7 @@ func TestLANCommand(t *testing.T) {
 func TestLANTokenCommands(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
 	t.Setenv("GOREX_REXAPI_SOCKET", shortSocket(t))
-	dir := TailnetDir()
+	dir := StateDir()
 	run := func(code int, args ...string) string {
 		t.Helper()
 		var got int

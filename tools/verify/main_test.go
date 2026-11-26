@@ -80,8 +80,8 @@ func TestPlanPackages(t *testing.T) {
 	if got := find(cs, "go test").pkgsList; !reflect.DeepEqual(got, []string{"./internal/rex", "./internal/cli"}) {
 		t.Errorf("test pkgs = %q (root must not be in it)", got)
 	}
-	// The lint runs only on packages that build for linux, so a js/wasm-only package
-	// such as web/tailnet does not fail it.
+	// The lint runs only on packages that build for linux, so a non-linux-only
+	// package does not fail it.
 	if got := find(cs, "golangci-lint"); got.tool != golangciLint || got.pkgsFor != "linux" ||
 		!reflect.DeepEqual(got.args, []string{"run", "{pkgs}"}) ||
 		!reflect.DeepEqual(got.pkgsList, []string{"./internal/rex", ".", "./internal/cli"}) {

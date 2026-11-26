@@ -4,10 +4,8 @@
 // GET /api/download?ticket=… sends it. An image the page can show, and
 // whose first bytes are that image's, opens in the viewer (viewer.ts) from
 // a blob of that image type only; anything else is the browser's own
-// download, a hidden link navigated to the file, so no blob of the host's
-// Over the tailnet the browser cannot navigate to the host, so the page
-// reads the file through the transport into a blob that is saved and let
-// go (docs/WEB-002-tailscale.md, Downloads).
+// download, a hidden link navigated to the file, or read through the
+// transport into a blob when the transport is not plain HTTP.
 import { failure as fail, formatSize, Msg, PlainKey, t } from "./i18n";
 import { BytesStream, Control, describe, RexError, Transport } from "./rex";
 import { Chunk } from "./chunks";
@@ -48,7 +46,7 @@ const extKinds: Record<string, ImageKind> = {
 
 /** The largest image the page fetches to show; a larger one downloads. */
 export const maxViewBytes = 50 << 20;
-/** The largest file a tailnet host's download holds in memory, as a blob (without a Service Worker). */
+/** The largest file a blob download holds in memory (without a Service Worker). */
 export const maxBlobBytes = 256 << 20;
 /** How many of the first bytes the signature check reads. */
 const sniffBytes = 4096;

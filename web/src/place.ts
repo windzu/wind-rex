@@ -1,9 +1,7 @@
 // Where the page was, kept in this browser (docs/WEB-003-multihost.md,
 // Persistence): the shown window, by its host (gorex.place), and the
-// tailnet hosts the user connected once (gorex.tailnetOpened), which
-// connect again when built-in Tailscale finds them, and the direct hosts
-// the user disconnected (gorex.hostsOff), which stay so. A page from before
-// kept only the chosen host (gorex.host); it moves into gorex.place once.
+// hosts the user disconnected (gorex.hostsOff), which stay so. A page from
+// before kept only the chosen host (gorex.host); it moves into gorex.place once.
 // Every read and write goes on without storage: the page then forgets
 // when it closes. No DOM here: web/test/place.test.ts runs it in Node.
 
@@ -22,15 +20,9 @@ export interface Store {
 }
 
 export const placeKey = "gorex.place";
-export const openedKey = "gorex.tailnetOpened";
 export const offKey = "gorex.hostsOff";
 /** The chosen host's ID, as a page from before kept it. */
 export const oldHostKey = "gorex.host";
-
-/** Whether a host's ID is a tailnet host's, ts:<StableNodeID> (tailnet.ts). */
-export function isTailnetID(id: string): boolean {
-  return id.startsWith("ts:");
-}
 
 /** A place as kept, or undefined when it is none. */
 export function parsePlace(s: string | null): Place | undefined {
@@ -48,29 +40,16 @@ export function parsePlace(s: string | null): Place | undefined {
   }
 }
 
-/** The tailnet hosts' IDs as kept. */
-export function parseOpened(s: string | null): string[] {
-  try {
-    const l = JSON.parse(s ?? "[]");
-    return Array.isArray(l) ? l.filter((x): x is string => typeof x === "string" && isTailnetID(x)) : [];
-  } catch {
-    return [];
-  }
-}
-
 /**
  * What the keys hold once gorex.host has moved into gorex.place. A place
- * kept already wins. Else the old host is the place: a direct host only
- * while the host list (hosts, its IDs) still has it, a tailnet host always,
- * as the node that finds it may come later, and it was connected once.
+ * kept already wins. Else the old host is the place only while the host
+ * list (hosts, its IDs) still has it.
  */
-export function migrate(old: { host: string | null; place: string | null; opened: string | null }, hosts: string[]): { place?: Place; opened: string[] } {
-  const opened = parseOpened(old.opened);
+export function migrate(old: { host: string | null; place: string | null }, hosts: string[]): { place?: Place } {
   let place = parsePlace(old.place);
   const id = old.host ?? "";
-  if (!place && id && (isTailnetID(id) || hosts.includes(id))) place = { host: id };
-  if (isTailnetID(id) && !opened.includes(id)) opened.push(id);
-  return { place, opened };
+  if (!place && id && hosts.includes(id)) place = { host: id };
+  return { place };
 }
 
 function storage(): Store | undefined {
@@ -91,14 +70,13 @@ export function startPlace(hosts: string[], store = storage()): Place | undefine
     if (!store) return undefined;
     const host = store.getItem(oldHostKey);
     if (host === null) return parsePlace(store.getItem(placeKey));
-    r = migrate({ host, place: store.getItem(placeKey), opened: store.getItem(openedKey) }, hosts);
+    r = migrate({ host, place: store.getItem(placeKey) }, hosts);
   } catch {
     return undefined;
   }
   try {
     if (r.place) store.setItem(placeKey, JSON.stringify(r.place));
     else store.removeItem(placeKey);
-    if (r.opened.length) store.setItem(openedKey, JSON.stringify(r.opened));
     store.removeItem(oldHostKey);
   } catch {
     // Storage that reads but does not write: this load has the place, the next reads gorex.host again.
@@ -115,39 +93,7 @@ export function savePlace(p: Place, store = storage()) {
   }
 }
 
-/** The tailnet hosts the user connected once, by ID. */
-export function tailnetOpened(store = storage()): Set<string> {
-  try {
-    return new Set(parseOpened(store?.getItem(openedKey) ?? null));
-  } catch {
-    return new Set();
-  }
-}
-
-/** Keeps a tailnet host as connected once: it connects again whenever Tailscale finds it. */
-export function openTailnet(id: string, store = storage()) {
-  const all = tailnetOpened(store);
-  if (all.has(id)) return;
-  all.add(id);
-  try {
-    store?.setItem(openedKey, JSON.stringify([...all]));
-  } catch {
-    // As savePlace.
-  }
-}
-
-/** Forgets a tailnet host connected once: it waits for Connect again, as one never connected (Disconnect). */
-export function closeTailnet(id: string, store = storage()) {
-  const all = tailnetOpened(store);
-  if (!all.delete(id)) return;
-  try {
-    store?.setItem(openedKey, JSON.stringify([...all]));
-  } catch {
-    // As savePlace.
-  }
-}
-
-/** The direct hosts the user disconnected, by ID: they do not connect as the page starts. */
+/** The hosts the user disconnected, by ID: they do not connect as the page starts. */
 export function loadHostsOff(store = storage()): Set<string> {
   try {
     const l = JSON.parse(store?.getItem(offKey) ?? "[]");

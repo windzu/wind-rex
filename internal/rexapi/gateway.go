@@ -78,11 +78,9 @@ type Options struct {
 	Client *rex.Client
 	// Access decides who may use the API. A nil Access allows everyone.
 	Access Access
-	// TailnetDir, when set, is where built-in Tailscale keeps its device
-	// and settings: the gateway can then serve the API on the tailnet,
-	// and turns it on again if it was on when it last stopped. Without
-	// it, the server.tailscale methods fail with not_supported.
-	TailnetDir string
+	// StateDir, when set, is where the gateway keeps its LAN, Direct TLS/Relay,
+	// and web origin settings (lan.json, direct.json, web.json).
+	StateDir string
 	// RexSocket, when set, overrides rex.SocketPath() for the authenticated
 	// native session tunnel (/api/v1/rex-tunnel).
 	RexSocket string
@@ -108,8 +106,6 @@ type Gateway struct {
 	// helloWait is how long a connection may take to send its hello;
 	// tests shorten it on a gateway of their own.
 	helloWait time.Duration
-	// tailnet is built-in Tailscale, nil when the gateway cannot run it.
-	tailnet *tailnet
 	// lan is the listener on the local network, nil without a state
 	// directory.
 	lan *lanListener
@@ -292,12 +288,10 @@ func New(opt Options) (*Gateway, error) {
 		done:           make(chan struct{}),
 		changed:        make(chan struct{}),
 	}
-	if opt.TailnetDir != "" {
-		g.lan = newLANListener(g, opt.TailnetDir)
-		g.direct = newDirectListener(g, opt.TailnetDir)
-		g.web = newWebOrigins(opt.TailnetDir)
-		g.tailnet = newTailnet(g, opt.TailnetDir, newTsnetNode)
-		g.tailnet.serve = g.serveOn
+	if opt.StateDir != "" {
+		g.lan = newLANListener(g, opt.StateDir)
+		g.direct = newDirectListener(g, opt.StateDir)
+		g.web = newWebOrigins(opt.StateDir)
 	}
 	// Subscribe before pump starts so a layout event cannot land between
 	// the connection's hello and the subscription, where it would be lost
@@ -966,12 +960,6 @@ func (g *Gateway) emitClientEvent(rec *clientRecord, sid, typ string) {
 // emitServerEvent sends a server event to the connections that asked for
 // every event.
 func (g *Gateway) emitServerEvent(typ string, payload any) {
-	g.emitServerEventOver(typ, func(string) any { return payload })
-}
-
-// emitServerEventOver is emitServerEvent with each connection's payload
-// as its transport sees it; a nil payload sends that connection none.
-func (g *Gateway) emitServerEventOver(typ string, payload func(transport string) any) {
 	g.mu.Lock()
 	conns := make([]*control, 0, len(g.conns))
 	for c := range g.conns {
@@ -979,9 +967,7 @@ func (g *Gateway) emitServerEventOver(typ string, payload func(transport string)
 	}
 	g.mu.Unlock()
 	for _, c := range conns {
-		if p := payload(c.transport); p != nil {
-			c.sendChanges([]change{{server: true, typ: typ, payload: p}})
-		}
+		c.sendChanges([]change{{server: true, typ: typ, payload: payload}})
 	}
 }
 

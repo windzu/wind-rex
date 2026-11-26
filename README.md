@@ -69,7 +69,7 @@ flowchart LR
 
     IOS -->|Cellular / Wi-Fi| DIRECT
     IOS -->|Host behind NAT| RELAY
-    MAC -->|Direct / Tailscale / Tailcat| GW
+    MAC -->|Direct TLS / Relay| GW
     WEB -->|WebSocket| GW
     DIRECT --> GW
     RELAY <-->|Outbound WSS Tunnel| GW
@@ -165,12 +165,12 @@ Useful management commands:
 ./build/wind-rex rexapi direct off      # disable direct / relay access
 ```
 
-WindRex also retains LAN pairing (`docs/REF-005-rex-api.md`); iOS built-in Tailscale, tailcat, and Hotspot Share were removed in [`docs/NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md).
+WindRex also retains LAN pairing (`docs/REF-005-rex-api.md`); built-in Tailscale, tailcat, and Hotspot Share were removed across all clients in [`docs/NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md).
 
 ### 3. Pair &amp; Connect from iOS, Desktop, or Web
 
 - **iPhone / iPad**: Open **WindRex → Remote Hosts → Add Host**, scan the QR code (or paste the `https://.../#k=<token>&p=<cert_pin>&n=alice-laptop` URL). The Bearer token is stored in Keychain and the certificate pin is verified on every TLS handshake.
-- **Desktop to Desktop**: Open **Settings › Remote Hosts → Add Remote Host…** (or use Tailscale discovery in **Settings › Server**).
+- **Desktop to Desktop**: Open **Settings › Remote Hosts → Add Remote Host…** and paste the host's Direct TLS or Relay pairing URL.
 - **Web Client**: Start the web app (`cd web && npm ci && npm run dev`), open the local URL in your browser, and add your host gateway URL in **Settings › Hosts** (or pass `?host=<gateway-url>`). Set `WINDREX_WEB_ORIGIN` on the host if deploying the web client to a custom origin.
 
 ## Essential Desktop Shortcuts
@@ -222,7 +222,7 @@ The iOS bundle ID is `wiki.wind.windrex`. Its widget extension is `wiki.wind.win
 | `ios/GoRex/GoRexApp.swift` | iOS / iPadOS SwiftUI app, Ghostty Metal terminal, Live Activities, and Widgets |
 | `cmd/windrex-relay/main.go` | Standalone stateless TLS reverse-proxy relay for hosts behind NAT |
 | `internal/rex` | Persistent session server: PTYs, headless `libghostty-vt`, OSC 7501 status, socket protocol |
-| `internal/rexapi` | Rex API gateway (revision 12), Direct TLS listener, outbound relay client, LAN/Tailscale/Tailcat admission |
+| `internal/rexapi` | Rex API gateway (revision 12), Direct TLS listener, outbound relay client, LAN/WebTransport admission |
 | `internal/directrelay` | Binary WebSocket stream multiplexer (`OPEN`/`DATA`/`CLOSE`/`ACK`), relay server, self-signed cert pinning |
 | `web/src/main.ts` | Standalone multi-host Web client (`libghostty-vt` compiled to WASM) |
 | `locales/` | English (`en.json`) and Simplified Chinese (`zh-Hans.json`) UI catalogs |

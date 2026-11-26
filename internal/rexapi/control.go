@@ -579,11 +579,7 @@ func (c *control) sendChanges(chs []change) {
 		if body == nil {
 			var payload any
 			if ch.server {
-				payload = ch.payload
-				if ch.typ == "tailscale_status_changed" {
-					payload = transformResult(c.rev, ch.typ, payload)
-				}
-				payload = innerEvent{Type: ch.typ, Payload: payload}
+				payload = innerEvent{Type: ch.typ, Payload: ch.payload}
 			} else {
 				payload = sessionEvent{
 					Type: "session_event",
@@ -597,10 +593,7 @@ func (c *control) sendChanges(chs []change) {
 			if body, err = json.Marshal(payload); err != nil {
 				continue
 			}
-			// The Tailscale status reads differently at older revisions.
-			if ch.typ != "tailscale_status_changed" {
-				ch.body = body
-			}
+			ch.body = body
 		}
 		c.mu.Lock()
 		c.seq++
@@ -703,10 +696,6 @@ func (c *control) wants(ch change) bool {
 	case "client_prompt_requested", "client_prompt_ended":
 		// A question goes only to the connections the asking action chose.
 		return true
-	case "tailscale_status_changed":
-		// Either scope of session.attach_all or session.bootstrap gets the
-		// server's Tailscale status, as the doc's event_scope says.
-		return all
 	case "block_event":
 		// A block's own events reach a session's attached connections,
 		// and the connections that asked for all.

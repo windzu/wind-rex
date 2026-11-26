@@ -3,7 +3,7 @@ name: WEB-004
 description: "The web client connects to a host on the local network with WebTransport and a self-signed certificate. Use when you change the LAN path of the web client."
 metadata:
   created: "2026-11-16"
-  updated: "2026-11-20"
+  updated: "2026-11-26"
 ---
 
 # WEB-004: Web client: direct LAN and self-signed connections with WebTransport
@@ -21,7 +21,6 @@ Four other options do not solve this:
 - **Hosting the web client on the GoRex host** is out of scope for the standalone web deployment.
 - **Standard `WebSocket` (`wss://`)** in browsers does not support certificate pinning. Browsers reject the self-signed certificates that `ownRelay` pins. They accept only certificates from a public CA.
 - **Public CA certificates (ACME / Let's Encrypt)** need either a public domain with DNS-01 automation or a `plex.direct`-style DNS service. Both add infrastructure and credential management.
-- **Built-in Web Tailscale** (`web/tailnet`) always routes through the DERP relays of Tailscale when the device has no native Tailscale client.
 
 ## Goal
 
@@ -32,8 +31,8 @@ A phone or laptop that runs the hosted web client (`https://web.gorex.uk`) can c
 
 ## Non-goals
 
-- **NAT traversal and public internet hole-punching.** WebTransport has no built-in ICE, STUN or TURN. Connections outside the LAN continue to use Tailscale (`docs/WEB-002-tailscale.md`) or `tailcat`.
-- **Support for browsers without `WebTransport` or `serverCertificateHashes`.** The feature needs Chromium, Firefox, or Safari 26.4+ (iOS and macOS). Older Safari versions fall back to Tailscale or native Rex Go.
+- **NAT traversal and public internet hole-punching.** WebTransport has no built-in ICE, STUN or TURN. Connections outside the LAN use Direct TLS or `windrex-relay` ([`NET-005`](NET-005-direct-relay.md)).
+- **Support for browsers without `WebTransport` or `serverCertificateHashes`.** The feature needs Chromium, Firefox, or Safari 26.4+ (iOS and macOS). Older Safari versions use Direct TLS / relay or native WindRex.
 - **Replacement of the existing HTTP and WebSocket LAN listener (`7297`).** Native apps and `http://` local development continue to use port `7297` without change.
 
 ## Design
@@ -86,7 +85,7 @@ One `WebTransport` session carries all Rex API traffic over QUIC bidirectional s
   - Stream type `0x03`: HTTP-style request and response (for `Transport.fetch`: file downloads, uploads and `/api/health`). The code names it `wtStreamHTTP`.
   - The code does not define stream type `0x02`. An earlier version of this doc planned `0x02` for a data stream.
 - On socket streams, messages use length-prefixed framing: `[1B kind: text=1 | binary=2 | close=3][4B uint32BE length][payload]`. `SocketLike` maps 1:1 with no protocol change to `Control` or `DataStream`.
-- On HTTP streams (`0x03`), the code reuses the lightweight request and response framing of `web/tailnet`. `Transport.fetch` works the same way for uploads and downloads.
+- On HTTP streams (`0x03`), the code uses lightweight request and response framing (`web/src/webtransport.ts`). `Transport.fetch` works the same way for uploads and downloads.
 
 ### Pairing URL and QR code
 

@@ -140,12 +140,12 @@ test("the catalogs say Tab for a window and Project for a session, and Space onl
   assert.equal(en.cmdNewSpace, "New Project…");
   assert.equal(en.cmdCloseSpace, "Close Project");
   assert.equal(en.windowMoveSpace, "Move to Project");
-  for (const k of ["statusNewWindowFailed", "cmdRenameWindow", "keysWindows", "paneMoveNewWindow", "sidebarWindow", "placeTailnetText"]) {
+  for (const k of ["statusNewWindowFailed", "cmdRenameWindow", "keysWindows", "paneMoveNewWindow", "sidebarWindow"]) {
     assert.ok(!/windows?/i.test(en[k]), `en ${k}: ${en[k]}`);
   }
   const zh = reads("zh-Hans");
   assert.equal(zh.cmdNewWindow, "新建标签页");
-  for (const k of ["statusNewWindowFailed", "cmdRenameWindow", "keysWindows", "paneMoveNewWindow", "sidebarWindow", "placeTailnetText"]) {
+  for (const k of ["statusNewWindowFailed", "cmdRenameWindow", "keysWindows", "paneMoveNewWindow", "sidebarWindow"]) {
     assert.ok(!zh[k].includes("窗口"), `zh ${k}: ${zh[k]}`);
   }
   // The project commands of the sessions never say Space.

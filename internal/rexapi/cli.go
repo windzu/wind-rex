@@ -3,25 +3,17 @@ package rexapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"gorex/internal/rex"
-	"gorex/internal/tailnode"
 
 	"github.com/coder/websocket"
 	"rsc.io/qr"
@@ -195,143 +187,6 @@ func callMain(args []string) int {
 	return 0
 }
 
-// tailscaleMain is "gorex rexapi tailscale on|off|login|logout|rename
-// NAME|status": built-in Tailscale of the gateway that runs.
-func tailscaleMain(args []string) int {
-	usage := "usage: gorex rexapi tailscale on [--hostname NAME] [--control-url URL] [--allow-tailnet-members] [--auth-key-file FILE] | off | login | logout | rename NAME | status"
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, usage)
-		return 2
-	}
-	var method string
-	var payload any
-	switch args[0] {
-	case "on":
-		fs := flag.NewFlagSet("tailscale on", flag.ContinueOnError)
-		hostname := fs.String("hostname", "", "the device's name on the tailnet (default: this machine's, with -gorex)")
-		control := fs.String("control-url", "", "the control server to register with, such as https://headscale.example.com (default: Tailscale's)")
-		allow := fs.Bool("allow-tailnet-members", false, "let in everyone the tailnet's access rules allow, not only you")
-		keyFile := fs.String("auth-key-file", "", "sign in with the Tailscale auth key in FILE ('-' for stdin)")
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
-		}
-		p := map[string]any{"allow_tailnet_members": *allow}
-		if *hostname != "" {
-			p["hostname"] = *hostname
-		}
-		if *control != "" {
-			p["control_url"] = *control
-		}
-		if *keyFile != "" {
-			key, err := readKey(*keyFile)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "gorex rexapi tailscale: %v\n", err)
-				return 1
-			}
-			p["auth_key"] = key
-		}
-		method, payload = "server.tailscale.enable", p
-	case "off":
-		method = "server.tailscale.disable"
-	case "login":
-		method = "server.tailscale.login"
-	case "logout":
-		method = "server.tailscale.logout"
-	case "rename":
-		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, usage)
-			return 2
-		}
-		method, payload = "server.tailscale.rename", map[string]any{"hostname": args[1]}
-	case "status":
-		method = "server.status"
-	default:
-		fmt.Fprintln(os.Stderr, usage)
-		return 2
-	}
-	if args[0] == "on" {
-		// Without a gateway, the server runs one once built-in Tailscale
-		// is on: turn it on in the state, and wait for the gateway.
-		if err := wakeGateway(TailnetDir(), func() error { return setTailnetEnabled(TailnetDir(), payload) }); err != nil {
-			fmt.Fprintf(os.Stderr, "gorex rexapi tailscale: %v\n", err)
-			return 1
-		}
-	}
-	out, err := callGateway(SocketPath(), method, payload)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "gorex rexapi tailscale: %v\n", err)
-		return 1
-	}
-	var res struct {
-		Tailscale *tailscaleStatus `json:"tailscale"`
-	}
-	json.Unmarshal(out, &res)
-	if res.Tailscale == nil {
-		fmt.Println("tailscale: not supported by this gateway")
-		return 1
-	}
-	printTailscale(os.Stdout, *res.Tailscale)
-	return 0
-}
-
-// gatewayRuns reports whether a gateway serves the local socket.
-func gatewayRuns() bool {
-	_, err := callGateway(SocketPath(), "server.version", nil)
-	return err == nil
-}
-
-// wakeGateway makes sure a gateway runs: when none does, it calls turnOn,
-// which writes the state that makes the GoRex server run one, and waits
-// for it.
-func wakeGateway(dir string, turnOn func() error) error {
-	if gatewayRuns() {
-		return nil
-	}
-	if c, err := rex.ConnectExisting(); err != nil {
-		return err
-	} else {
-		c.Close()
-	}
-	if err := turnOn(); err != nil {
-		return err
-	}
-	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
-		if gatewayRuns() {
-			return nil
-		}
-	}
-	if s := LoadLANStatus(dir); s.Error != "" {
-		return errors.New(s.Error)
-	}
-	return errors.New("the GoRex server started no gateway: update GoRex, or run gorex rexapi")
-}
-
-// setTailnetEnabled turns built-in Tailscale on in the state in dir, with
-// the hostname and access rule of payload.
-func setTailnetEnabled(dir string, payload any) error {
-	var t TailscaleConfig
-	path := filepath.Join(dir, "tailscale.json")
-	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, &t)
-	}
-	t.Enabled = true
-	if p, ok := payload.(map[string]any); ok {
-		if h, ok := p["hostname"].(string); ok && h != "" {
-			t.Hostname = h
-		}
-		if u, ok := p["control_url"].(string); ok && u != "" {
-			if !tailnode.ValidControlURL(u) {
-				return errControlURL(u)
-			}
-			t.ControlURL = u
-		}
-		if a, ok := p["allow_tailnet_members"].(bool); ok {
-			t.AllowTailnetMembers = a
-		}
-	}
-	return writeJSON(path, t)
-}
-
 // lanMain is "gorex rexapi lan on|off|status|listen ADDR|allow NET|deny
 // NET|token show|token rotate|legacy add|remove|list": the gateway's
 // listener on the local network, which the GoRex server runs while it is
@@ -342,7 +197,7 @@ func lanMain(args []string) int {
 		fmt.Fprintln(os.Stderr, usage)
 		return 2
 	}
-	dir := TailnetDir()
+	dir := StateDir()
 	conf, err := LoadLAN(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gorex rexapi lan: %v\n", err)
@@ -528,210 +383,6 @@ func lanQRMain(dir string, args []string) int {
 	fmt.Println(pairURL)
 	fmt.Print(renderQR(code))
 	return 0
-}
-
-func readKey(path string) (string, error) {
-	var b []byte
-	var err error
-	if path == "-" {
-		b, err = io.ReadAll(os.Stdin)
-	} else {
-		b, err = os.ReadFile(path)
-	}
-	return strings.TrimSpace(string(b)), err
-}
-
-func printTailscale(w io.Writer, st tailscaleStatus) {
-	fmt.Fprintf(w, "tailscale: %s\n", st.State)
-	if st.DNSName != "" {
-		fmt.Fprintf(w, "  device: %s\n", st.DNSName)
-	}
-	if st.ControlURL != "" {
-		fmt.Fprintf(w, "  control: %s\n", st.ControlURL)
-	}
-	if st.Account != nil {
-		fmt.Fprintf(w, "  account: %s\n", st.Account.LoginName)
-	}
-	if st.AuthURL != "" {
-		fmt.Fprintf(w, "  sign in: %s\n", st.AuthURL)
-	}
-	if st.HTTPS != nil {
-		fmt.Fprintf(w, "  https: %s %s\n", st.HTTPS.State, st.HTTPS.URL)
-	}
-	fmt.Fprintf(w, "  allow tailnet members: %s\n", strconv.FormatBool(st.AllowTailnetMembers))
-	if st.Error != "" {
-		fmt.Fprintf(w, "  error: %s\n", st.Error)
-	}
-}
-
-// pairMain is "gorex rexapi pair": it shows the gateway's tailnet
-// address as a QR code to scan with Rex on another device, as "gorex
-// pair" does. The code holds only the address.
-func pairMain(args []string) int {
-	fs := flag.NewFlagSet("pair", flag.ContinueOnError)
-	asJSON := fs.Bool("json", false, "print the address as JSON")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	url, err := PairAddress()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "gorex rexapi pair: %v\n", err)
-		return 1
-	}
-	if *asJSON {
-		b, _ := json.Marshal(map[string]string{"url": url})
-		fmt.Println(string(b))
-		return 0
-	}
-	art, err := RenderQR(url)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "gorex rexapi pair: %v\n", err)
-		return 1
-	}
-	fmt.Print(art)
-	fmt.Printf("\nScan with Rex on a device on the same tailnet: %s\n", url)
-	return 0
-}
-
-// PairAddress is the address another device scans to pair with this
-// machine's gateway, or why there is none: the tailnet's HTTPS address,
-// which holds no credential. "gorex pair" draws it, and a remote peer's
-// hello carries it as Hello.RexPairURL.
-func PairAddress() (string, error) {
-	out, err := callGateway(SocketPath(), "server.status", nil)
-	if err != nil {
-		return "", err
-	}
-	var res struct {
-		Tailscale *tailscaleStatus `json:"tailscale"`
-	}
-	if err := json.Unmarshal(out, &res); err != nil {
-		return "", err
-	}
-	return pairURL(res.Tailscale)
-}
-
-// RenderQR draws url as a QR code for a terminal, two rows a line with
-// half blocks, dark on light, with the quiet zone scanners need.
-func RenderQR(url string) (string, error) {
-	code, err := qr.Encode(url, qr.M)
-	if err != nil {
-		return "", err
-	}
-	return renderQR(code), nil
-}
-
-// pairURL is the address a status lets another device pair with, or why
-// there is none yet.
-func pairURL(st *tailscaleStatus) (string, error) {
-	switch {
-	case st == nil:
-		return "", errors.New("this gateway can't run built-in Tailscale")
-	case st.State == "disabled":
-		return "", errors.New("built-in Tailscale is off: run gorex rexapi tailscale on")
-	case st.State == "needs_login":
-		if st.AuthURL != "" {
-			return "", fmt.Errorf("sign the device in first: %s", st.AuthURL)
-		}
-		return "", errors.New("sign the device in first: run gorex rexapi tailscale login")
-	case st.HTTPS == nil || st.HTTPS.State != "available" || st.HTTPS.URL == "":
-		return "", errors.New("the tailnet address is not ready yet (turn on MagicDNS and HTTPS in the tailnet's admin console)")
-	}
-	return st.HTTPS.URL, nil
-}
-
-// PairURL is the address another device scans to pair with this gateway,
-// as "gorex rexapi pair" shows it: the tailnet's HTTPS address, which
-// holds no credential. It is empty while built-in Tailscale is off, the
-// device is not signed in, or its HTTPS address is not ready.
-//
-// A hello asks for it, so the answer is kept for a moment: the address
-// changes only when the gateway's Tailscale mode does. When the last
-// look is older than that, PairURL waits for a new one, at most two
-// seconds; the UI thread asks CachedPairURL instead.
-func PairURL() string {
-	return pairURLWith(true, nil)
-}
-
-// CachedPairURL is PairURL without the wait: what the last look found.
-// When that is old, it starts a new look in the background, and calls
-// changed if the look changes the address.
-func CachedPairURL(changed func()) string {
-	return pairURLWith(false, changed)
-}
-
-// pairNow is what the last look at the gateway's address found.
-var pairNow struct {
-	sync.Mutex
-	at  time.Time
-	url string
-	// done is closed when the look that runs ends; nil while none runs.
-	done chan struct{}
-	// changed is called when a look changes url.
-	changed func()
-}
-
-const pairFor = 5 * time.Second
-
-func pairURLWith(wait bool, changed func()) string {
-	pairNow.Lock()
-	stale := time.Since(pairNow.at) >= pairFor
-	if stale && pairNow.done == nil {
-		pairNow.done = make(chan struct{})
-		go lookPairURL(pairNow.done)
-	}
-	if changed != nil {
-		pairNow.changed = changed
-	}
-	done := pairNow.done
-	pairNow.Unlock()
-	if wait && stale {
-		<-done
-	}
-	pairNow.Lock()
-	defer pairNow.Unlock()
-	return pairNow.url
-}
-
-// lookPairURL asks the gateway for its address. Only an answer, or a
-// gateway that is not there, sets it; a look that fails otherwise keeps
-// the address the last one found.
-func lookPairURL(done chan struct{}) {
-	url, known := "", false
-	path := SocketPath()
-	out, _, err := callGatewayWelcome(path, 2*time.Second, gatewayCall{method: "server.status"})
-	if err == nil {
-		var res struct {
-			Tailscale *tailscaleStatus `json:"tailscale"`
-		}
-		if json.Unmarshal(out[0], &res) == nil {
-			url, _ = pairURL(res.Tailscale)
-			known = true
-		}
-	} else if _, serr := os.Stat(path); errors.Is(serr, fs.ErrNotExist) || isConnRefused(err) {
-		known = true
-	}
-	pairNow.Lock()
-	changed := known && url != pairNow.url
-	if known {
-		pairNow.url = url
-	}
-	pairNow.at, pairNow.done = time.Now(), nil
-	wake := pairNow.changed
-	pairNow.Unlock()
-	close(done)
-	if changed && wake != nil {
-		wake()
-	}
-}
-
-func isConnRefused(err error) bool {
-	if errors.Is(err, syscall.ECONNREFUSED) {
-		return true
-	}
-	// Go's syscall.ECONNREFUSED on Windows is a synthetic POSIX errno, while
-	// net.Dial returns Winsock WSAECONNREFUSED (10061).
-	return runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(10061))
 }
 
 // renderQR draws a QR code in a terminal, two rows a line with half

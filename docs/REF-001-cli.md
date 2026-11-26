@@ -3,7 +3,7 @@ name: REF-001
 description: "The `gorex` command line: the commands that drive sessions without a window, and the agent hooks. Use when you add or change a CLI command."
 metadata:
   created: "2026-10-28"
-  updated: "2026-11-22"
+  updated: "2026-11-26"
 ---
 
 # REF-001: gorex command line
@@ -14,9 +14,8 @@ Status: reference. It describes the code in main.
 without opening a window; with no arguments it starts the app.
 
 `-S HOST` before a command uses a saved remote host from `hosts.json`, by
-its name or its alias, or an address, instead of this machine's server. Local-only commands (`hosts`,
-`remote`, `server`, `update`) do not apply remotely. `action` applies remotely when the host turns Remote
-Control on; `layout` reads a host's layout, which every client the host lets in may read (Share Layout
+its name or its alias, or an `https://` Direct TLS / relay pairing URL, instead of this machine's server. Local-only commands (`hosts`,
+`server`, `update`) do not apply remotely. `layout` reads a host's layout, which every client the host lets in may read (Share Layout
 is gone: a host's layout is where its projects and tabs live).
 
 Every local terminal GoRex opens gets:
@@ -54,9 +53,7 @@ gorex wait [-s SESSION] [--json] (--exit | --idle | --status STATE | --contains 
 gorex run [--json] [--dir DIR] -- COMMAND...
 gorex events
 gorex hosts [ls] [--json]
-gorex [-S HOST] pair [--json]
 gorex skill show|setup|status|remove [--agent NAME] [--project] [--dry-run] [--json]
-gorex remote status [--json] | tailscale on|off | address | key | relay HOST|default | reachable IP|off | enable | disable | control on|off | pair start|stop | pending | approve KEY|CODE | reject KEY|CODE | allow NAME KEY | revoke KEY
 gorex server restart | upgrade
 gorex update
 gorex config path | config check [FILE] | config reload
@@ -92,25 +89,6 @@ wins over `-s`. An ambiguous target exits 3. `rename` gives a pane a label.
   kept connection, and how many seconds it has been attached.
 - `hosts` lists saved remote hosts, each by its name and the alias it was
   given in GoRex, if any; addresses stay hidden.
-- `pair` prints the QR code another device scans to reach a server in Rex:
-  this machine's built-in Tailscale address, which holds no credential, or
-  with `-S` a host's, which its hello carries. `--json` prints the address
-  alone. A server with built-in Tailscale off, or not signed in, sends
-  none, and the command exits 1 saying so.
-- `remote status` shows the local server's remote access without its
-  address; `key=` is the host's public key. `remote key` prints this
-  machine's client key, for a host's allowlist or a relay operator's
-  list. `remote relay HOST` homes the address on a relay of one's own,
-  `remote relay gorex` on the team's (docs/NET-004-public-relay.md).
-  `remote control on|off` lets paired clients run app actions through the
-  window. It applies to every paired client, and persists even while remote access is off.
-  Destructive actions stay refused.
-- `remote pending` prints the pairing requests as JSON: those by address
-  first, each with its code, name and source, then those over tailcat,
-  with their key. `remote approve CODE` approves the request by address
-  of that code, only while it is the one waiting; with two or more, reject
-  them all with `remote reject CODE` and ask again. A key approves or
-  rejects a request over tailcat.
 - `server restart` stops the local server, and the next one starts the
   sessions of the layout again, as one after a crash does: new shells at
   the directories their panes were in, with the same ids, so the windows

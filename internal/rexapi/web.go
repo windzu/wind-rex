@@ -298,7 +298,7 @@ func preflight(w http.ResponseWriter, r *http.Request) bool {
 // web.json again within a second; nothing needs to restart.
 func webMain(args []string) int {
 	usage := "usage: gorex rexapi web allow ORIGIN | deny ORIGIN | host add NAME | host remove NAME | status"
-	dir := TailnetDir()
+	dir := StateDir()
 	conf, err := LoadWeb(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gorex rexapi web: %v\n", err)
@@ -357,7 +357,7 @@ func webMain(args []string) int {
 	for _, o := range conf.Origins {
 		fmt.Printf("  %s\n", o)
 	}
-	fmt.Println("host names answered besides localhost, IP addresses and the tailnet's:")
+	fmt.Println("host names answered besides localhost and IP addresses:")
 	if len(conf.Hosts) == 0 {
 		fmt.Println("  none")
 	}

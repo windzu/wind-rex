@@ -8,7 +8,6 @@
 //	windrex-server server status [--json]  inspect running server and transports
 //	windrex-server server upgrade          upgrade the running server in place
 //	windrex-server rexapi direct on ...    configure direct TLS or relay access
-//	windrex-server remote status           manage remote pairing and access
 package main
 
 import (
@@ -48,9 +47,6 @@ func main() {
 
 func configureServerHooks() {
 	rex.OnServe = rexapi.Supervise
-	rex.RexPairURL = rexapi.PairURL
-	rex.TailnetNode = rexapi.DesktopNode
-	rex.EnableBuiltinTailscale = rexapi.EnableBuiltinTailscale
 	if v := strings.TrimSpace(version); v != "" {
 		rexapi.RexVersion = v + "-windrex"
 	}
@@ -92,8 +88,7 @@ Usage:
   windrex-server server upgrade [--force]             upgrade a running server in place (keeps shells)
   windrex-server server restart                       restart the server (starts new shells)
   windrex-server rexapi direct on|relay|qr|status|rotate|off
-  windrex-server rexapi lan|pair|tailscale|web|call
-  windrex-server remote status|enable|disable|address|pair|pending|approve|reject|allow|revoke
+  windrex-server rexapi lan|web|call
   windrex-server ls|clients|layout|new|split|close|rename|send|paste|capture|events|wait|run
   windrex-server version [--json]
 
@@ -173,28 +168,20 @@ func serverStartCmd(args []string, out, errOut io.Writer) int {
 }
 
 type serverStatusReport struct {
-	Running      bool                 `json:"running"`
-	Version      string               `json:"version"`
-	Dir          string               `json:"dir"`
-	Socket       string               `json:"socket"`
-	PID          int                  `json:"pid,omitempty"`
-	Exe          string               `json:"exe,omitempty"`
-	ExeTime      time.Time            `json:"exeTime,omitzero"`
-	Started      time.Time            `json:"started,omitzero"`
-	Protocol     int                  `json:"protocol,omitempty"`
-	Upgrade      bool                 `json:"upgrade,omitempty"`
-	Capabilities []string             `json:"capabilities,omitempty"`
-	Sessions     int                  `json:"sessions"`
-	Remote       *remoteStatusSummary `json:"remote,omitempty"`
-	Direct       directStatusSummary  `json:"direct"`
-	LAN          lanStatusSummary     `json:"lan"`
-}
-
-type remoteStatusSummary struct {
-	Enabled   bool   `json:"enabled"`
-	Running   bool   `json:"running"`
-	Peers     int    `json:"peers"`
-	LastError string `json:"lastError,omitempty"`
+	Running      bool                `json:"running"`
+	Version      string              `json:"version"`
+	Dir          string              `json:"dir"`
+	Socket       string              `json:"socket"`
+	PID          int                 `json:"pid,omitempty"`
+	Exe          string              `json:"exe,omitempty"`
+	ExeTime      time.Time           `json:"exeTime,omitzero"`
+	Started      time.Time           `json:"started,omitzero"`
+	Protocol     int                 `json:"protocol,omitempty"`
+	Upgrade      bool                `json:"upgrade,omitempty"`
+	Capabilities []string            `json:"capabilities,omitempty"`
+	Sessions     int                 `json:"sessions"`
+	Direct       directStatusSummary `json:"direct"`
+	LAN          lanStatusSummary    `json:"lan"`
 }
 
 type directStatusSummary struct {
@@ -253,8 +240,8 @@ func collectServerStatus() serverStatusReport {
 		Version: version,
 		Dir:     dir,
 		Socket:  rex.SocketPath(),
-		Direct:  readDirectSummary(rexapi.TailnetDir()),
-		LAN:     readLANSummary(rexapi.TailnetDir()),
+		Direct:  readDirectSummary(rexapi.StateDir()),
+		LAN:     readLANSummary(rexapi.StateDir()),
 	}
 	c, err := rex.ConnectExisting()
 	if err != nil {
@@ -275,14 +262,6 @@ func collectServerStatus() serverStatusReport {
 	report.Capabilities = h.Capabilities
 	if sessions, err := c.List(); err == nil {
 		report.Sessions = len(sessions)
-	}
-	if rs, err := c.RemoteStatus(); err == nil {
-		report.Remote = &remoteStatusSummary{
-			Enabled:   rs.Enabled,
-			Running:   rs.Running,
-			Peers:     len(rs.Allowed),
-			LastError: rs.LastError,
-		}
 	}
 	return report
 }
@@ -344,20 +323,6 @@ func printServerStatus(w io.Writer, r serverStatusReport) {
 	}
 	fmt.Fprintf(w, "  dir: %s\n", r.Dir)
 	fmt.Fprintf(w, "  socket: %s\n", r.Socket)
-	if r.Remote != nil {
-		state := "off"
-		if r.Remote.Enabled {
-			if r.Remote.Running {
-				state = fmt.Sprintf("on (%d paired)", r.Remote.Peers)
-			} else {
-				state = "enabled (not running)"
-			}
-		}
-		fmt.Fprintf(w, "  remote: %s\n", state)
-		if r.Remote.LastError != "" {
-			fmt.Fprintf(w, "  remote error: %s\n", r.Remote.LastError)
-		}
-	}
 	fmt.Fprintf(w, "  direct: %s", r.Direct.Mode)
 	switch {
 	case r.Direct.Listening != "":

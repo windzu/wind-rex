@@ -28,11 +28,11 @@ import (
 // dialGate, when set, holds the hosts' connections until it closes.
 var dialGate atomic.Pointer[chan struct{}]
 
-// fakeHosts serves hosts on Unix sockets, in place of tailcat addresses:
+// fakeHosts serves hosts on Unix sockets, in place of Direct TLS / Relay URLs:
 // an address is a socket's path.
 func fakeHosts(t *testing.T) {
 	t.Helper()
-	oldDial, oldValid, oldPoll := dialHost, validAddress, pairPoll
+	oldDial, oldValid := dialHost, validAddress
 	dialHost = func(ctx context.Context, address string) (*rex.Client, error) {
 		if g := dialGate.Load(); g != nil {
 			<-*g
@@ -43,8 +43,7 @@ func fakeHosts(t *testing.T) {
 		s = strings.TrimSpace(s)
 		return strings.HasPrefix(s, "/") || filepath.IsAbs(s)
 	}
-	pairPoll = 50 * time.Millisecond
-	t.Cleanup(func() { dialHost, validAddress, pairPoll = oldDial, oldValid, oldPoll })
+	t.Cleanup(func() { dialHost, validAddress = oldDial, oldValid })
 }
 
 // startHostServer starts a second session server, as a remote host's, and
@@ -273,20 +272,19 @@ func hostTab(t *testing.T, a *App, tt *ui.Tester, h *hostConn, dir string) *Tab 
 func TestValidateHost(t *testing.T) {
 	fakeHosts(t)
 	hosts := []*hostConn{newHostConn(savedHost{ID: "1", Name: "office-mac", Address: "/tmp/a.sock"})}
-	for _, tc := range []struct{ address, name, pairAs, want string }{
-		{"/tmp/b.sock", "studio", "laptop", ""},
-		{"/tmp/b.sock", " ", "laptop", "Enter a host name."},
-		{"", "studio", "laptop", "Paste the host's address."},
-		{"tcXYZ", "studio", "laptop", "not a GoRex remote address"},
-		{"/tmp/b.sock", "studio", "", "Enter a name for this machine."},
-		{" /tmp/a.sock ", "studio", "laptop", "That remote host is already saved."},
-		{"/tmp/b.sock", "Office-Mac", "laptop", "has that name already"},
+	for _, tc := range []struct{ address, name, want string }{
+		{"/tmp/b.sock", "studio", ""},
+		{"/tmp/b.sock", " ", "Enter a host name."},
+		{"", "studio", "Paste the host's address."},
+		{"tcXYZ", "studio", locales.HostsBadDirectAddress()},
+		{" /tmp/a.sock ", "studio", "That remote host is already saved."},
+		{"/tmp/b.sock", "Office-Mac", "has that name already"},
 	} {
-		wantMessage(t, "validateHost("+tc.address+", "+tc.name+")", validateHost(tc.address, tc.name, tc.pairAs, hosts), tc.want)
+		wantMessage(t, "validateHost("+tc.address+", "+tc.name+")", validateHost(tc.address, tc.name, hosts), tc.want)
 	}
-	for _, s := range []string{"", "  ", "/tmp/a.sock", "tcXYZ"} {
+	for _, s := range []string{"", "  ", "/tmp/a.sock", "tcXYZ", "tailscale:user:node"} {
 		if rex.ValidRemoteAddress(s) {
-			t.Errorf("%q passes for a tailcat address", s)
+			t.Errorf("%q passes for a remote address", s)
 		}
 	}
 }
@@ -296,7 +294,10 @@ func TestHostsFile(t *testing.T) {
 	if hs, err := loadHosts(); err != nil || len(hs) != 0 {
 		t.Fatalf("no file: %v, %v", hs, err)
 	}
-	want := []savedHost{{ID: "a1", Name: "office-mac", Address: "tcSECRET"}, {ID: "b2", Name: "studio", Alias: "build box", Address: "tcOTHER"}}
+	want := []savedHost{
+		{ID: "a1", Name: "office-mac", Address: "https://office.example.com:7443/#k=SECRET_TOKEN_ONE"},
+		{ID: "b2", Name: "studio", Alias: "build box", Address: "https://studio.example.com:7443/#k=SECRET_TOKEN_TWO"},
+	}
 	if err := saveHosts(want); err != nil {
 		t.Fatal(err)
 	}
@@ -312,13 +313,13 @@ func TestHostsFile(t *testing.T) {
 		t.Errorf("read back %v, %v", got, err)
 	}
 	// The address is not in the settings.
-	if b, _ := os.ReadFile(settingsPath()); strings.Contains(string(b), "tcSECRET") {
+	if b, _ := os.ReadFile(settingsPath()); strings.Contains(string(b), "SECRET_TOKEN_ONE") {
 		t.Error("the settings hold an address")
 	}
 
 	// A file that does not parse is not written over: reading it moves it
 	// aside, readable by the user only, and the next save starts anew.
-	bad := `{"hosts": [{"id": "a1", "address": "tcSECRET"`
+	bad := `{"hosts": [{"id": "a1", "address": "https://office.example.com:7443/#k=SECRET_TOKEN_ONE"`
 	os.WriteFile(hostsPath(), []byte(bad), 0o644)
 	if err := saveHosts(want); err == nil {
 		t.Error("saved over a file that does not parse")
@@ -326,7 +327,7 @@ func TestHostsFile(t *testing.T) {
 	if b, _ := os.ReadFile(hostsPath()); string(b) != bad {
 		t.Errorf("the file became %q", b)
 	}
-	if hs, err := loadHosts(); err == nil || len(hs) != 0 || !strings.Contains(err.Error(), "moved aside") || strings.Contains(err.Error(), "tcSECRET") {
+	if hs, err := loadHosts(); err == nil || len(hs) != 0 || !strings.Contains(err.Error(), "moved aside") || strings.Contains(err.Error(), "SECRET_TOKEN_ONE") {
 		t.Errorf("a bad file: %v, %v", hs, err)
 	}
 	aside, _ := filepath.Glob(hostsPath() + ".bad-*")
@@ -866,20 +867,17 @@ func TestHostStreamResizeWhileAttaching(t *testing.T) {
 
 // What a fake host does with a connection.
 const (
-	fakeRefuse   int32 = iota // not pairing: says it refuses, and closes
-	fakePairing               // serves remote.pair only
+	fakeRefuse   int32 = iota // says it refuses, and closes
 	fakeApproved              // serves hello and list
 	fakeSilent                // closes, saying nothing, as a connection lost
 	fakeFlaky                 // greets, then drops
 )
 
-// fakeHost is a server that does not allow this machine until approved,
-// on a Unix socket, which counts the connections made to it.
+// fakeHost is a test server on a Unix socket that counts connections made to it.
 type fakeHost struct {
-	path      string
-	mode      atomic.Int32
-	requested atomic.Bool // a request to pair waits
-	conns     atomic.Int32
+	path  string
+	mode  atomic.Int32
+	conns atomic.Int32
 }
 
 func newFakeHost(t *testing.T, mode int32) *fakeHost {
@@ -926,18 +924,6 @@ func (f *fakeHost) serve(c net.Conn) {
 		case fakeRefuse:
 			reply(rex.Response{Error: "rex: this machine is not allowed here"})
 			return
-		case fakePairing:
-			if req.Op == "remote.pair" {
-				f.requested.Store(true)
-				res.Data, _ = json.Marshal(rex.PairResult{Fingerprint: "01234567-cdef"})
-			} else {
-				res.Error = req.Op + " is not allowed before pairing"
-				if f.requested.Load() {
-					res.Error += ": the request waits for approval"
-				}
-			}
-			reply(res)
-			return
 		case fakeFlaky:
 			if req.Op != "hello" {
 				return
@@ -968,13 +954,12 @@ func hostsPage(t *testing.T) (*App, *ui.Tester) {
 	return a, tt
 }
 
-// TestAddHostPairs adds a host through the sheet: the fields are checked,
-// the fingerprint shows while the host's user is asked, a host not reached
-// meanwhile is waited for, a rejection ends it, and the host is saved once
-// approved.
-func TestAddHostPairs(t *testing.T) {
+// TestAddHostSheet adds a host through the sheet: fields are validated,
+// unreachable hosts return an error without saving, and a reachable host
+// is saved and connects.
+func TestAddHostSheet(t *testing.T) {
 	a, tt := hostsPage(t)
-	f := newFakeHost(t, fakePairing)
+	f := newFakeHost(t, fakeApproved)
 	if !tt.HasText("No remote hosts yet.") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
@@ -986,11 +971,11 @@ func TestAddHostPairs(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !tt.HasText("Enter a host name.") {
+	if !tt.HasText("Paste the host's address.") {
 		t.Errorf("no error for an empty form; texts %q", tt.Texts())
 	}
 	tt.Type(f.path) // the address field has the focus
-	hostsUI.name, hostsUI.pairAs = "office-mac", "alice-laptop"
+	hostsUI.name = "office-mac"
 	tt.Frame()
 	if tt.HasText(f.path) {
 		t.Error("the address shows")
@@ -998,39 +983,6 @@ func TestAddHostPairs(t *testing.T) {
 	if err := tt.Click("Add"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, tt, "the fingerprint", func() bool { return hostsUI.stage == addWaiting })
-	if !tt.HasText("01234567-cdef") || !tt.HasText("On office-mac, approve the request showing this fingerprint.") {
-		t.Errorf("texts %q", tt.Texts())
-	}
-
-	// The host lost on the way is no rejection: the sheet waits, and says.
-	f.mode.Store(fakeSilent)
-	waitFor(t, tt, "the note", func() bool { return hostsUI.note != nil })
-	if hostsUI.stage != addWaiting || !tt.HasText(locales.HostsUnreachable()) {
-		t.Errorf("stage %v; texts %q", hostsUI.stage, tt.Texts())
-	}
-	f.mode.Store(fakePairing)
-	waitFor(t, tt, "the note to go", func() bool { return hostsUI.note == nil })
-
-	// Rejected: the sheet says so, and stops asking.
-	f.requested.Store(false)
-	waitFor(t, tt, "the rejection", func() bool { return hostsUI.stage == addForm && hostsUI.formErr != nil })
-	if msg := hostsUI.formErr(); !strings.Contains(msg, "office-mac did not approve this machine") {
-		t.Errorf("error %q", msg)
-	}
-	n := f.conns.Load()
-	time.Sleep(10 * pairPoll)
-	if m := f.conns.Load(); m != n {
-		t.Errorf("%d connections after the rejection", m-n)
-	}
-	if len(a.hosts) != 0 {
-		t.Fatal("saved a host rejected")
-	}
-
-	// Asked again, and approved.
-	a.submitHost()
-	waitFor(t, tt, "the fingerprint again", func() bool { return hostsUI.stage == addWaiting })
-	f.mode.Store(fakeApproved)
 	waitFor(t, tt, "the host to be saved", func() bool { return len(a.hosts) == 1 && !hostsUI.adding })
 	if hostsUI.address != "" {
 		t.Error("the sheet keeps the address")
@@ -1040,28 +992,22 @@ func TestAddHostPairs(t *testing.T) {
 	}
 	waitFor(t, tt, "the host to connect", func() bool { return a.hosts[0].state == hostConnected && tt.HasText("Connected") })
 
-	// A host not pairing says how to start; one lost on the way is not
-	// asked to pair.
-	for _, tc := range []struct {
-		mode int32
-		want string
-	}{{fakeRefuse, "studio is not pairing"}, {fakeSilent, "Could not reach the host"}} {
-		other := newFakeHost(t, tc.mode)
-		a.openAddHost()
-		hostsUI.address, hostsUI.name = other.path, "studio"
-		a.submitHost()
-		waitFor(t, tt, "the error", func() bool { return hostsUI.stage == addForm && hostsUI.formErr != nil })
-		if msg := hostsUI.formErr(); !strings.Contains(msg, tc.want) {
-			t.Errorf("error %q, want %q", msg, tc.want)
-		}
-		if other.requested.Load() || len(a.hosts) != 1 {
-			t.Error("a host not paired was saved, or asked")
-		}
+	// An unreachable host is not saved and shows the error.
+	other := newFakeHost(t, fakeSilent)
+	a.openAddHost()
+	hostsUI.address, hostsUI.name = other.path, "studio"
+	a.submitHost()
+	waitFor(t, tt, "the error", func() bool { return hostsUI.stage == addForm && hostsUI.formErr != nil })
+	if msg := hostsUI.formErr(); !strings.Contains(msg, "Could not reach the host") {
+		t.Errorf("error %q, want unreachable", msg)
+	}
+	if len(a.hosts) != 1 {
+		t.Error("an unreachable host was saved")
 	}
 }
 
 // TestHostFailures checks what a saved host says when it is not reached,
-// and when it refuses this machine: a connection lost is not a refusal.
+// and when it returns an error on hello.
 func TestHostFailures(t *testing.T) {
 	a, tt := hostsPage(t)
 	f := newFakeHost(t, fakeSilent)
@@ -1074,7 +1020,7 @@ func TestHostFailures(t *testing.T) {
 	h.poke()
 	waitFor(t, tt, "the refusal", func() bool {
 		_, detail, _ := hostStatus(h)
-		return detail == locales.HostsNotAllowed()
+		return detail == "This machine is not allowed here"
 	})
 }
 
@@ -1285,19 +1231,20 @@ func TestNetworkHostsLoad(t *testing.T) {
 	}
 }
 
-// TestDiscoveredHostsLoad: a host the tailnet's discovery saved is not
-// one the user asked for: never opened, renamed nor given an icon, it goes
-// as the hosts load, and one the user did keep is kept, as any host.
-func TestDiscoveredHostsLoad(t *testing.T) {
+// TestLegacyHostsFiltered checks Decision A=1 through loadHosts: legacy
+// tailscale:, tailcat (tc.../tcat://), and net: entries are filtered out
+// on load while Direct TLS and Relay hosts are preserved intact.
+func TestLegacyHostsFiltered(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
-	old := `{"hosts": [
-		{"id": "tailscale:a:1", "name": "never-opened", "address": "tailscale:a:1"},
-		{"id": "tailscale:a:2", "name": "opened", "address": "tailscale:a:2", "tailnetOpened": true},
-		{"id": "tailscale:a:3", "name": "renamed", "address": "tailscale:a:3", "alias": "Build Box"},
-		{"id": "tailscale:a:4", "name": "iconed", "address": "tailscale:a:4", "icon": "server"},
-		{"id": "m1", "name": "manual", "address": "tcMANUAL"}
+	mixed := `{"hosts": [
+		{"id": "net:nodekey:01", "name": "old-net", "address": "tcNET"},
+		{"id": "tailscale:a:1", "name": "tailnet-box", "address": "tailscale:a:1", "tailnetOpened": true},
+		{"id": "m1", "name": "legacy-tc", "address": "tcMANUAL"},
+		{"id": "m2", "name": "legacy-tcat", "address": "tcat://legacy"},
+		{"id": "d1", "name": "direct-box", "alias": "Build Box", "address": "https://203.0.113.10:7443/#k=tok1", "icon": "server"},
+		{"id": "r1", "name": "relay-box", "address": "https://relay.example.com:7443/h/h1/#k=tok2"}
 	]}`
-	if err := os.WriteFile(hostsPath(), []byte(old), 0o600); err != nil {
+	if err := os.WriteFile(hostsPath(), []byte(mixed), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := loadHosts()
@@ -1308,83 +1255,8 @@ func TestDiscoveredHostsLoad(t *testing.T) {
 	for _, h := range got {
 		ids = append(ids, h.ID)
 	}
-	if want := []string{"tailscale:a:2", "tailscale:a:3", "tailscale:a:4", "m1"}; !slices.Equal(ids, want) {
+	if want := []string{"d1", "r1"}; !slices.Equal(ids, want) {
 		t.Errorf("loaded %v, want %v", ids, want)
-	}
-	b, err := os.ReadFile(hostsPath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(b), "never-opened") {
-		t.Error("the file keeps the host discovery saved")
-	}
-}
-
-// TestTailnetFoundInAddSheet: a host the tailnet shows is offered by the
-// sheet that adds a host, and discovery saves none; adding one saves it as
-// any host, by the node's target, one that can be removed, and that
-// discovery neither offers again nor brings back.
-func TestTailnetFoundInAddSheet(t *testing.T) {
-	a, tt := hostsPage(t)
-	peer := rex.TailnetHost{Target: "tailscale:nfake:peer", Name: "ws-01"}
-	status := &rex.TailnetStatus{Running: true, Hosts: []rex.TailnetHost{peer}}
-	a.reconcileTailnet(status)
-	tt.Frame()
-	if len(a.hosts) != 0 {
-		t.Fatalf("discovery saved %+v", a.hosts)
-	}
-	if _, err := os.Stat(hostsPath()); err == nil {
-		t.Error("discovery wrote hosts.json")
-	}
-	if err := tt.Click("Add Remote Host…"); err != nil {
-		t.Fatal(err)
-	}
-	tt.Frame()
-	if !tt.HasText(locales.HostsFound()) || !tt.HasText("ws-01") {
-		t.Fatalf("the sheet does not offer the host; texts %q", tt.Texts())
-	}
-	if err := tt.Click(locales.HostsAddFound()); err != nil {
-		t.Fatal(err)
-	}
-	tt.Frame()
-	if len(a.hosts) != 1 || hostsUI.adding {
-		t.Fatalf("after adding: %+v, sheet %v", a.hosts, hostsUI.adding)
-	}
-	h := a.hosts[0]
-	if h.ID != peer.Target || h.Name != peer.Name || h.Address != peer.Target {
-		t.Errorf("added %+v", h.savedHost)
-	}
-	if hs, _ := loadHosts(); len(hs) != 1 || hs[0].Address != peer.Target {
-		t.Errorf("hosts.json: %+v", hs)
-	}
-	// A host of the tailnet is a host like any here: its row removes it.
-	if !tt.HasText(locales.HostsRemove()) {
-		t.Errorf("the host cannot be removed; texts %q", tt.Texts())
-	}
-	// Offered again, the sheet says it is saved, and adds no second.
-	a.openAddHost()
-	tt.Frame()
-	if !tt.HasText(locales.HostsAlreadySaved()) || tt.HasText(locales.HostsAddFound()) {
-		t.Errorf("a saved host offered again; texts %q", tt.Texts())
-	}
-	closeAddHost()
-	// Another machine of the tailnet under the same name is refused, which
-	// the sheet says.
-	a.reconcileTailnet(&rex.TailnetStatus{Running: true, Hosts: []rex.TailnetHost{peer, {
-		Target: "tailscale:nfake:peer2", Name: "ws-01",
-	}}})
-	a.openAddHost()
-	tt.Frame()
-	if !tt.HasText(locales.HostsNameTaken()) || tt.HasText(locales.HostsAddFound()) {
-		t.Errorf("a name of another host taken; texts %q", tt.Texts())
-	}
-	closeAddHost()
-	// Removed here, the host does not come back with the tailnet's next
-	// status.
-	a.removeHost(h)
-	a.reconcileTailnet(status)
-	if len(a.hosts) != 0 {
-		t.Errorf("discovery brought back %+v", a.hosts)
 	}
 }
 
@@ -1394,7 +1266,7 @@ func TestHostAlias(t *testing.T) {
 	a, _ := newTestApp(t)
 	fakeHosts(t)
 	t.Cleanup(a.stopHosts)
-	h := a.addHost(savedHost{ID: "tailscale:nfake", Name: "ws-01", Address: "tailscale:nfake"})
+	h := a.addHost(savedHost{ID: "h-ws01", Name: "ws-01", Address: "https://ws-01.example.com:7443/#k=tok1"})
 	a.setHostAlias(h, "  build box ")
 	if a.hostName(h) != "build box" || h.Name != "ws-01" {
 		t.Fatalf("alias %q, name %q", a.hostName(h), h.Name)
@@ -1404,7 +1276,7 @@ func TestHostAlias(t *testing.T) {
 	}
 	// A new host takes neither name nor alias of another.
 	for _, name := range []string{"Build Box", "WS-01"} {
-		if validateHost("/tmp/other", name, "me", a.hosts) != locales.HostsNameTaken() {
+		if validateHost("/tmp/other", name, a.hosts) != locales.HostsNameTaken() {
 			t.Errorf("%q is not taken", name)
 		}
 	}
@@ -1650,50 +1522,27 @@ func TestWatchHostTakesChanges(t *testing.T) {
 	taken("a new session")
 }
 
-// TestHostPathShows: a connected host's row says how its link runs once
-// the server has measured it — a direct path names its endpoint — and a
-// host of the tailnet says so without a ping.
+// TestHostPathShows: a connected host's row shows its transport tag,
+// connect time, and ping round trip once measured.
 func TestHostPathShows(t *testing.T) {
 	a, tt := hostsPage(t)
 	var pings atomic.Int32
-	old := tailcatStatus
-	tailcatStatus = func(*rex.Client, string) (rex.TailcatStatus, error) {
-		pings.Add(1)
-		return rex.TailcatStatus{
-			Direct: true, Endpoint: "192.0.2.10:41641", LatencySeconds: 0.032,
-		}, nil
-	}
 	oldPing := hostPing
 	hostPing = func(*rex.Client, time.Duration) (time.Duration, error) {
+		pings.Add(1)
 		return 32 * time.Millisecond, nil
 	}
-	t.Cleanup(func() { tailcatStatus, hostPing = old, oldPing })
+	t.Cleanup(func() { hostPing = oldPing })
 
 	f := newFakeHost(t, fakeApproved)
 	h := a.addHost(savedHost{ID: "h1", Name: "ws-01", Address: f.path})
 	waitFor(t, tt, "the host to connect", func() bool { return h.state == hostConnected })
-	a.client = h.current() // the op's client; the stub answers for it
-	h.connectMs = 214      // the fake's dial is faster than a millisecond
+	h.connectMs = 214 // the fake's dial is faster than a millisecond
 	waitFor(t, tt, "the diagnostics line", func() bool {
-		return tt.HasText("direct 192.0.2.10:41641 · connect 214 ms · ping 32 ms") && tt.HasText("tailcat")
+		return tt.HasText("connect 214 ms · ping 32 ms") && tt.HasText(locales.HostsDiagTagDirect())
 	})
 	if pings.Load() == 0 {
 		t.Error("no ping ran")
-	}
-
-	// A host of the tailnet is tagged tailnet, and its link is not
-	// pinged through the server.
-	tn := newHostConn(savedHost{ID: "h2", Name: "tail-node", Address: "tailscale:user:abc123"})
-	tn.state = hostConnected
-	a.hosts = append(a.hosts, tn)
-	waitFor(t, tt, "the tailnet tag", func() bool { return tt.HasText("tailnet") })
-	before := pings.Load()
-	for range 3 {
-		tt.Frame()
-		time.Sleep(10 * time.Millisecond)
-	}
-	if pings.Load() != before {
-		t.Error("the tailnet host was pinged")
 	}
 
 	// A host not connected says nothing of a path.
@@ -1706,9 +1555,9 @@ func TestHostPathShows(t *testing.T) {
 }
 
 // TestAddDirectHostUI tests pasting Direct TLS and Relay pairing URLs in the
-// Add Remote Host sheet: auto-filling the name, hiding Pair as, rejecting
-// invalid URLs/tokens/pins, saving to hosts.json, showing direct/relay badges
-// without tailcat probes, and never leaking #k=<token> in any visible UI text.
+// Add Remote Host sheet: auto-filling the name, rejecting invalid URLs/tokens/pins,
+// saving to hosts.json, showing direct/relay badges, and never leaking #k=<token>
+// in any visible UI text.
 func TestAddDirectHostUI(t *testing.T) {
 	a, tt := hostsPage(t)
 	f := newFakeHost(t, fakeApproved)
@@ -1720,12 +1569,6 @@ func TestAddDirectHostUI(t *testing.T) {
 	goodPin := strings.Repeat("a", 64)
 	badPin := strings.Repeat("b", 64)
 
-	var tailcatProbes atomic.Int32
-	oldTailcat := tailcatStatus
-	tailcatStatus = func(*rex.Client, string) (rex.TailcatStatus, error) {
-		tailcatProbes.Add(1)
-		return rex.TailcatStatus{}, nil
-	}
 	oldPing := hostPing
 	hostPing = func(*rex.Client, time.Duration) (time.Duration, error) {
 		return 14 * time.Millisecond, nil
@@ -1747,7 +1590,7 @@ func TestAddDirectHostUI(t *testing.T) {
 		}
 		return oldDial(ctx, address)
 	}
-	t.Cleanup(func() { dialHost, tailcatStatus, hostPing = oldDial, oldTailcat, oldPing })
+	t.Cleanup(func() { dialHost, hostPing = oldDial, oldPing })
 
 	assertNoSecretInUI := func(secret string) {
 		t.Helper()
@@ -1816,7 +1659,7 @@ func TestAddDirectHostUI(t *testing.T) {
 		t.Fatal("host saved despite pin mismatch")
 	}
 
-	// Valid Direct TLS URL: typing auto-fills name, hides Pair as, shows sanitized preview, saves & connects.
+	// Valid Direct TLS URL: typing auto-fills name, shows sanitized preview, saves & connects.
 	directURL := "https://203.0.113.10:7443/#k=" + directSecret + "&p=" + goodPin + "&n=alice-laptop"
 	a.openAddHost()
 	tt.Frame()
@@ -1824,9 +1667,6 @@ func TestAddDirectHostUI(t *testing.T) {
 	tt.Frame()
 	if hostsUI.name != "alice-laptop" {
 		t.Fatalf("auto-filled name = %q, want alice-laptop", hostsUI.name)
-	}
-	if tt.HasText(locales.HostsPairAs()) {
-		t.Fatalf("Pair as should be hidden for Direct TLS URL; texts %q", tt.Texts())
 	}
 	if !tt.HasText(locales.HostsDirectDetected("https://203.0.113.10:7443")) {
 		t.Fatalf("missing sanitized direct preview; texts %q", tt.Texts())
@@ -1844,13 +1684,10 @@ func TestAddDirectHostUI(t *testing.T) {
 		return a.hosts[0].state == hostConnected && tt.HasText(locales.HostsDiagTagDirect()) && tt.HasText("203.0.113.10:7443")
 	})
 	assertNoSecretInUI(directSecret)
-	if tailcatProbes.Load() != 0 {
-		t.Errorf("tailcatStatus called %d times for direct host, want 0", tailcatProbes.Load())
-	}
 
 	// Duplicate direct endpoint (even with a different #n=) is rejected.
 	dupURL := "https://203.0.113.10:7443/#k=" + directSecret + "&p=" + goodPin + "&n=other-name"
-	if got := validateHost(dupURL, "other-name", "", a.hosts); got != locales.HostsAlreadySaved() {
+	if got := validateHost(dupURL, "other-name", a.hosts); got != locales.HostsAlreadySaved() {
 		t.Errorf("duplicate direct host validation = %q, want %q", got, locales.HostsAlreadySaved())
 	}
 

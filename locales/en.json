@@ -1105,21 +1105,10 @@
   "@settingsFile": {
     "description": "About section row: where the settings are kept."
   },
-  "remoteAsking": "Asking the session server…",
-  "@remoteAsking": {
-    "description": "Shown while the page waits for the server's first answer."
-  },
-  "remoteConnect": "Let other devices connect",
-  "remoteAddDevice": "Add a device",
-  "remoteLastSeen": "Last seen {when}",
-  "hostsRexQR": "Local / Tailscale QR…",
+  "hostsRexQR": "LAN QR…",
   "hostsRexQRTitle": "Connect Rex to {host}",
-  "hostsRexQRLoading": "Checking the phone endpoint…",
-  "hostsRexQRHint": "Scan this code in Rex on a device on the same Tailscale network. The code holds the address only, not a credential.",
-  "hostsLocalRexQRHint": "Scan this code in Rex on a device on the same Tailscale network. The code holds the address only, not a credential.",
   "hostsLocalLanRexQRHint": "Scan this code in Rex on a device on the same network as this address. The code holds the address only, not a credential.",
-  "hostsSetUpRex": "Set Up Rex…",
-  "hostsRexQRUnavailable": "This host has no tailnet address to pair with. Turn on built-in Tailscale, and wait for its HTTPS address in Remote.",
+  "hostsRexQRUnavailable": "Local network listener has no pairing address yet. Enable it under Local API with a reachable LAN IP.",
   "hostsRexQRCopy": "Copy link",
   "hostsRexQRCopied": "Copied",
   "hostsRexQRCopyFailed": "Could not copy the link.",
@@ -1138,110 +1127,17 @@
   "hostsPairWebTrust": "Allow {page}",
   "hostsPairWebTrusted": "That page may open this computer now.",
   "hostsPairWebTrustFailed": "Could not save it: {error}",
-  "tailnetMode": "Tailscale discovery and connections",
-  "tailnetModeNote": "Find GoRex devices on your Tailscale account and let them open terminals on this computer.",
-  "tailnetModeNoteBuiltin": "Find GoRex devices on your Tailscale account and let them open terminals on this computer. This also turns on built-in Tailscale, which serves Rex's API on port 443 over your tailnet.",
-  "tailnetSignInHint": "Sign in to built-in Tailscale to find your devices.",
-  "tailnetSignIn": "Sign in",
-  "tailnetSignInFailed": "Could not sign in: {error}",
-  "@tailnetSignInFailed": {
-    "description": "Error: built-in Tailscale gave no sign-in link.",
-    "placeholders": {
-      "error": {
-        "type": "String",
-        "example": "the gateway is not running"
-      }
-    }
-  },
-  "tailnetSignInNoLink": "Built-in Tailscale has no sign-in link yet. Try again in a moment.",
-  "tailnetApproval": "The admin of your tailnet has to approve this device before it can find others.",
-  "tailnetStarting": "Starting built-in Tailscale…",
-  "tailnetOff": "Built-in Tailscale is off. Turn it on to find your devices; it also serves Rex's API on port 443 over your tailnet.",
-  "tailnetTurnOn": "Turn on",
-  "tailnetTagged": "This device is tagged on your tailnet. Only a device that a user signed in finds that user's devices.",
-  "tailnetExpired": "The sign-in of built-in Tailscale expired. Sign in again.",
-  "tailnetSignedIn": "Signed in as {account}",
-  "@tailnetSignedIn": {
-    "description": "Status: the Tailscale account that signed in built-in Tailscale.",
-    "placeholders": {
-      "account": {
-        "type": "String",
-        "example": "me@example.com"
-      }
-    }
-  },
-  "tailnetUnavailable": "System Tailscale is unavailable. GoRex will try again automatically.",
-  "remoteAllow": "Allow remote clients",
-  "@remoteAllow": {
-    "description": "Setting: whether other machines may connect."
-  },
   "remoteUnreachable": "Server not reachable",
   "@remoteUnreachable": {
     "description": "State: the session server does not answer."
-  },
-  "remoteUnreachableHint": "GoRex asks again every two seconds.",
-  "@remoteUnreachableHint": {
-    "description": "Detail of that state."
-  },
-  "remoteListening": "Listening",
-  "@remoteListening": {
-    "description": "State: the server accepts remote clients."
-  },
-  "remoteError": "Error",
-  "@remoteError": {
-    "description": "State: the remote listener failed."
-  },
-  "remoteErrorRetry": "{error} The server tries again.",
-  "@remoteErrorRetry": {
-    "description": "Detail of the error state while remote access is on. error is the server's message.",
-    "placeholders": {
-      "error": {
-        "type": "String",
-        "example": "address in use."
-      }
-    }
   },
   "remoteStarting": "Starting…",
   "@remoteStarting": {
     "description": "State: the listener is starting."
   },
-  "remoteOff": "Off",
-  "@remoteOff": {
-    "description": "State: remote access is off."
-  },
-  "remoteOffNote": "Turn on to pair your other computers and let them open terminals here.",
-  "@remoteOffNote": {
-    "description": "Remote page: the hint under the remote access switch while it is off, when the page shows nothing else."
-  },
-  "remoteNotConnected": "Not connected to the session server.",
-  "@remoteNotConnected": {
-    "description": "Error of a change attempted without a server."
-  },
   "remoteSomethingWrong": "Something went wrong.",
   "@remoteSomethingWrong": {
     "description": "Error when the server gave no message."
-  },
-  "remotePasteKey": "Paste the public key of the client.",
-  "@remotePasteKey": {
-    "description": "Error: the public key field is empty."
-  },
-  "remoteBadKey": "That is not a public key: it reads \"nodekey:\" and 64 hex digits. Copy it from \"This machine's key\" on the client.",
-  "@remoteBadKey": {
-    "description": "Error: the text is not a public key. nodekey: is literal; the quoted name is remoteMyKey."
-  },
-  "remoteNameClient": "Name the client, to know it in the list.",
-  "@remoteNameClient": {
-    "description": "Error: the client's name field is empty."
-  },
-  "remoteAlreadyAllowed": "That client is allowed already, as {name}.",
-  "@remoteAlreadyAllowed": {
-    "description": "Error: the key is in the list already.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "alice-laptop"
-      }
-    }
   },
   "remoteCopyFailed": "Could not copy: {error}",
   "@remoteCopyFailed": {
@@ -1253,10 +1149,6 @@
       }
     }
   },
-  "remoteNoAddress": "The server has no address to copy.",
-  "@remoteNoAddress": {
-    "description": "Error: no address to copy."
-  },
   "remoteCopy": "Copy",
   "@remoteCopy": {
     "description": "Button: copy to the clipboard."
@@ -1265,149 +1157,9 @@
   "@remoteCopied": {
     "description": "Button, for a moment after it copied."
   },
-  "remoteMyKey": "This machine's key",
-  "@remoteMyKey": {
-    "description": "Card: this machine's public key."
-  },
-  "remoteMyKeyNote": "Its fingerprint is what a machine you pair with shows for this one.",
-  "@remoteMyKeyNote": {
-    "description": "Note of that card."
-  },
-  "remoteHostKey": "Host key",
-  "@remoteHostKey": {
-    "description": "Row title: the node public key of this machine's remote access, beside its address, which a relay operator's list names to let it on."
-  },
-  "remoteHostKeyNote": "The key remote access serves by. A relay that admits a list of keys, as the team's, wants it sent to its operator.",
-  "@remoteHostKeyNote": {
-    "description": "Note under the host key row: what the key is for, and that a relay with an allowlist wants it."
-  },
-  "remoteShowDetails": "Show Details",
-  "@remoteShowDetails": {
-    "description": "Remote page: the disclosure at the bottom of the Devices card that shows this machine's address and key, as Rex's Show Details."
-  },
-  "remoteHideDetails": "Hide Details",
-  "@remoteHideDetails": {
-    "description": "Remote page: the same disclosure, open; it hides them again."
-  },
-  "remoteNoKey": "No key yet.",
-  "@remoteNoKey": {
-    "description": "Shown when this machine has no key."
-  },
-  "remoteFingerprint": "Fingerprint {fingerprint}",
-  "@remoteFingerprint": {
-    "description": "The fingerprint of this machine's key.",
-    "placeholders": {
-      "fingerprint": {
-        "type": "String",
-        "example": "ab12-cd34"
-      }
-    }
-  },
-  "remotePairTitle": "Pair a new device",
-  "@remotePairTitle": {
-    "description": "Card: pair another machine."
-  },
-  "remotePairNote": "On the other machine, ask to pair with this server's address. Approve a request only if its fingerprint is the one that machine shows: an approved device runs commands here as your user.",
-  "@remotePairNote": {
-    "description": "Note of that card."
-  },
-  "remotePairTurnOn": "Turn remote access on to pair.",
-  "@remotePairTurnOn": {
-    "description": "Shown in the pairing card while remote access is off."
-  },
-  "remotePairWaiting": "Waiting for requests, {left} left",
-  "@remotePairWaiting": {
-    "description": "Pairing is open. left is the time left, as m:ss.",
-    "placeholders": {
-      "left": {
-        "type": "String",
-        "example": "4:59"
-      }
-    }
-  },
-  "remotePairStop": "Stop",
-  "@remotePairStop": {
-    "description": "Button: close the pairing window."
-  },
-  "remotePairNoRequest": "No request yet.",
-  "@remotePairNoRequest": {
-    "description": "Shown while pairing is open and nothing was asked."
-  },
-  "remoteApprove": "Approve",
-  "@remoteApprove": {
-    "description": "Button: approve a pairing request."
-  },
-  "remoteReject": "Reject",
-  "@remoteReject": {
-    "description": "Button: reject a pairing request."
-  },
-  "remoteAddress": "Address",
-  "@remoteAddress": {
-    "description": "Card: the server's remote address."
-  },
-  "remoteAddressNote": "Anyone with this address and an allowed key can run commands here as your user, like SSH.",
-  "@remoteAddressNote": {
-    "description": "Note of that card."
-  },
-  "remoteRegenerateNote": "Regenerate makes a new address: the old one stops working, and the remote clients connected now are dropped.",
-  "@remoteRegenerateNote": {
-    "description": "Confirmation text before a new address is made."
-  },
-  "remoteRegenerate": "Regenerate",
-  "@remoteRegenerate": {
-    "description": "Button: make a new address (confirmation)."
-  },
-  "remoteRegenerateAsk": "Regenerate…",
-  "@remoteRegenerateAsk": {
-    "description": "Button: ask to make a new address."
-  },
   "remoteCancel": "Cancel",
   "@remoteCancel": {
     "description": "Button: cancel."
-  },
-  "remoteHide": "Hide",
-  "@remoteHide": {
-    "description": "Button: hide the address."
-  },
-  "remoteShow": "Show",
-  "@remoteShow": {
-    "description": "Button: show the address."
-  },
-  "remoteClientsNote": "Each runs commands here as your user. Revoking one drops its connections.",
-  "@remoteClientsNote": {
-    "description": "Note of that card."
-  },
-  "remoteNoClients": "No client is allowed yet.",
-  "@remoteNoClients": {
-    "description": "Shown when the list is empty."
-  },
-  "remoteCopyKey": "Copy key",
-  "@remoteCopyKey": {
-    "description": "Accessibility label of a client's copy button."
-  },
-  "remoteCopyKeyTip": "Copy the key",
-  "@remoteCopyKeyTip": {
-    "description": "Tooltip of a client's copy button."
-  },
-  "remoteRevoke": "Revoke",
-  "@remoteRevoke": {
-    "description": "Button: stop allowing a client."
-  },
-  "remoteAddByKey": "Or add a client by its key",
-  "@remoteAddByKey": {
-    "description": "Heading of the form that adds a client."
-  },
-  "remoteNamePlaceholder": "Name, as alice-laptop",
-  "@remoteNamePlaceholder": {
-    "description": "Placeholder of the client name field."
-  },
-  "remoteNameLabel": "Client name",
-  "@remoteNameLabel": {
-    "description": "Accessibility label of the client name field."
-  },
-  "remoteKeyLabel": "Client public key",
-  "@remoteKeyLabel": {
-    "description": "Accessibility label of the client key field."
   },
   "remoteAdd": "Add",
   "@remoteAdd": {
@@ -1433,23 +1185,15 @@
   "@hostsAddTitle": {
     "description": "Title of the sheet that adds a remote host."
   },
-  "hostsAddNote": "Paste a Direct TLS / Relay pairing URL or host address from Settings › Server on the other machine, or type its IP address while pairing. Keep this address secret.",
+  "hostsAddNote": "Paste a Direct TLS or Self-Hosted Relay pairing URL from Settings › Server on the other machine. Keep this URL secret.",
   "@hostsAddNote": {
     "description": "Note of the add sheet. Settings › Server names the other machine's settings page."
-  },
-  "hostsFound": "Found on your Tailscale network",
-  "@hostsFound": {
-    "description": "Heading, in the sheet that adds a host, of the GoRex hosts the tailnet shows; each is added by its own button."
-  },
-  "hostsAddFound": "Add Host",
-  "@hostsAddFound": {
-    "description": "Button: save the host the tailnet found, beside its name in the add sheet."
   },
   "hostsAddress": "Address",
   "@hostsAddress": {
     "description": "Label of the field of the host's address."
   },
-  "hostsAddressPlaceholder": "Direct / Relay pairing URL, host address, or IP",
+  "hostsAddressPlaceholder": "https://host:7443/#k=… or relay pairing URL",
   "@hostsAddressPlaceholder": {
     "description": "Placeholder of the address field, which hides what it holds."
   },
@@ -1461,14 +1205,6 @@
   "@hostsNamePlaceholder": {
     "description": "Placeholder of the host name field."
   },
-  "hostsPairAs": "Pair as",
-  "@hostsPairAs": {
-    "description": "Label of the field of the name this machine pairs with."
-  },
-  "hostsPairAsHint": "How the host lists this machine.",
-  "@hostsPairAsHint": {
-    "description": "Hint of the pair-as field."
-  },
   "hostsEnterName": "Enter a host name.",
   "@hostsEnterName": {
     "description": "Error: the host name field is empty."
@@ -1476,10 +1212,6 @@
   "hostsEnterAddress": "Paste the host's address.",
   "@hostsEnterAddress": {
     "description": "Error: the address field is empty."
-  },
-  "hostsBadAddress": "That is not a GoRex remote address or an IP address. Copy it from Settings › Server on the host.",
-  "@hostsBadAddress": {
-    "description": "Error: the address does not parse."
   },
   "hostsBadDirectAddress": "That Direct TLS / Relay URL is missing its pairing token (#k=…). Copy the full link from Settings › Server on the host.",
   "@hostsBadDirectAddress": {
@@ -1516,10 +1248,6 @@
   "hostsDirectPinMismatch": "The host's TLS certificate does not match the pinned fingerprint.",
   "@hostsDirectPinMismatch": {
     "description": "Why a Direct TLS or relay host failed to connect: leaf TLS certificate SHA-256 mismatch."
-  },
-  "hostsEnterPairName": "Enter a name for this machine.",
-  "@hostsEnterPairName": {
-    "description": "Error: the pair-as field is empty."
   },
   "hostsAlreadySaved": "That remote host is already saved.",
   "@hostsAlreadySaved": {
@@ -1561,49 +1289,9 @@
   "@hostsFailed": {
     "description": "Host status: the last attempt failed; another comes."
   },
-  "hostsRetryNote": "GoRex tries again on its own.",
-  "@hostsRetryNote": {
-    "description": "Detail after a failed attempt."
-  },
   "hostsUnreachable": "Could not reach the host. Check that GoRex runs there with remote access on.",
   "@hostsUnreachable": {
     "description": "Why a host is not connected: the network or the host."
-  },
-  "hostsNotAllowed": "The host does not allow this machine. Remove it and add it again to pair.",
-  "@hostsNotAllowed": {
-    "description": "Why a host is not connected: this machine's key is not allowed there."
-  },
-  "hostsNotPairing": "{host} is not pairing. There, open Settings › Server and choose Pair New Device…, then try again.",
-  "@hostsNotPairing": {
-    "description": "Error of the add sheet: the host's pairing window is closed. Pair New Device… is remotePairNew.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "office-mac"
-      }
-    }
-  },
-  "hostsWaiting": "Waiting for approval…",
-  "@hostsWaiting": {
-    "description": "Add sheet: the pairing request waits for the host's user."
-  },
-  "hostsApprove": "On {host}, approve the request showing this fingerprint.",
-  "@hostsApprove": {
-    "description": "Add sheet: what to do on the host.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "office-mac"
-      }
-    }
-  },
-  "hostsApproveWhere": "It shows under Settings › Server › Devices. Approve it only if the fingerprints match.",
-  "@hostsApproveWhere": {
-    "description": "Add sheet: where the request shows on the host. Devices is remoteDevices."
-  },
-  "hostsFingerprint": "Fingerprint",
-  "@hostsFingerprint": {
-    "description": "Label of this machine's fingerprint on the add sheet."
   },
   "hostsRetry": "Retry",
   "@hostsRetry": {
@@ -1674,34 +1362,6 @@
         "example": "2"
       }
     }
-  },
-  "hostsPathDirect": "direct {endpoint}",
-  "@hostsPathDirect": {
-    "description": "Remote Hosts page: under a connected host, its link goes over a direct path to the endpoint.",
-    "placeholders": {
-      "endpoint": {
-        "type": "String",
-        "example": "192.0.2.10:41641"
-      }
-    }
-  },
-  "hostsPathRelay": "via {relay}",
-  "@hostsPathRelay": {
-    "description": "Remote Hosts page: under a connected host, its link goes through the relay named.",
-    "placeholders": {
-      "relay": {
-        "type": "String",
-        "example": "derp.example.com"
-      }
-    }
-  },
-  "hostsDiagTagTailcat": "tailcat",
-  "@hostsDiagTagTailcat": {
-    "description": "Remote Hosts page: tag of a host linked over tailcat (the protocol's name, not translated)."
-  },
-  "hostsDiagTagTailnet": "tailnet",
-  "@hostsDiagTagTailnet": {
-    "description": "Remote Hosts page: tag of a host linked over the tailnet."
   },
   "hostsDiagTagDirect": "direct",
   "@hostsDiagTagDirect": {
@@ -1826,16 +1486,6 @@
   "paneTransferCancel": "Cancel",
   "@paneTransferCancel": {
     "description": "Label of the button that stops a transfer."
-  },
-  "hostsPairRejected": "{host} did not approve this machine: the request was rejected, or its pairing window closed. Try again.",
-  "@hostsPairRejected": {
-    "description": "Error of the add sheet: the host's user rejected the request, or the pairing window closed before approving it.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "office-mac"
-      }
-    }
   },
   "cmdNewWindow": "New Window",
   "@cmdNewWindow": {
@@ -2055,98 +1705,6 @@
       }
     }
   },
-  "remoteTailscaleNote": "The control server built-in Tailscale registers with, such as Headscale. A change applies the next time Tailscale is turned on.",
-  "@remoteTailscaleNote": {
-    "description": "Note under the title of the Tailscale card."
-  },
-  "remoteTailscaleControl": "Control server",
-  "@remoteTailscaleControl": {
-    "description": "Label of the field that holds built-in Tailscale's control server URL."
-  },
-  "remoteTailscalePlaceholder": "Tailscale's own",
-  "@remoteTailscalePlaceholder": {
-    "description": "Placeholder of the empty control server field: the field is left empty for Tailscale's own control plane."
-  },
-  "remoteTailscaleInvalid": "Enter an https URL, or http to localhost or a private address. Leave it empty for Tailscale's own.",
-  "@remoteTailscaleInvalid": {
-    "description": "Error under the control server field when what was typed is not a URL, or is a cleartext http URL to a public host or a name."
-  },
-  "remoteRelay": "Relay",
-  "@remoteRelay": {
-    "description": "Label of the field that holds the DERP relay of one's own that remote access meets clients at."
-  },
-  "remoteRelayPlaceholder": "Default",
-  "@remoteRelayPlaceholder": {
-    "description": "Placeholder of the empty relay field: left empty, tailcat's own free relays are used."
-  },
-  "remoteRelayNote": "A relay server of your own, by its host name, such as relay.example.com, or gorex for the team's relay, in place of the default relays. The address names it, so changing it makes a new address; the keys stay. The team's relay admits the keys on its operator's list: send it the host key.",
-  "@remoteRelayNote": {
-    "description": "Hint under the relay field; gorex is the alias of the team's relay."
-  },
-  "remoteRelayInvalid": "Enter a host name, such as relay.example.com, or gorex for the team's relay, with :port when not 443: not an IP address, and no https://. Leave it empty for the default relays.",
-  "@remoteRelayInvalid": {
-    "description": "Error under the relay field when what was typed is not a host name or address with an optional port; gorex is the alias of the team's relay."
-  },
-  "remoteReachableTitle": "Reachable at",
-  "@remoteReachableTitle": {
-    "description": "Row title: the IP address of this machine at which devices dial it directly."
-  },
-  "remoteReachableNote": "Devices that can reach this address connect straight to this machine, with no relay. It opens port {port} on that address, and the firewall may ask you to allow it. Off, devices connect through the relay only.",
-  "@remoteReachableNote": {
-    "description": "Hint under the Reachable at field. {port} is a port number.",
-    "placeholders": {
-      "port": {
-        "type": "String",
-        "example": "7464"
-      }
-    }
-  },
-  "remoteReachableOff": "Turn Off",
-  "@remoteReachableOff": {
-    "description": "Button: turn Reachable at off."
-  },
-  "remoteReachableInvalid": "Enter one IP address of this machine, such as 192.0.2.10.",
-  "@remoteReachableInvalid": {
-    "description": "Error under the Reachable at field when what was typed is not an IP address."
-  },
-  "remoteFirewallBlocked": "Windows Firewall blocks port {port}: other devices cannot connect.",
-  "@remoteFirewallBlocked": {
-    "description": "Line under Reachable at when Windows Firewall drops connections to its port. {port} is a port number.",
-    "placeholders": {
-      "port": {
-        "type": "String",
-        "example": "7464"
-      }
-    }
-  },
-  "remoteFirewallAllow": "Allow",
-  "@remoteFirewallAllow": {
-    "description": "Button beside the Windows Firewall line: add a firewall rule for the port, as administrator."
-  },
-  "remoteFirewallNotChanged": "Windows Firewall was not changed.",
-  "@remoteFirewallNotChanged": {
-    "description": "Under the Windows Firewall line when Allow was declined at the administrator prompt or failed."
-  },
-  "remoteFirewallBlockRule": "A Windows Firewall rule blocks GoRex: other devices cannot connect. Remove it in Windows Defender Firewall, Inbound Rules.",
-  "@remoteFirewallBlockRule": {
-    "description": "Line under Reachable at when a Windows Firewall rule blocks the GoRex program, so a rule that allows the port does not help."
-  },
-  "remoteDirectAddress": "Direct address",
-  "@remoteDirectAddress": {
-    "description": "Row title: the second tailcat address, for devices that dial this machine directly."
-  },
-  "remoteDirectAddressNote": "For devices that can dial this machine directly, with no relay. It is a secret, like the address above.",
-  "@remoteDirectAddressNote": {
-    "description": "Hint under the direct address."
-  },
-  "remoteDirectQR": "Direct QR…",
-  "@remoteDirectQR": {
-    "description": "Button: shows the QR code of the direct address."
-  },
-  "remoteDirectQRHint": "Scan this code on a device that can dial this machine directly, then approve its request under Devices if the fingerprint matches. The code holds this machine's direct address, a secret: show it only to your own devices.",
-  "@remoteDirectQRHint": {
-    "description": "Text over the QR code of the direct address."
-  },
   "remoteDirectTitle": "Direct / Relay Access",
   "@remoteDirectTitle": {
     "description": "Title of the Settings › Server group for direct TLS and self-hosted windrex-relay access."
@@ -2267,56 +1825,6 @@
   "@remoteDirectTLSQRHint": {
     "description": "Hint above the Direct TLS / Self-Hosted Relay pairing QR code."
   },
-  "remotePairAddrFrom": "From {source}",
-  "@remotePairAddrFrom": {
-    "description": "Pairing request by address: the address it came from.",
-    "placeholders": {
-      "source": {
-        "type": "String",
-        "example": "192.0.2.20:51000"
-      }
-    }
-  },
-  "remotePairAddrCompare": "Compare this code with the one the device shows. Approve only if they match.",
-  "@remotePairAddrCompare": {
-    "description": "Pairing request by address: what to do with the code."
-  },
-  "remotePairAddrMany": "More than one device is asking. Reject them all, then ask again from the device.",
-  "@remotePairAddrMany": {
-    "description": "Pairing requests by address: shown when several wait, so that none can be approved."
-  },
-  "hostsCodeIntro": "Compare this code with the one {host} shows. Both must be the same.",
-  "@hostsCodeIntro": {
-    "description": "Add sheet: the pairing code, by IP address.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "office-mac"
-      }
-    }
-  },
-  "hostsCodeMatch": "The codes match",
-  "@hostsCodeMatch": {
-    "description": "Add sheet button: the user says the pairing codes are the same."
-  },
-  "hostsCodeDiffer": "They differ",
-  "@hostsCodeDiffer": {
-    "description": "Add sheet button: the user says the pairing codes differ."
-  },
-  "hostsCodeApprove": "On {host}, open Settings › Server › Devices and approve the request showing this code.",
-  "@hostsCodeApprove": {
-    "description": "Add sheet: what to do on the host once the codes match.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "office-mac"
-      }
-    }
-  },
-  "hostsCode": "Pairing code",
-  "@hostsCode": {
-    "description": "Add sheet: label over the pairing code."
-  },
   "remoteApiTitle": "Local API",
   "@remoteApiTitle": {
     "description": "Title of the server page's group that tells Rex's API gateway's revisions and version and lists where it takes connections on this machine, as Rex's Developer page's Local API."
@@ -2333,7 +1841,7 @@
   "@remoteApiAnyone": {
     "description": "Local API card: an endpoint with no check at all; anyone who can connect to its address gets in. Shown as a warning."
   },
-  "remoteApiNote": "Where Rex's API takes connections on this machine. Built-in Tailscale is not listed: its switch is below.",
+  "remoteApiNote": "Where Rex's API takes connections on this machine.",
   "@remoteApiNote": {
     "description": "Footnote of the Local API card."
   },
@@ -2378,7 +1886,7 @@
     "description": "Label of the field with the address and port to listen on."
   },
   "remoteLanSave": "Save",
-  "remoteLanPairAddress": "To show a QR code, use a specific LAN or Tailscale IP address that your phone can reach.",
+  "remoteLanPairAddress": "To show a QR code, use a specific LAN IP address that your phone can reach.",
   "@remoteLanSave": {
     "description": "Button: save the address typed."
   },
@@ -2430,30 +1938,6 @@
   "@resumeContinueTip": {
     "description": "Tooltip of the button that continues an agent's last conversation."
   },
-  "remoteDevices": "Devices",
-  "@remoteDevices": {
-    "description": "Remote page: the group of the devices paired with this machine, and the requests to pair."
-  },
-  "remotePairNew": "Pair New Device…",
-  "@remotePairNew": {
-    "description": "Remote page button: opens the pairing window, in which a new device can ask to pair."
-  },
-  "remoteRexGoQR": "WindRex QR…",
-  "@remoteRexGoQR": {
-    "description": "Remote page button: opens the pairing window and shows the QR code that WindRex on iPhone scans to pair."
-  },
-  "remoteRexGoQRTitle": "Connect WindRex to {host}",
-  "@remoteRexGoQRTitle": {
-    "description": "Title of the dialog with the QR code for WindRex on iPhone. {host} is this machine's name."
-  },
-  "remoteRexGoQRHint": "Scan this code in WindRex on your iPhone, then verify the fingerprint and approve the request here. The code holds this machine's address, a secret: show it only to your own devices.",
-  "@remoteRexGoQRHint": {
-    "description": "Text over the QR code for WindRex on iPhone."
-  },
-  "remoteRexGoQRUnavailable": "Remote access has no address yet. Try again once it is listening.",
-  "@remoteRexGoQRUnavailable": {
-    "description": "Shown in place of the QR code for WindRex when the server has no address."
-  },
   "hostConnectPhone": "Connect iPhone…",
   "@hostConnectPhone": {
     "description": "Host popover button: opens Settings › Server to pair an iPhone running WindRex."
@@ -2462,25 +1946,13 @@
   "@remoteConnectPhoneTitle": {
     "description": "Title of the above-the-fold phone pairing card on Settings › Server."
   },
-  "remoteConnectPhoneOff": "Turn on remote access, scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request here.",
+  "remoteConnectPhoneOff": "Configure Direct TLS or Self-Hosted Relay below (or enable Local Network under Local API) to connect WindRex on your iPhone.",
   "@remoteConnectPhoneOff": {
     "description": "Guided hint on the Connect iPhone card while remote access is off."
   },
-  "remoteConnectPhoneEnable": "Turn On & Show QR…",
-  "@remoteConnectPhoneEnable": {
-    "description": "Primary button on the Connect iPhone card while remote access is off: enables remote access and opens the WindRex QR code once ready."
-  },
-  "remoteConnectPhoneStarting": "Starting remote access… The WindRex QR code will open automatically once ready.",
-  "@remoteConnectPhoneStarting": {
-    "description": "Guided hint on the Connect iPhone card while waiting for remote access to start."
-  },
-  "remoteConnectPhoneReady": "Ready to pair. Scan the WindRex QR code on your iPhone, then verify the fingerprint and approve the request here.",
+  "remoteConnectPhoneReady": "Ready to pair. Scan the QR code with WindRex on your iPhone.",
   "@remoteConnectPhoneReady": {
     "description": "Guided hint on the Connect iPhone card while remote access is listening."
-  },
-  "remoteAddByKeyAsk": "Add by Key…",
-  "@remoteAddByKeyAsk": {
-    "description": "Remote page button: shows the fields that allow a client by its public key."
   },
   "remoteLanListenOn": "Listen on",
   "@remoteLanListenOn": {

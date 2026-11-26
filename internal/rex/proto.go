@@ -165,34 +165,13 @@ var capabilities = []string{"layout.revision", "events.revision", CapabilityShut
 
 // Request is a line of the control connection, from the client.
 type Request struct {
-	ID int64  `json:"id"`
-	Op string `json:"op"`
-	// TailnetTarget is the target discovery named, of remote.tailnetDial:
-	// the server relays the connection to it over the system tailnet.
-	TailnetTarget string          `json:"tailnetTarget,omitempty"`
-	SID           string          `json:"sid,omitempty"`
-	Cols          int             `json:"cols,omitempty"`
-	Rows          int             `json:"rows,omitempty"`
-	Create        *CreateOptions  `json:"create,omitempty"`
-	Layout        json.RawMessage `json:"layout,omitempty"`
-	// Remote is the client of remote.allow, remote.revoke,
-	// remote.approve and remote.reject, and the name of remote.pair.
-	Remote *RemoteClient `json:"remote,omitempty"`
-	// Code names the request by address of remote.approve and
-	// remote.reject, in place of Remote.
-	Code string `json:"code,omitempty"`
-	// TailcatAddress is the address of remote.tailcatDial: the server
-	// connects to it with its tailcat client, and relays the connection.
-	// remote.tailcatStatus also names it: the server pings the address
-	// with its client of it, and answers how the link runs
-	// (TailcatStatus).
-	TailcatAddress string `json:"tailcatAddress,omitempty"`
-	// Relay is the relay of remote.relaySet: a DERP server's host, "" for
-	// tailcat's own.
-	Relay string `json:"relay,omitempty"`
-	// ReachableAt is the address of remote.reachableSet: an IP address of
-	// this machine, "" for off.
-	ReachableAt string `json:"reachableAt,omitempty"`
+	ID     int64           `json:"id"`
+	Op     string          `json:"op"`
+	SID    string          `json:"sid,omitempty"`
+	Cols   int             `json:"cols,omitempty"`
+	Rows   int             `json:"rows,omitempty"`
+	Create *CreateOptions  `json:"create,omitempty"`
+	Layout json.RawMessage `json:"layout,omitempty"`
 	// Exe is the executable the server runs in its place on "upgrade".
 	Exe string `json:"exe,omitempty"`
 	// Keepalive, on "hello", asks the server to drop the connection once
@@ -213,10 +192,6 @@ type Request struct {
 	// and starts none, checked and stopped in one step; a server in use
 	// answers an error that starts with BusyPrefix (CapabilityShutdownIfIdle).
 	IfIdle bool `json:"ifIdle,omitempty"`
-
-	// On is the setting of remote.controlSet and
-	// remote.tailnetSet.
-	On bool `json:"on,omitempty"`
 
 	// Owner is the size lock's owner, of lockSize, lockedResize,
 	// unlockSize and renewSize: unlockSize without one unlocks whoever
@@ -598,103 +573,6 @@ type ActionCall struct {
 	Args json.RawMessage `json:"args,omitempty"`
 }
 
-// RemoteClient is a client allowed to connect remotely: PublicKey is its
-// tailcat node key, "nodekey:" and 64 hex digits.
-type RemoteClient struct {
-	Name      string    `json:"name"`
-	PublicKey string    `json:"publicKey"`
-	Created   time.Time `json:"created,omitzero"`
-	LastSeen  time.Time `json:"lastSeen,omitzero"`
-}
-
-// RemoteStatus answers remote.status. Address, the tailcat address
-// clients connect to while running, is a secret.
-type RemoteStatus struct {
-	Enabled   bool           `json:"enabled"`
-	Running   bool           `json:"running"`
-	Address   string         `json:"address,omitempty"`
-	Allowed   []RemoteClient `json:"allowed"`
-	LastError string         `json:"lastError,omitempty"`
-	// Relay is the DERP relay of one's own the address names, "" for
-	// tailcat's.
-	Relay string `json:"relay,omitempty"`
-	// PublicKey is the host's node public key, which a relay operator's
-	// list names to let this machine on (docs/NET-004-public-relay.md);
-	// "" until remote access has keys.
-	PublicKey string `json:"publicKey,omitempty"`
-	// ReachableAt is the address where this machine is its own relay, ""
-	// while off; ReachableAddress, a secret as Address, the second tailcat
-	// address while its relay runs, and ReachableError why it does not.
-	ReachableAt      string `json:"reachableAt,omitempty"`
-	ReachableAddress string `json:"reachableAddress,omitempty"`
-	ReachableError   string `json:"reachableError,omitempty"`
-	// ReachableFirewall is "blocked" while the relay runs and Windows
-	// Firewall drops connections to it (firewall.go), "blockRule" when a
-	// rule that blocks GoRex does, else "".
-	ReachableFirewall string `json:"reachableFirewall,omitempty"`
-	// Pairing is the pairing window, Pending the requests made in it.
-	Pairing RemotePairing   `json:"pairing"`
-	Pending []RemotePending `json:"pending,omitempty"`
-	// PendingByAddress are the requests made by address (pairaddr.go),
-	// apart from Pending: each is approved by its code alone.
-	PendingByAddress []RemoteAddrPending `json:"pendingByAddress,omitempty"`
-	// ShareLayout is always true: every remote client reads this
-	// machine's layout (docs/MOD-002-projects.md). Deprecated: kept for an app of
-	// before, which shows its switch; this server ignores the switch.
-	// Before, it told that remote clients may read this machine's layout
-	// and subscribe to its changes.
-	ShareLayout bool `json:"shareLayout"`
-	// RemoteControl tells that remote clients may run app actions through
-	// this window.
-	RemoteControl bool           `json:"remoteControl"`
-	Tailnet       *TailnetStatus `json:"tailnet,omitempty"`
-}
-
-// RemotePairing is the pairing window: while open, a client not allowed
-// may ask to be, with remote.pair.
-type RemotePairing struct {
-	Open      bool      `json:"open"`
-	ExpiresAt time.Time `json:"expiresAt,omitzero"`
-}
-
-// RemotePending is a client that asked to pair, waiting for approval.
-type RemotePending struct {
-	Name        string    `json:"name"`
-	PublicKey   string    `json:"publicKey"`
-	RequestedAt time.Time `json:"requestedAt"`
-}
-
-// RemoteAddrPending is a request to pair by address, waiting for
-// approval while its connection lasts: Code is what both sides show,
-// Source the address it came from.
-type RemoteAddrPending struct {
-	Code        string    `json:"code"`
-	Name        string    `json:"name"`
-	Source      string    `json:"source"`
-	RequestedAt time.Time `json:"requestedAt"`
-}
-
-// PairResult answers remote.pair: the fingerprint of the key the server
-// saw, to compare with the one the server shows.
-type PairResult struct {
-	Fingerprint string `json:"fingerprint"`
-}
-
-// TailcatStatus answers remote.tailcatStatus: how the link to a host's
-// address runs, as a disco ping through the server's tailcat client of
-// it measured it. Direct is that the pong came over a direct path, whose
-// UDP endpoint Endpoint names then; else the pong came through a relay,
-// which Relay names: the host of a relay of one's own, a DERP region's
-// code, or its number as "region N". LatencySeconds is the ping's
-// round-trip.
-type TailcatStatus struct {
-	Direct         bool    `json:"direct"`
-	Endpoint       string  `json:"endpoint,omitempty"`
-	Relay          string  `json:"relay,omitempty"`
-	RegionID       int     `json:"regionId,omitempty"`
-	LatencySeconds float64 `json:"latencySeconds"`
-}
-
 // Response answers the Request with the same ID.
 type Response struct {
 	ID    int64           `json:"id"`
@@ -975,11 +853,6 @@ type Hello struct {
 	// Capabilities are what this server does beyond the version 2
 	// protocol, such as "layout.revision" and "events.revision".
 	Capabilities []string `json:"capabilities,omitempty"`
-	// Client is the remote client this connection is, with its label and
-	// the times it was allowed and last connected; nil for a local one.
-	Client *RemoteClient `json:"client,omitempty"`
-	// RexPairURL is a ready mobile endpoint, shown only to a verified system Tailscale peer.
-	RexPairURL string `json:"rexPairURL,omitempty"`
 }
 
 // Can tells whether the server does capability, as "layout.revision" or
@@ -1273,11 +1146,6 @@ func Dir() string {
 // SocketPath returns the path of the server's socket: in Dir, unless that
 // is too long a path for a socket, then in the temporary directory.
 func SocketPath() string { return dirSocket("server.sock") }
-
-// GatewaySocketPath returns the path of the Rex API gateway's socket for
-// the connections to RexAPIPort, which the server dials (toGateway): as
-// SocketPath's, in Dir or the temporary directory.
-func GatewaySocketPath() string { return dirSocket("rexapi-tailcat.sock") }
 
 // dirSocket is the socket name in Dir, or in the temporary directory, by
 // a hash of that path, when it is too long a path for a socket.

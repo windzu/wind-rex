@@ -145,8 +145,6 @@ func TestRelayFeature(t *testing.T) {
 	}{
 		{"lan", transportLAN, "192.168.1.5", true},
 		{"local network, seen as tcp", transportTCP, "192.168.1.5", true},
-		{"tailnet", transportTailscale, "100.64.0.5", false},
-		{"tailcat", transportTailcat, "100.64.0.5", false},
 		{"unix", transportUnix, "", false},
 		{"tcp without an address", transportTCP, "", false},
 	}

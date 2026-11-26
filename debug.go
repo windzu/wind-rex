@@ -325,28 +325,7 @@ func (a *App) debug(dir, line string) {
 		if w := settingsUI.win; w != nil {
 			w.Update(func() { a.showSection(arg) })
 		}
-	case "remote": // allow NAME KEY, enable, disable, regenerate, reveal, confirm: the Server page's remote access calls
-		op, rest, _ := strings.Cut(arg, " ")
-		switch op {
-		case "allow":
-			name, key, _ := strings.Cut(rest, " ")
-			a.client.AllowRemote(name, key)
-		case "enable":
-			a.client.EnableRemote()
-		case "disable":
-			a.client.DisableRemote()
-		case "regenerate":
-			a.client.RegenerateRemote()
-		case "reveal", "confirm":
-			if w := settingsUI.win; w != nil {
-				w.Update(func() {
-					remoteUI.details, remoteUI.reveal, remoteUI.confirm = true, op == "reveal", op == "confirm"
-					remoteUI.st.Address = ""
-					a.fetchRemote()
-				})
-			}
-		}
-	case "hosts": // add NAME ADDRESS [PAIR-AS], retry NAME, remove NAME: the Remote Hosts page's
+	case "hosts": // add NAME ADDRESS, retry NAME, remove NAME: the Remote Hosts page's
 		op, rest, _ := strings.Cut(arg, " ")
 		win.Update(func() {
 			if op == "add" {
@@ -358,9 +337,6 @@ func (a *App) debug(dir, line string) {
 				}
 				if len(f) > 1 {
 					hostsUI.address = f[1]
-				}
-				if len(f) > 2 {
-					hostsUI.pairAs = strings.Join(f[2:], " ")
 				}
 				a.submitHost()
 				return

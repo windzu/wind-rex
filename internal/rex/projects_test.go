@@ -70,7 +70,7 @@ func localPanes(st layout.Store) []string {
 // h1's panes wait in adoptions; the old layout is kept.
 func TestMigrateKeepsShells(t *testing.T) {
 	s, c := applyFixture(t)
-	hosts := `{"hosts":[{"id":"h1","address":"tcat://x","machine":"m1"}]}`
+	hosts := `{"hosts":[{"id":"h1","address":"https://h1.example.com:7443/#k=tok1","machine":"m1"}]}`
 	if err := os.WriteFile(filepath.Join(Dir(), "hosts.json"), []byte(hosts), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +458,7 @@ func TestSpacesDelete(t *testing.T) {
 // parts of the splits, as the migration leaves them.
 func TestRepairHostPanesAtLoad(t *testing.T) {
 	s, c := applyFixture(t)
-	hosts := `{"hosts":[{"id":"h1","address":"tcat://x","machine":"m1"}]}`
+	hosts := `{"hosts":[{"id":"h1","address":"https://h1.example.com:7443/#k=tok1","machine":"m1"}]}`
 	if err := os.WriteFile(filepath.Join(Dir(), "hosts.json"), []byte(hosts), 0o600); err != nil {
 		t.Fatal(err)
 	}

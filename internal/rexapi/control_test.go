@@ -316,18 +316,16 @@ func TestControlFrames(t *testing.T) {
 		HTML string `json:"html"`
 	}
 	payload := map[string]any{"z": 1, "a": entry{Name: "x", HTML: "<b>&"}, "m": nil}
-	tailscale := map[string]any{"state": "running", "control_url": "https://c.example"}
-	c, old := conn(apiRevision), conn(9)
+	c, old := conn(apiRevision), conn(11)
 	c.respond(&request{ID: "r1", seq: 3}, payload, nil)
 	c.respond(&request{ID: "r2", Method: "server.version"}, nil, nil)
 	c.respond(&request{ID: "r3"}, nil, errMethodNotFound("%s is not a method", "x.y"))
 	c.respond(&request{ID: "r4", seq: 1}, strings.Repeat("x", maxMessage), nil)
-	old.respond(&request{ID: "r5", Method: "server.status"}, map[string]any{"tailscale": tailscale}, nil)
+	old.respond(&request{ID: "r5", Method: "server.status"}, map[string]any{"pid": 1, "listeners": []string{}}, nil)
 	chs := []change{
 		{session: "S1", typ: "tab_renamed", payload: payload},
 		{session: "S1", typ: "session_created"},
 		{server: true, typ: "client_joined", payload: map[string]any{"client_id": "c2"}},
-		{server: true, typ: "tailscale_status_changed", payload: tailscale},
 	}
 	c.sendChanges(chs)
 	old.sendChanges(chs)
@@ -339,12 +337,10 @@ func TestControlFrames(t *testing.T) {
 		`{"type":"event","seq":1,"payload":{"type":"session_event","payload":{"session_id":"S1","event":{"type":"tab_renamed","payload":{"a":{"name":"x","html":"\u003cb\u003e\u0026"},"m":null,"z":1}}}}}`,
 		`{"type":"event","seq":2,"payload":{"type":"session_event","payload":{"session_id":"S1","event":{"type":"session_created"}}}}`,
 		`{"type":"event","seq":3,"payload":{"type":"client_joined","payload":{"client_id":"c2"}}}`,
-		`{"type":"event","seq":4,"payload":{"type":"tailscale_status_changed","payload":{"control_url":"https://c.example","state":"running"}}}`,
-		`{"type":"response","id":"r5","seq":0,"requester":"c1","payload":{"tailscale":{"state":"running"}}}`,
+		`{"type":"response","id":"r5","seq":0,"requester":"c1","payload":{"pid":1}}`,
 		`{"type":"event","seq":1,"payload":{"type":"session_event","payload":{"session_id":"S1","event":{"type":"tab_renamed","payload":{"a":{"name":"x","html":"\u003cb\u003e\u0026"},"m":null,"z":1}}}}}`,
 		`{"type":"event","seq":2,"payload":{"type":"session_event","payload":{"session_id":"S1","event":{"type":"session_created"}}}}`,
 		`{"type":"event","seq":3,"payload":{"type":"client_joined","payload":{"client_id":"c2"}}}`,
-		`{"type":"event","seq":4,"payload":{"type":"tailscale_status_changed","payload":{"state":"running"}}}`,
 	}
 	var got []string
 	for _, out := range []chan outMsg{c.out, old.out} {

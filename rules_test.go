@@ -52,7 +52,6 @@ func TestNoNewRootInit(t *testing.T) {
 // production code beyond the existing baseline so initialization stays explicit.
 func TestNoInternalInit(t *testing.T) {
 	allowed := map[string]bool{
-		"internal/rex/ownrelay.go":     true,
 		"internal/rex/voice.go":        true,
 		"internal/rexapi/help.go":      true,
 		"internal/rexapi/revisions.go": true,

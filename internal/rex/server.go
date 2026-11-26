@@ -56,7 +56,6 @@ type Server struct {
 	stopping bool
 	// journal keeps the layouts of this run, and how it ends.
 	journal *journal
-	rem     remote
 	// ops is held by the ops that add or end sessions, and an upgrade
 	// takes it alone; acceptMu holds Accept while an upgrade stops it.
 	ops      sync.RWMutex
@@ -322,12 +321,6 @@ func (k *keptConn) unbind(conn net.Conn) {
 // which this package cannot import.
 var OnServe func(stop <-chan struct{})
 
-// RexPairURL, when set, returns the gateway's Rex pairing address: the
-// tailnet's HTTPS address, which another device scans to add this one to
-// Rex. It holds no credential, as "rex server tailscale pair" says of its
-// own. Empty while built-in Tailscale is off or its address is not ready.
-var RexPairURL func() string
-
 // idleTimeout is how long a server with no sessions and no app waits
 // before it exits.
 const idleTimeout = 10 * time.Minute
@@ -425,7 +418,6 @@ func (s *Server) serve() error {
 	}()
 	go s.watchIdle()
 	go s.portsLoop()
-	s.remoteLoad()
 	go func() {
 		<-s.quit
 		s.acceptMu.Lock()
@@ -454,7 +446,6 @@ func (s *Server) serve() error {
 				s.layoutFile.Lock()
 				s.journal.stopped(reason, s.inventory())
 				s.layoutFile.Unlock()
-				s.remoteClose()
 				for _, ss := range all {
 					ss.kill()
 				}
@@ -488,7 +479,7 @@ func (s *Server) watchIdle() {
 		s.mu.Lock()
 		idle := len(s.sessions) == 0 && s.controls == 0 && time.Since(s.idleFrom) > idleTimeout
 		s.mu.Unlock()
-		if idle && !s.remoteEnabled() {
+		if idle {
 			log.Print("rex: idle, exiting")
 			s.shutdown("idle")
 			return
@@ -506,8 +497,7 @@ func (s *Server) shutdown(reason string) {
 }
 
 // handle serves a connection: peer is the key of a remote client, "" for
-// a local connection (a remote one always has a key: remoteAccept refuses
-// a peer without). A remote one may make the ops of remoteAllowed only.
+// a local connection. A remote one may make the ops of remoteAllowed only.
 func (s *Server) handle(conn net.Conn, peer string) {
 	r := bufio.NewReaderSize(conn, 64<<10)
 	first, err := readLine(r)
@@ -515,18 +505,6 @@ func (s *Server) handle(conn net.Conn, peer string) {
 		refuseLine(conn, err)
 		conn.Close()
 		return
-	}
-	if peer == "" {
-		var req Request
-		err := json.Unmarshal(first, &req)
-		if err == nil && req.Op == "remote.tailnetDial" {
-			s.relayTailnet(conn, r, req.TailnetTarget)
-			return
-		}
-		if err == nil && req.Op == "remote.tailcatDial" {
-			s.relayTailcat(conn, r, req.TailcatAddress)
-			return
-		}
 	}
 	var a Attach
 	if json.Unmarshal(first, &a) == nil && a.Op == "attach" {
@@ -691,14 +669,6 @@ func (s *Server) control(conn net.Conn, r *bufio.Reader, first []byte, peer stri
 					res.Error = err.Error()
 				}
 				reply(res)
-			} else if req.Op == "remote.tailcatStatus" {
-				// The ping may take seconds: the answer goes aside, as a
-				// prompt's does, so the connection's other requests, the
-				// keepalive's pings among them, go on meanwhile.
-				kept := kept // a later hello sets it, as this runs
-				go func() {
-					reply(s.request(req, peer, kept))
-				}()
 			} else if req.Op == "kill" || req.Op == "command" || req.Op == "command.take" || req.Op == "command.done" {
 				aside <- struct{}{}
 				kept := kept // a later hello sets it, as this runs
@@ -797,15 +767,13 @@ func (s *Server) request(req Request, peer string, kept *keptConn) Response {
 	var data any
 	var err error
 	remote := peer != ""
-	if remote && req.Op == "command" && req.Command != nil && req.Command.Op == "action" && !s.remoteControlEnabled() {
+	if remote && req.Op == "command" && req.Command != nil && req.Command.Op == "action" {
 		err = errors.New("rex: remote control is off")
 	} else if remote && req.Op == "command" && req.Command != nil && strings.HasPrefix(req.Command.Op, "pane.teleport") {
 		err = errors.New("rex: a teleport is this machine's to show")
 	} else if remote && req.Op == "command" && req.Command != nil && !remoteCommand(*req.Command) {
 		err = fmt.Errorf("rex: %s is this machine's GoRex window's", req.Command.Op)
-	} else if remote && req.Op == "remote.pair" {
-		err = errors.New("rex: this machine is allowed there already")
-	} else if remote && !remoteAllowed(req.Op) && !(req.Op == "action" && s.remoteControlEnabled()) {
+	} else if remote && !remoteAllowed(req.Op) {
 		log.Printf("rex: denied %q to a remote connection", req.Op)
 		err = fmt.Errorf("%s is not allowed remotely", req.Op)
 	} else {
@@ -828,15 +796,9 @@ func (s *Server) request(req Request, peer string, kept *keptConn) Response {
 	return res
 }
 
-// info describes ss, with the paired name of its remote owner.
+// info describes ss.
 func (s *Server) info(ss *session) SessionInfo {
-	in := ss.info()
-	if in.Owner != "" {
-		if c := s.remoteClientFor(in.Owner); c != nil {
-			in.OwnerName = c.Name
-		}
-	}
-	return in
+	return ss.info()
 }
 
 // all returns the sessions, in the order they were created.

@@ -3,7 +3,7 @@ name: REF-005
 description: "The Rex API that `GoRex rexapi` serves to the apps of Rex: paths in, setup, commands and the differences from a Rex server. Use when you change the Rex API gateway."
 metadata:
   created: "2026-10-31"
-  updated: "2026-11-20"
+  updated: "2026-11-26"
 ---
 
 # REF-005: Rex's apps
@@ -49,22 +49,21 @@ it to Rex clients in Rex's terms:
   move, resize, and GoRex's own move of a window to another session) the
   GoRex server makes itself; an open window shows them at once.
 
-The GoRex server runs the gateway itself while remote access, the local
-network listener or built-in Tailscale is on, and again after it
-restarts or upgrades: nothing else needs to run. `GoRex rexapi` runs one of its own,
+The GoRex server runs the gateway itself while Direct TLS, the relay
+client, or the local network listener is on, and again after it restarts
+or upgrades: nothing else needs to run. `GoRex rexapi` runs one of its own,
 for development; the two never run on the same data directory at once.
 
-The gateway listens on five places:
+The gateway listens on four places:
 
 - its local socket, `rexapi.sock` in GoRex's data directory, for this
   user only. The Rex CLI reaches it with `rex -S unix://PATH`, and the
-  methods that administer the gateway or the server (`server.tailscale.*`, `server.stop`) are accepted
+  methods that administer the gateway or the server (`server.stop`) are accepted
   only there, as on a Rex server;
-- the local network, over plain HTTP, while that listener is on: only
-  the networks it allows get in, with the pairing token (below);
-- the tailnet, over HTTPS, while built-in Tailscale is on;
-- the session server's tailcat address, on Rex's port 7297, while remote
-  access is on (below);
+- Direct TLS or outbound `windrex-relay` (`docs/NET-005-direct-relay.md`),
+  authenticated by a 256-bit Bearer token (`rexapi/direct.json`);
+- the local network, over plain HTTP and WebTransport, while that listener
+  is on: only the networks it allows get in, with the pairing token (below);
 - with `GoRex rexapi --listen http://127.0.0.1:PORT`, a TCP port that lets
   everyone in unauthenticated: for tests on this machine only.
 
@@ -75,15 +74,14 @@ ORIGIN`, empty by default). This is how the standalone web client
 (docs/REF-007-web-client.md), hosted elsewhere, reaches a host. Native clients
 send no origin and are not affected.
 
-Before that, on the local network, the tailnet and `--listen`, the
+Before that, on the local network and `--listen`, the
 gateway answers only a request whose `Host` is one of its own names, as
 a defence against DNS rebinding (a page that points a name of its own at
 the gateway's address sends no origin): `localhost`, an IP address (the
-listener's own among them), built-in Tailscale's MagicDNS name and its
-first label, or a name added with `gorex rexapi web host add NAME`, such
+listener's own among them), or a name added with `gorex rexapi web host add NAME`, such
 as one a reverse proxy in front of the gateway serves. Any other `Host`
 gets `421 Misdirected Request` with a JSON error, on every path. The
-local socket and tailcat are not checked: no browser reaches either.
+local socket is not checked: no browser reaches it.
 
 ## Local network
 
@@ -160,114 +158,28 @@ Mind what this listener is:
   the terminals show **and the pairing token** cross the local network
   in the clear: anyone who can sniff that network can take the token
   and use it. A VPN protects the way to the network, not the last hop in
-  it. Prefer an encrypted way: tailcat or built-in Tailscale for Rex Go,
+  it. Prefer an encrypted way: Direct TLS or `windrex-relay`
+  ([`NET-005`](NET-005-direct-relay.md)) for native clients, or
   WebTransport (self-signed, pinned certificate) for the web client.
 
 The settings live in `rexapi/lan.json` in GoRex's data directory; the
 server's gateway follows a change within a second, without a restart.
-**Settings › Server › Local API → Rex QR…** shows this gateway's pairing
-address as a code for Rex to scan, as `gorex rexapi pair` does: the
-built-in Tailscale address, `https://<machine>-gorex.<tailnet>.ts.net`.
-The code holds the address only, not a credential, and the device that
-scans it must be on the same tailnet. Until built-in Tailscale is on and
-its HTTPS address is ready, the dialog shows the local network
-listener's address instead, `http://<address>:7297/#k=<token>`, for a
-device on the same network. The dialog shows the address without the
-token; the code and Copy carry it.
+**Settings › Server › Local API → Rex QR…** shows the local network
+listener's pairing address, `http://<address>:7297/#k=<token>`, for a
+device on the same network (and **Direct / Relay QR…** shows the Direct
+TLS or relay pairing code when enabled). The dialog shows the address
+without the token; the code and Copy carry it.
 
 A session that a GoRex desktop of yours made on this machine (one of its
 remote hosts' panes) and that no local tab shows is under **Desktop
 terminals**. Opening a terminal there attaches to the existing process.
-A desktop counts as yours when it reached this machine over system
-Tailscale, which lets in only your own Tailscale user, or paired with it
-over tailcat: every paired client sees every session.
-
-## Built-in Tailscale
-
-Like a Rex server, the gateway joins your tailnet as a device of its own,
-with a copy of Tailscale inside it: the machine needs no Tailscale
-installed, and the device does not clash with a Rex server's. Its name is
-this machine's with `-gorex`, such as `studio-gorex`.
-
-The tailnet needs MagicDNS and HTTPS certificates turned on (the admin
-console's DNS page). By default the gateway lets in only the Tailscale
-user who signed the device in; every other caller gets 403.
-`--allow-tailnet-members` lets in everyone the tailnet's access rules
-allow.
-
-On Windows and macOS, the desktop's Tailscale discovery uses this same
-device: turning **Tailscale discovery and connections** on in Settings
-also turns built-in Tailscale on. Sign in with the button there.
-
-## Tailcat
-
-Rex Go reaches the machine over tailcat, at the address of GoRex's
-remote access (README, Remote access): WireGuard end to end, directly or
-through a DERP relay, with no Tailscale account and no VPN on the phone.
-The gateway keeps no tailcat of its own. The session server listens on
-port 7297 of its address beside 7464, and lets in only the clients that
-may command its layout over 7464: the keys of its allowlist and its
-network (an unknown key gets nothing; pairing stays on 7464). For each, it dials
-the gateway's socket, `rexapi-tailcat.sock` in GoRex's data directory
-(this user only), and writes a line with the client's key and name, then
-the bytes. With no gateway there, the connection closes and the client
-dials again.
-
-A client over tailcat is identified as
-`{"kind": "device", "transport": "tailcat", "display": "<client name>", "path": ["tailcat"]}`.
-It gets Rex's API as the owner does over built-in Tailscale, layout
-included, but not `server.tailscale.*`. Remove in Settings › Server › Devices,
-its sessions no longer shared, or turning remote
-access off closes its connections. `server.status` does not list this listener: its address is
-a secret.
-
-## Set up
-
-1. Open GoRex.
-2. Turn built-in Tailscale on; the GoRex server starts the gateway for it:
-
-   ```sh
-   GoRex rexapi tailscale on
-   ```
-
-   The first time, it prints a sign-in link: open it and sign in. Or sign
-   in without a browser with an auth key:
-   `GoRex rexapi tailscale on --auth-key-file key.txt` (the key is used
-   once, and never saved or logged). A tailnet run by your own control
-   server, such as Headscale, takes its URL:
-   `GoRex rexapi tailscale on --control-url https://headscale.example.com`,
-   or in Settings › Server, under the Tailscale switch. The URL must be `https`:
-   the control traffic itself is encrypted, but the device fetches the
-   server's key over the URL unauthenticated, so over `http` anyone on
-   the path could swap the key. `http` is accepted only for `localhost`
-   or a loopback, private (RFC 1918, `fc00::/7`) or link-local IP
-   address, judged as written and not resolved; a name such as
-   `http://headscale.lan` and Tailscale's own ranges (`100.64.0.0/10`,
-   `fd7a:115c:a1e0::/48`) need `https`. A saved `http` URL that is
-   refused keeps the device off, and `GoRex rexapi tailscale status` and
-   Settings say why. Turn it off first to switch
-   servers; an explicit empty `control_url`
-   (`GoRex rexapi call server.tailscale.enable '{"allow_tailnet_members":false,"control_url":""}'`)
-   or an empty field in Settings returns the device to Tailscale's own.
-3. Wait for `https: available` in `GoRex rexapi tailscale status`.
-4. Show the address as a QR code, and scan it with Rex on the phone:
-
-   ```sh
-   GoRex rexapi pair
-   ```
-
-   The code holds only the address, not a credential: the phone must be on
-   the same tailnet, signed in as you.
-
-Built-in Tailscale stays on across restarts of the gateway, with its
-sign-in, until `GoRex rexapi tailscale off`. `tailscale logout` signs the
-device out; `tailscale rename NAME` renames it.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `GoRex rexapi [--listen URL] [--socket PATH] [--tailnet-dir DIR]` | a gateway of its own, for development; the server runs one while remote access, the local network or built-in Tailscale is on |
+| `GoRex rexapi [--listen URL] [--socket PATH] [--state-dir DIR]` | a gateway of its own, for development; the server runs one while Direct TLS, relay, or the local network listener is on |
+| `GoRex rexapi direct on \| relay \| off \| status \| qr \| rotate` | Direct TLS listener and stateless `windrex-relay` client (`docs/NET-005-direct-relay.md`) |
 | `GoRex rexapi lan on \| off \| status` | the listener on the local network |
 | `GoRex rexapi lan listen HOST:PORT` | the address it listens on |
 | `GoRex rexapi lan allow NETWORK` / `deny NETWORK` | the networks let in: a CIDR, or an address alone |
@@ -275,11 +187,8 @@ device out; `tailscale rename NAME` renames it.
 | `GoRex rexapi lan legacy add ADDRESS \| remove ADDRESS \| list` | addresses let in without the token, for apps that cannot send one: single addresses only |
 | `GoRex rexapi lan qr [--origin URL]` | the web client's pairing link and QR code for WebTransport, with the token |
 | `GoRex rexapi web allow ORIGIN` / `deny ORIGIN` | the web pages trusted, by origin, such as `https://gorex-web.example.workers.dev`: `http(s)://host[:port]`, no path or wildcard; in `rexapi/web.json`, followed within a second (docs/REF-007-web-client.md) |
-| `GoRex rexapi web host add NAME` / `host remove NAME` | the host names the gateway answers besides `localhost`, IP addresses and built-in Tailscale's names: a DNS name, no port or wildcard; in `rexapi/web.json` |
+| `GoRex rexapi web host add NAME` / `host remove NAME` | the host names the gateway answers besides `localhost` and IP addresses: a DNS name, no port or wildcard; in `rexapi/web.json` |
 | `GoRex rexapi web status` | the web pages trusted, and the host names added |
-| `GoRex rexapi tailscale on [--hostname NAME] [--control-url URL] [--allow-tailnet-members] [--auth-key-file FILE]` | turn built-in Tailscale on |
-| `GoRex rexapi tailscale off \| login \| logout \| rename NAME \| status` | the rest of `server.tailscale.*`, and its status |
-| `GoRex rexapi pair [--json]` | the tailnet address as a QR code |
 | `GoRex rexapi call METHOD [JSON]` | call any method, as `rex api call` does |
 
 The gateway's state lives in `rexapi/` in GoRex's data directory.
@@ -323,13 +232,6 @@ meets:
   host is connected again.
 - Tabs and panes of remote hosts are left out of the views. GoRex's
   own `GET /api/spaces` tells which they are (below).
-- Built-in Tailscale's sign-in link, `auth_url`, goes only to the local
-  socket: whoever opens it first claims the device. Over the local
-  network or the tailnet, `server.status`, `session.bootstrap`'s
-  `server_status` and `tailscale_status_changed` leave it out, so such a
-  client sees `needs_login` with no link, and a new link alone sends it
-  no event. Get the link on this machine, from
-  `GoRex rexapi tailscale status` or `GoRex rexapi tailscale login`.
 - Revision 8's `data_tickets` on `session.bootstrap` is served: a client
   that asks for the terminal blocks gets a ticket for each one, and opens
   its terminals without a `data.connect` round trip each. Only terminals
@@ -339,8 +241,6 @@ meets:
   the primary endpoint (`peer_credentials`; on Windows its admission is
   left out), then `--listen`'s port and the local network's listener
   while it listens (`anonymous`), each with the address it is bound to.
-  Built-in Tailscale is not in the list, as on a Rex server: `tailscale`
-  describes it.
 - A terminal's data stream can start over in the middle. The gateway
   reads the session's output all the time, so the GoRex server never
   drops it as a client too far behind. A connection slower than the
@@ -671,8 +571,6 @@ through that host's own gateway.
 | Symptom | Check |
 | --- | --- |
 | `GoRex is not running on this machine` | Open GoRex first: the gateway starts no server. |
-| `tailscale: needs_login` | Open the `sign in` link of `GoRex rexapi tailscale status`, or run `GoRex rexapi tailscale login` for a new one. |
-| `https: pending` stays, or Tailscale turns off with an error | Turn on MagicDNS and HTTPS in the tailnet's admin console, then `GoRex rexapi tailscale on` again. |
-| The phone gets 403 | It is signed in to Tailscale as another user, or is a tagged device: sign it in as you, or turn on `--allow-tailnet-members`. |
-| A page or client gets 421 | It reached the gateway by a name the gateway doesn't know: use its IP address, `localhost` or the tailnet name, or add the name with `GoRex rexapi web host add NAME`. |
+| The phone gets 401 or 403 | Verify the Direct TLS / relay Bearer token (re-scan the QR code) or LAN allowlist and pairing token. |
+| A page or client gets 421 | It reached the gateway by a name the gateway doesn't know: use its IP address or `localhost`, or add the name with `GoRex rexapi web host add NAME`. |
 | `no Rex API gateway on …` | The gateway is not running, or listens on another socket (`--socket`, `GOREX_REXAPI_SOCKET`). |

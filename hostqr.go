@@ -1,39 +1,24 @@
 package main
 
 import (
-	"context"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"rsc.io/qr"
 
-	"gorex/internal/rex"
 	"gorex/internal/rexapi"
 	"gorex/locales"
 )
 
-// The settings window owns this dialog and its asynchronous endpoint lookup.
+// The settings window owns this pairing QR dialog.
 type hostPairQR struct {
-	host, address                     string
-	image                             ui.ImageSource
-	open, loading, copied, copyFailed bool
-	local                             bool
-	// tailnet tells that the address is the gateway's tailnet one, which
-	// the device must be on the same tailnet as; the local network's
-	// needs the same network as the address.
-	tailnet bool
-	// rexGo is this machine's code for Rex Go, of its tailcat address: a
-	// secret, so it is never logged. The dialog shows the link as
-	// copyable text (docs/WEB-006-tailcat.md): the web client's Add host
-	// takes the same rexgo://tailcat string the code encodes.
-	rexGo bool
-	// direct is that its address is the second one, for devices that dial
-	// this machine directly (Reachable at).
-	direct bool
+	host, address            string
+	image                    ui.ImageSource
+	open, copied, copyFailed bool
+	local                    bool
 	// directTLS is this machine's native TLS direct / self-hosted relay
 	// pairing code (rexapi.DirectConfig.PairURL). It carries the Bearer
 	// pairing token in its fragment, so the token stays inside the QR image
@@ -55,40 +40,25 @@ type hostPairQR struct {
 	webErr                     string
 }
 
-// localRexPairs are this computer's Rex pairing addresses: the gateway's
-// tailnet HTTPS address, as "gorex rexapi pair" shows it, and the local
-// network listener's, for a phone on the same network. The code holds the
-// address only. Neither waits, so the server page draws them every
-// frame: the tailnet's is the gateway's last answer
-// (rexapi.CachedPairURL), and a new one draws the window again; the
-// listener's comes from the settings the page's poll reads.
-func localRexPairs() (tailnet, lan string) {
-	win := settingsUI.win
-	tailnet = rexapi.CachedPairURL(func() {
-		if win != nil {
-			win.Update(func() {})
-		}
-	})
-	return tailnet, remoteUI.lan.PairURL(remoteUI.lanStatus)
+// localRexPair is this computer's local network Rex pairing address, for a
+// phone on the same network. It comes from the settings the page's poll reads.
+func localRexPair() string {
+	return remoteUI.lan.PairURL(remoteUI.lanStatus)
 }
 
 func (a *App) openLocalPairQR() {
-	address, lan := localRexPairs()
-	tailnet := address != ""
-	if !tailnet {
-		address = lan
-	}
+	address := localRexPair()
 	_, image := mobilePairQR(address)
 	if image != nil {
 		name, _, _ := a.hostIdentity()
-		page := &hostPairQR{host: name, address: address, image: image, open: true, local: true, tailnet: tailnet}
+		page := &hostPairQR{host: name, address: address, image: image, open: true, local: true}
 		// The page's code, and whether this computer lets the page in. A
 		// listener that is off, holds no token or has no WebTransport leg
 		// gives no link: the page could not reach it anyway.
 		if web := remoteUI.lan.WebPairURL(remoteUI.lanStatus, rexapi.WebOrigin); web != "" {
 			page.webURL = web
 			page.webImage = qrImage(web)
-			page.webTrusted = trustsWebOrigin(rexapi.TailnetDir(), rexapi.WebOrigin)
+			page.webTrusted = trustsWebOrigin(rexapi.StateDir(), rexapi.WebOrigin)
 		}
 		remoteUI.pairQR = page
 	}
@@ -145,70 +115,6 @@ func trustsWebOrigin(dir, origin string) bool {
 	return false
 }
 
-func openHostPairQR(h *hostConn) {
-	win := settingsUI.win
-	if win == nil {
-		return
-	}
-	page := &hostPairQR{host: h.label(), open: true, loading: true}
-	remoteUI.pairQR = page
-	target := h.Address
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		var address string
-		var image ui.ImageSource
-		if c, err := rex.ConnectRemote(ctx, target); err == nil {
-			hello, err := c.Hello()
-			c.Close()
-			if err == nil {
-				address, image = mobilePairQR(hello.RexPairURL)
-			}
-		}
-		win.Update(func() {
-			if remoteUI.pairQR == page {
-				page.address, page.image, page.loading = address, image, false
-			}
-		})
-	}()
-}
-
-// openRexGoQR opens the pairing window and shows this machine's code for
-// Rex Go (docs/IOS-002-tailcat.md, Pairing a phone). The address is asked for
-// here and goes into the image and the copyable link only: never a log.
-// With direct it is the second address's, of Reachable at.
-func (a *App) openRexGoQR(direct bool) {
-	name, _, _ := a.hostIdentity()
-	// Set off the UI thread, read on it once the change is done.
-	var image ui.ImageSource
-	var link string
-	a.remoteDo(func(srv *rex.Client) error {
-		if err := srv.StartPairing(); err != nil {
-			return err
-		}
-		st, err := srv.RemoteStatus()
-		addr := st.Address
-		if direct {
-			addr = st.ReachableAddress
-		}
-		if err == nil && addr != "" {
-			link = rexGoPairURL(addr, name)
-			image = qrImage(link)
-		}
-		return err
-	}, func() {
-		remoteUI.pairQR = &hostPairQR{host: name, address: link, image: image, open: true, rexGo: true, direct: direct}
-	})
-}
-
-// rexGoPairURL is the code Rex Go pairs by: the tailcat address and the
-// machine's name, rexgo://tailcat?a=<address>&n=<name>. A space is %20,
-// as Rex Go reads no + for one.
-func rexGoPairURL(address, name string) string {
-	q := url.Values{"a": {address}, "n": {name}}.Encode()
-	return "rexgo://tailcat?" + strings.ReplaceAll(q, "+", "%20")
-}
-
 // mobilePairQR returns the code for a Rex pairing address, and the
 // address to show and copy: a bare http(s) origin, or the local network
 // listener's with its pairing token, http://IP:PORT/#k=TOKEN
@@ -260,8 +166,6 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 	title := locales.HostsRexQRTitle(page.host)
 	if page.directTLS {
 		title = locales.RemoteDirectTLSQRTitle(page.host)
-	} else if page.rexGo {
-		title = locales.RemoteRexGoQRTitle(page.host)
 	}
 	// The web tab's code opens a browser, not Rex: it says so.
 	if page.webImage != nil && page.tab == 1 {
@@ -283,8 +187,6 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			ui.Segmented(c, &page.tab, locales.HostsPairCodeAddress(), locales.HostsPairCodePage()).Label(title).Changed()
 		}
 		switch {
-		case page.loading:
-			ui.Text(c, locales.HostsRexQRLoading()).FontSize(fontBody).TextColor(k.textMuted).LineHeight(1.35)
 		case web && page.tab == 1:
 			ui.Text(c, locales.HostsPairWebHint(rexapi.WebOrigin)).FontSize(fontCallout).TextColor(k.textMuted).LineHeight(1.35)
 			// The browser this dialog runs beside is the usual one, so
@@ -294,7 +196,7 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			} else {
 				ui.Text(c, locales.HostsPairWebUntrusted()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
 				if ui.Button(c.Key("trust-web"), locales.HostsPairWebTrust(rexapi.WebOrigin)).Clicked() {
-					if _, err := rexapi.AllowWebOrigin(rexapi.TailnetDir(), rexapi.WebOrigin); err != nil {
+					if _, err := rexapi.AllowWebOrigin(rexapi.StateDir(), rexapi.WebOrigin); err != nil {
 						page.webAllowFailed, page.webErr = true, err.Error()
 					} else {
 						page.webTrusted, page.webAllowFailed = true, false
@@ -317,33 +219,15 @@ func hostPairQRSheet(c *ui.Context, k *colors, page *hostPairQR) {
 			ui.Text(c, locales.HostsPairWebScan()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
 			pairQRCode(c, page.webImage, title)
 		case page.image != nil:
-			hint := locales.HostsRexQRHint()
+			hint := locales.HostsLocalLanRexQRHint()
 			if page.directTLS {
 				hint = locales.RemoteDirectTLSQRHint()
-			} else if page.direct {
-				hint = locales.RemoteDirectQRHint()
-			} else if page.rexGo {
-				hint = locales.RemoteRexGoQRHint()
-			} else if page.local {
-				hint = locales.HostsLocalRexQRHint()
-				if !page.tailnet {
-					hint = locales.HostsLocalLanRexQRHint()
-				}
 			}
 			ui.Text(c, hint).FontSize(fontCallout).TextColor(k.textMuted).LineHeight(1.35)
 			pairQRCode(c, page.image, title)
-			if page.rexGo {
-				// The web client takes the same link the code encodes,
-				// pasted into its Add host (docs/WEB-006-tailcat.md).
-				ui.Text(c, page.address).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.text).Label(page.address)
-			} else {
-				// The pairing token stays in the code and the copy, off
-				// the screen.
-				shown, _, _ := strings.Cut(page.address, "#")
-				ui.Text(c, shown).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.text).SingleLine().Label(shown)
-			}
-		case page.rexGo:
-			ui.Text(c, locales.RemoteRexGoQRUnavailable()).FontSize(fontCallout).TextColor(k.textMuted).LineHeight(1.35)
+			// The pairing token stays in the code and the copy, off the screen.
+			shown, _, _ := strings.Cut(page.address, "#")
+			ui.Text(c, shown).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.text).SingleLine().Label(shown)
 		default:
 			ui.Text(c, locales.HostsRexQRUnavailable()).FontSize(fontCallout).TextColor(k.textMuted).LineHeight(1.35)
 		}

@@ -16,8 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"tailscale.com/client/tailscale/apitype"
-
 	"gorex/internal/rex"
 )
 
@@ -349,8 +347,8 @@ func TestDownloadShort(t *testing.T) {
 
 // TestHostCheck: over a listener a browser reaches, a request whose Host
 // is not the gateway's gets 421, on every path; localhost, an IP
-// address, built-in Tailscale's names and a name of web.json pass. The
-// local socket and tailcat are not checked.
+// address, and a name of web.json pass. The local socket, direct TLS,
+// and stateless relay are not checked.
 func TestHostCheck(t *testing.T) {
 	f := startFixture(t)
 	dir := t.TempDir()
@@ -358,10 +356,6 @@ func TestHostCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.g.web = newWebOrigins(dir)
-	node := &fakeNode{state: "Running", hostname: "dev", owner: 7, callers: map[string]*apitype.WhoIsResponse{}, ready: make(chan struct{})}
-	f.g.tailnet = newTailnet(f.g, t.TempDir(), nil)
-	f.g.tailnet.node = node
-	defer func() { f.g.tailnet = nil }()
 	do := func(transport, path, host string) int {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Host = host
@@ -370,7 +364,7 @@ func TestHostCheck(t *testing.T) {
 		return rec.Code
 	}
 	for _, path := range []string{"/api/download?ticket=x", "/api/spaces", "/api/control", "/"} {
-		for _, transport := range []string{transportTCP, transportLAN, transportTailscale} {
+		for _, transport := range []string{transportTCP, transportLAN} {
 			for _, host := range []string{"evil.example", "evil.example:7297", "gorex.example.com.evil.example", "dev.evil.example", ""} {
 				if code := do(transport, path, host); code != http.StatusMisdirectedRequest {
 					t.Errorf("%s %s Host %q: %d, want 421", transport, path, host, code)
@@ -379,22 +373,17 @@ func TestHostCheck(t *testing.T) {
 		}
 		for _, host := range []string{
 			"localhost", "LOCALHOST:7297", "127.0.0.1", "127.0.0.1:7297", "192.168.1.20:7297", "[::1]:7297", "[fe80::1]",
-			"100.64.0.1", "dev.example.ts.net", "DEV.example.ts.net.", "dev", "dev:443", "gorex.example.com", "gorex.example.com:8443",
+			"100.64.0.1", "gorex.example.com", "gorex.example.com:8443",
 		} {
 			if code := do(transportTCP, path, host); code == http.StatusMisdirectedRequest {
 				t.Errorf("%s Host %q: 421", path, host)
 			}
 		}
-		for _, transport := range []string{transportUnix, transportTailcat} {
-			if code := do(transport, path, "abc.tailcat.invalid:7297"); code == http.StatusMisdirectedRequest {
+		for _, transport := range []string{transportUnix, transportDirect, transportRelay} {
+			if code := do(transport, path, "arbitrary.example:7443"); code == http.StatusMisdirectedRequest {
 				t.Errorf("%s %s: 421", transport, path)
 			}
 		}
-	}
-	// With built-in Tailscale off, its names are not the gateway's.
-	f.g.tailnet.node = nil
-	if code := do(transportTCP, "/api/spaces", "dev.example.ts.net"); code != http.StatusMisdirectedRequest {
-		t.Errorf("tailnet name with Tailscale off: %d", code)
 	}
 }
 
@@ -403,7 +392,7 @@ func TestWebHostCommand(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
 	t.Setenv("GOREX_REXAPI_SOCKET", shortSocket(t))
 	quiet(t)
-	dir := TailnetDir()
+	dir := StateDir()
 	for _, step := range []struct {
 		args []string
 		code int

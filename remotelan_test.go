@@ -6,9 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"gorex/internal/rex"
 	"gorex/internal/rexapi"
-	"gorex/internal/testrex"
 	"gorex/locales"
 )
 
@@ -22,9 +20,8 @@ func TestRemoteLANCard(t *testing.T) {
 	t.Cleanup(stopRemotePoll)
 	a := &App{}
 	settingsUI.section = "server"
-	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
 	remoteUI.lan, remoteUI.lanStatus, remoteUI.lanErr, remoteUI.lanAdd = rexapi.LANConfig{}, rexapi.LANStatus{}, "", ""
-	tt := ui.NewTester(a.settingsView, 780, 1400)
+	tt := ui.NewTester(a.settingsView, 780, 2200)
 	tt.Frame()
 	for _, s := range []string{locales.RemoteLanSwitch(), "Off", "Networks allowed", "None: no device can connect."} {
 		if !tt.HasText(s) {
@@ -41,7 +38,7 @@ func TestRemoteLANCard(t *testing.T) {
 			tt.Frame()
 		}
 	}
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	saved, _ := rexapi.LoadLAN(dir)
 	if remoteUI.lanErr == "" {
 		if !saved.Enabled || saved.Listen == "" || len(saved.Allow) != 1 {
@@ -107,36 +104,6 @@ func TestRemoteLANCard(t *testing.T) {
 	}
 }
 
-// TestPairURLOffRender: drawing the server page does not wait on the
-// gateway, even when its socket answers no one. At most one look reaches
-// it, in the background, and the frames are drawn while that look still
-// waits: a frame that waited would have given up on it and closed it.
-func TestPairURLOffRender(t *testing.T) {
-	isolateSettings(t, "")
-	registerFonts()
-	t.Setenv("GOREX_DIR", t.TempDir())
-	section, remote := settingsUI.section, remoteUI
-	t.Cleanup(func() { settingsUI.section, remoteUI = section, remote })
-	gw := testrex.NewStalled(t)
-	t.Setenv("GOREX_REXAPI_SOCKET", gw.Path)
-	// The look ends before the socket goes.
-	t.Cleanup(func() {
-		waitForThat(t, func() bool { _, open := gw.Counts(); return open == 0 }, "the look to give up")
-	})
-
-	a := &App{}
-	settingsUI.section = "server"
-	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
-	remoteUI.lan, remoteUI.lanStatus = rexapi.LANConfig{}, rexapi.LANStatus{}
-	tt := ui.NewTester(a.settingsView, 780, 1400)
-	for range 3 {
-		tt.Frame()
-	}
-	if dials, open := gw.Counts(); dials > 1 || open != dials {
-		t.Fatalf("drawing dialed the gateway %d times, %d given up", dials, dials-open)
-	}
-}
-
 // TestLocalPairQRCloses: this machine's code stays open while its
 // address works, and closes once the listener it names goes away.
 func TestLocalPairQRCloses(t *testing.T) {
@@ -145,18 +112,12 @@ func TestLocalPairQRCloses(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
 	section, remote, qr := settingsUI.section, remoteUI, remoteUI.pairQR
 	t.Cleanup(func() { settingsUI.section, remoteUI, remoteUI.pairQR = section, remote, qr })
-	gw := testrex.NewStalled(t)
-	t.Setenv("GOREX_REXAPI_SOCKET", gw.Path)
-	t.Cleanup(func() {
-		waitForThat(t, func() bool { _, open := gw.Counts(); return open == 0 }, "the look to give up")
-	})
 
 	a := &App{}
 	settingsUI.section = "server"
-	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
 	remoteUI.lan = rexapi.LANConfig{Enabled: true, Listen: "192.168.1.20:7297", Allow: []string{"192.168.1.0/24"}, Token: "test-token-AAAA"}
 	remoteUI.lanStatus = rexapi.LANStatus{Running: true, Listening: "192.168.1.20:7297"}
-	tt := ui.NewTester(a.settingsView, 780, 1400)
+	tt := ui.NewTester(a.settingsView, 780, 2200)
 	tt.Frame()
 	if !tt.HasText(locales.HostsRexQR()) {
 		t.Fatalf("no QR button for the listener: %q", tt.Texts())
@@ -179,52 +140,11 @@ func TestLocalPairQRCloses(t *testing.T) {
 	}
 }
 
-// TestRemoteRelayRow draws the relay field, and refuses a URL in it.
-func TestRemoteRelayRow(t *testing.T) {
-	isolateSettings(t, "")
-	registerFonts()
-	t.Setenv("GOREX_DIR", t.TempDir())
-	t.Cleanup(stopRemotePoll)
-	a := &App{}
-	settingsUI.section = "server"
-	remoteUI.loaded, remoteUI.st, remoteUI.details = true, rex.RemoteStatus{Enabled: true, Relay: "derp.example.com"}, true
-	remoteUI.relay, remoteUI.relayEdited, remoteUI.relayErr = "https://derp.example.com", true, ""
-	tt := ui.NewTester(a.settingsView, 780, 1400)
-	tt.Frame()
-	for _, s := range []string{locales.RemoteRelay(), locales.RemoteRelayNote()} {
-		if !tt.HasText(s) {
-			t.Fatalf("no %q in %q", s, tt.Texts())
-		}
-	}
-	// The relay's Save is at the right of its row's title, on its line;
-	// the local network's Save comes first on the page.
-	title, _ := tt.Find(locales.RemoteRelay())
-	saveX, saveY := float32(0), title.Y+title.H/2
-	for x := float32(770); x > title.X+title.W && remoteUI.relayErr == ""; x -= 4 {
-		tt.ClickAt(x, saveY)
-		tt.Frame()
-		saveX = x
-	}
-	if remoteUI.relayErr != locales.RemoteRelayInvalid() || !tt.HasText(locales.RemoteRelayInvalid()) {
-		t.Errorf("a URL saved: %q", remoteUI.relayErr)
-	}
-
-	// A save the server does not take says why under the field, which
-	// keeps what was typed.
-	remoteUI.relay = "derp.example.com"
-	tt.Frame()
-	tt.ClickAt(saveX, saveY)
-	tt.Frame()
-	if remoteUI.relayErr != locales.RemoteNotConnected() || !tt.HasText(remoteUI.relayErr) || !remoteUI.relayEdited || remoteUI.err != nil {
-		t.Errorf("a failed save: %q, edited %v, page error %v", remoteUI.relayErr, remoteUI.relayEdited, remoteUI.err != nil)
-	}
-}
-
 // TestMobilePairQRTakesToken takes the local network's address with its
 // pairing token in the fragment, and nothing else beyond a bare origin.
 func TestMobilePairQRTakesToken(t *testing.T) {
 	for addr, ok := range map[string]bool{
-		"https://dev.example.ts.net":           true,
+		"https://dev.example.com":              true,
 		"http://192.0.2.10:7297":               true,
 		"http://192.0.2.10:7297/#k=test-token": true,
 		"http://192.0.2.10:7297#k=test-token":  false,
@@ -247,7 +167,7 @@ func TestMobilePairQRTakesToken(t *testing.T) {
 func TestSaveLANKeepsRotatedToken(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
 	t.Cleanup(func() { remoteUI.lan, remoteUI.lanErr = rexapi.LANConfig{}, "" })
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	if err := rexapi.SaveLAN(dir, rexapi.LANConfig{Listen: "192.0.2.10:7297", Allow: []string{"192.0.2.0/24"}}); err != nil {
 		t.Fatal(err)
 	}

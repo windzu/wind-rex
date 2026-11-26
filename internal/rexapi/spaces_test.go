@@ -128,8 +128,8 @@ func TestSpacesRevisionFollowsOtherHostsPanes(t *testing.T) {
 func TestSpacesEndpoint(t *testing.T) {
 	f := startFixture(t)
 	hosts := `{"hosts":[
-		{"id":"h1","name":"Secret Studio","address":"tcat://SECRET-ADDRESS-ONE","machine":"machine-one"},
-		{"id":"h2","name":"Hidden Box","address":"tailnet:SECRET-PEER-TWO","machine":"machine-two"}]}`
+		{"id":"h1","name":"Secret Studio","address":"https://h1.example.com:7443/#k=SECRET-ADDRESS-ONE","machine":"machine-one"},
+		{"id":"h2","name":"Hidden Box","address":"https://h2.example.com:7443/#k=SECRET-PEER-TWO","machine":"machine-two"}]}`
 	if err := os.WriteFile(filepath.Join(rex.Dir(), "hosts.json"), []byte(hosts), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestSpacesEndpoint(t *testing.T) {
 	if !reflect.DeepEqual(got.Sessions[0].RemoteBlocks, want) {
 		t.Errorf("remote blocks %+v", got.Sessions[0].RemoteBlocks)
 	}
-	for _, secret := range []string{"Secret Studio", "SECRET-ADDRESS-ONE", "Hidden Box", "SECRET-PEER-TWO", `"h1"`, `"h2"`, "r1", "unknown", rex.ClientPublicKey()} {
+	for _, secret := range []string{"Secret Studio", "SECRET-ADDRESS-ONE", "Hidden Box", "SECRET-PEER-TWO", `"h1"`, `"h2"`, "r1", "unknown"} {
 		if strings.Contains(string(body), secret) {
 			t.Errorf("/api/spaces tells %q: %s", secret, body)
 		}
@@ -216,7 +216,7 @@ func TestHostMachinesCached(t *testing.T) {
 	}
 	write := func(machine string, at time.Time) {
 		t.Helper()
-		os.WriteFile(path, []byte(`{"hosts":[{"id":"h1","address":"tcat://x","machine":"`+machine+`"}]}`), 0o600)
+		os.WriteFile(path, []byte(`{"hosts":[{"id":"h1","address":"https://h1.example.com:7443/#k=tok1","machine":"`+machine+`"}]}`), 0o600)
 		os.Chtimes(path, at, at)
 	}
 	at := time.Now().Add(-time.Hour).Truncate(time.Second)

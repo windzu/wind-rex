@@ -54,11 +54,11 @@ func TestWTCertManagerRotation(t *testing.T) {
 
 func TestWebTransportControlAndHTTP(t *testing.T) {
 	f := startFixture(t)
-	if err := SaveWeb(TailnetDir(), WebConfig{Origins: []string{"https://web.gorex.uk"}}); err != nil {
+	if err := SaveWeb(StateDir(), WebConfig{Origins: []string{"https://web.gorex.uk"}}); err != nil {
 		t.Fatalf("save web config: %v", err)
 	}
-	f.g.web = newWebOrigins(TailnetDir())
-	f.g.lan = newLANListener(f.g, TailnetDir())
+	f.g.web = newWebOrigins(StateDir())
+	f.g.lan = newLANListener(f.g, StateDir())
 	f.g.lan.apply(LANConfig{
 		Enabled: true,
 		Listen:  "127.0.0.1:0",
