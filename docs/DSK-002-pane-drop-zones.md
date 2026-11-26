@@ -3,7 +3,7 @@ name: DSK-002
 description: "Dragging a pane by its header onto another pane moves it beside the target or swaps the two. Use when you change pane drag and drop or the split tree."
 metadata:
   created: "2026-11-01"
-  updated: "2026-11-20"
+  updated: "2026-11-26"
 ---
 
 # DSK-002: Dragging a pane onto another pane
@@ -18,7 +18,7 @@ This follows Rex (Rex Beta, `SuperSplit`: `SuperSplitPaneDropDestination`, `Supe
 
 Before #148 the code worked as follows:
 
-- The header of a tiled pane drags the pane (`paneHeader`, `browserHeader`: `h.Drag(p)`). The header of a float moves the float instead (`dragFloat`).
+- The header of a tiled pane drags the pane (`paneHeader`: `h.Drag(p)`). The header of a float moves the float instead (`dragFloat`).
 - A pane card takes a dropped `*Pane` (`paneCard`, `view.go`) and calls `movePaneToPane`. That always splits the target left and right. The dragged pane goes on the right, at half the width of the target.
 - Over a card, the drag shows only a border on the whole card (`k.busy.Alpha(0.6)`). So the user cannot see where the pane will go.
 - The label of a tab takes a dropped `*Pane` and moves it to that tab (`movePaneToTab`).
@@ -141,7 +141,7 @@ if dragged, ok := ui.Drop[*Pane](card); ok {
 - `paneDropZone(nx, ny float32, center bool) dropZone` is pure. Tests cover it as they cover `tabDropZone`.
 - `paneDropZoneAt(e, dragged, target)` reads the pointer and bounds. It answers `ok == false` for the cases that do not take the drop.
 - `drawPaneDrop(e, k, zone)` draws the indicator.
-- The header of the source: `if h.Dragging() { dimmed(h, 0.4) }` in `paneHeader` and `browserHeader`.
+- The header of the source: `if h.Dragging() { dimmed(h, 0.4) }` in `paneHeader`.
 
 The new code is in a new file, `panedrop.go`, with its tests in `panedrop_test.go`. So `view.go` and `state.go` grow by a few lines.
 
@@ -151,7 +151,6 @@ This work was done separately (#475). `pane.move` takes `direction` `left`, `rig
 
 ### Risks
 
-- **Browser panes.** A web view is a native view over the window. On a Mac, a pane dropped on a page still lands. On the left edge it went left of the browser pane, and at the center the two swapped. It is not checked yet whether the indicator shows over the page, under the native view. If it does not, show it over the header, or overlay a drop layer over the web view while a pane drag is on.
 - **Hit testing.** The innermost element that takes `*Pane` gets the drag. Today only cards and tab labels take it. An element that takes `*Pane` and is added inside a card would take drags from the card.
 
 ## Tests

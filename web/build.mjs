@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Builds GoRex's web client, a standalone page that GoRex does not ship,
+// Builds WindRex's web client, a standalone local or self-hosted page,
 // into web/dist: libghostty-vt as WebAssembly, from Ghostty's sources at
-// the commit GoRex's terminal binding uses, with the Zig that Ghostty
+// the commit WindRex's terminal binding uses, with the Zig that Ghostty
 // asks for (fetched into a cache when ZIG is not set), and the
-// TypeScript client, bundled by esbuild. web/dist is what Cloudflare
-// serves (wrangler.jsonc) and what the dev server serves (dev.mjs).
+// TypeScript client, bundled by esbuild. web/dist is served by static
+// hosts and by the local dev server (dev.mjs).
 // It also builds the tailnet engine (web/tailnet, docs/WEB-002-tailscale.md)
 // with Go, when Go is installed: a page built without Go works, with no
 // built-in Tailscale.
@@ -25,9 +25,7 @@
 // a catalog error fails the build, and so does a missing translation in CI
 // ($CI set, or --ci).
 //
-// It also writes the page's app files (docs/REF-007-web-client.md, App): the
-// manifest, its icons (web/pwa, drawn by go run ./tools/mkicon -web) and
-// sw.js, the Service Worker, with this build's version and files.
+// It also copies the page's icon assets (web/pwa, drawn by go run ./tools/mkicon -web).
 //
 // Usage: node web/build.mjs [--ghostty-source <path>] [--rebuild-wasm] [--ci]
 //
@@ -293,8 +291,6 @@ export const appOptions = {
     __GOREX_COMMIT__: JSON.stringify(commit()),
     __GOREX_BUILT__: JSON.stringify(new Date().toISOString().slice(0, 10)),
     __GHOSTTY_COMMIT__: JSON.stringify(COMMIT),
-    // Whether the page registers sw.js: the build's, not the dev server's (dev.mjs).
-    __GOREX_SW__: "false",
   },
 };
 
@@ -422,39 +418,6 @@ export async function esbuild() {
   return import(pathToFileURL(join(web, "node_modules", "esbuild", "lib", "main.js")).href);
 }
 
-/** dir's files, by their paths from dir with forward slashes. */
-function filesOf(dir, at = dir) {
-  return readdirSync(at, { withFileTypes: true }).flatMap((e) =>
-    e.isDirectory() ? filesOf(dir, join(at, e.name)) : [relative(dir, join(at, e.name)).split("\\").join("/")],
-  );
-}
-
-/**
- * Writes dir/sw.js from web/sw.js with this build's files, which the
- * worker keeps for the page offline: all of dir but the page (which it
- * keeps as the scope's root), _headers, sw.js itself, and assets/lazy/,
- * which the page loads on demand and its loader keeps (Manifest): the
- * themes, built-in Tailscale's engine and Maple's chunks. The code chunks,
- * small, are all kept, so that every part of the page opens offline. Its
- * version is a hash of web/sw.js, the page and those files, so that a
- * build that changes any of them is a new worker, and one that changes
- * none is the same.
- */
-export function writeWorker(dir) {
-  const files = filesOf(dir)
-    .filter((f) => !["index.html", "_headers", "sw.js"].includes(f) && !f.startsWith("assets/lazy/"))
-    .sort();
-  let sw = readFileSync(join(web, "sw.js"), "utf8");
-  const h = createHash("sha256").update(sw);
-  for (const f of ["index.html", ...files]) h.update(f + "\0").update(readFileSync(join(dir, f))).update("\0");
-  const version = h.digest("hex").slice(0, 16);
-  const lines = ['const VERSION = "development";', "const FILES = [];"];
-  if (!lines.every((l) => sw.includes(l))) throw new Error(`web/sw.js has no ${lines.join(" or ")}`);
-  sw = sw.replace(lines[0], `const VERSION = ${JSON.stringify(version)};`).replace(lines[1], `const FILES = ${JSON.stringify(files)};`);
-  writeFileSync(join(dir, "sw.js"), sw);
-  console.log(`sw.js: version ${version}, ${files.length} files`);
-}
-
 /**
  * Bundles the client into dist/assets, lists its code chunks in the
  * manifest and writes the manifest; returns the script's path. The script
@@ -466,7 +429,7 @@ export function writeWorker(dir) {
 async function buildApp(manifest) {
   const { build } = await esbuild();
   const opts = { ...appOptions, absWorkingDir: web, metafile: true, logLevel: "warning" };
-  const define = { ...appOptions.define, __GOREX_SW__: "true" };
+  const define = { ...appOptions.define };
   const first = await build({ ...opts, write: false, define: { ...define, ...definesOf(manifest.assets, "") } });
   const key = (path) => relative(web, path).split("\\").join("/");
   const entryOf = (r) => Object.keys(r.metafile.outputs).find((k) => r.metafile.outputs[k].entryPoint === "src/main.ts");
@@ -530,11 +493,9 @@ async function main() {
     mkdirSync(join(dist, d));
     for (const f of readdirSync(join(root, "assets", d))) copyFileSync(join(root, "assets", d, f), join(dist, d, f));
   }
-  // The app's manifest and icons.
-  copyFileSync(join(web, "manifest.webmanifest"), join(dist, "manifest.webmanifest"));
+  // Favicon and sidebar icons.
   mkdirSync(join(dist, "pwa"));
   for (const f of readdirSync(join(web, "pwa"))) copyFileSync(join(web, "pwa", f), join(dist, "pwa", f));
-  writeWorker(dist);
   writeFileIndex(dist);
   console.log(`built ${dist}`);
 }

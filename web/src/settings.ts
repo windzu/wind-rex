@@ -6,7 +6,6 @@
 // (About checks for one). Each change is kept
 // (prefs.ts) and applied to the open panes at once by the page; a change
 // of language draws the dialog again in the new one.
-import { checkForUpdate, install, installKind } from "./app";
 import { allowCommand, commandBox, Host, HostLink, HostList, icon } from "./hosts";
 import {
   chordFromEvent, commandTitle, hasModifiedShortcuts, mac, resetAllShortcuts,
@@ -333,11 +332,6 @@ export class Settings {
   toggle() {
     if (this.dialog.open) this.close();
     else this.open();
-  }
-
-  /** The browser offered to install the page, or it was installed: the About section again. */
-  appChanged() {
-    if (this.dialog.open && this.section === "about") this.drawPage();
   }
 
   /** A host or a connection changed: the card, and the pages that show it, again, keeping the focus. A form being filled stays. */
@@ -1074,33 +1068,8 @@ export class Settings {
     const about = group(this.page);
     const version = __GOREX_COMMIT__ || t("aboutDevBuild");
     // The product's and the library's names are theirs, not translated.
-    row(about, "GoRex Web", __GOREX_BUILT__ ? t("aboutVersionBuilt", { version, date: formatDate(__GOREX_BUILT__) }) : t("aboutVersion", { version }));
+    row(about, "WindRex Web", __GOREX_BUILT__ ? t("aboutVersionBuilt", { version, date: formatDate(__GOREX_BUILT__) }) : t("aboutVersion", { version }));
     row(about, "libghostty-vt", t("aboutGhostty"), el("span", "settings-value", `Ghostty ${__GHOSTTY_COMMIT__.slice(0, 12)}`));
-
-    // Install App, where the browser offers it; iOS's Add to Home Screen, by hand; nothing once installed.
-    const kind = installKind();
-    if (kind === "prompt") {
-      const b = button(t("aboutInstallApp"), "host-add");
-      b.prepend(icon("app-window"));
-      b.onclick = () => void install();
-      row(group(this.page), t("aboutInstall"), t("aboutInstallHint"), b);
-    } else if (kind === "ios") {
-      row(group(this.page), t("aboutHomeScreen"), t("aboutHomeScreenHint"));
-    }
-
-    const check = button(t("aboutCheckUpdate"));
-    const state = el("span", "settings-value");
-    state.setAttribute("role", "status");
-    check.onclick = async () => {
-      check.disabled = true;
-      state.textContent = t("aboutChecking");
-      const result = await checkForUpdate();
-      state.textContent = t(
-        { current: "aboutUpToDate", ready: "aboutUpdateReady", failed: "aboutUpdateFailed", unsupported: "aboutUpdateUnsupported" }[result] as PlainKey,
-      );
-      check.disabled = false;
-    };
-    row(group(this.page), t("aboutUpdates"), "", state, check);
 
     const reset = button(t("aboutResetAll"), "host-add danger");
     reset.onclick = () => {

@@ -79,9 +79,9 @@ thing.
 
 ### Where not to use them
 
-- **Not on terminal or browser panes.** An effect renders its element into
+- **Not on terminal panes.** An effect renders its element into
   a bitmap every frame it paints: a pane's worth, at the terminal's frame
-  rate, and web views do not show through it.
+  rate.
 - **Not on long-lived large elements.** An effect costs a bitmap the size
   of its element for as long as it is set. Use it on small or short-lived
   ones; paint a large surface with `Draw` instead.
@@ -126,8 +126,7 @@ before. Three things make it up:
   and the workspace's colors), and the terminals' face fade by the
   Terminal opacity setting (`terminal.opacity`, 0.3 to 1, 0.8 by default;
   in `cardFace`); terminal panes are the system's glass, tinted by that
-  face at 0.4 (`glassTint`; a configured theme's whole). Browser panes
-  keep their face.
+  face at 0.4 (`glassTint`; a configured theme's whole).
 - **macOS has only the system's glass.** Every glass layer there is
   `ui.SystemGlass`; `paneGlass`, its fallback, paints flat on macOS (before
   macOS 26), and is MyGo's glass only on Windows and Linux. MyGo's glass

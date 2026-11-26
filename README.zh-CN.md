@@ -30,7 +30,7 @@ WindRex 基于 [GoRex](https://github.com/si-mods/gorex) `v0.56.1` 独立演进�
 - **持久化会话服务与原地热升级** — 所有终端运行在后台会话服务（`-server`）中，由无头 `libghostty-vt` 维护完整屏幕与滚动缓冲。关闭窗口不中断任务，`vim` / `lazygit` / `htop` 等全屏程序重连后精准还原；使用 `server upgrade` 可在不中断任何 Shell 的情况下原地升级服务端（[`REF-006`](docs/REF-006-session-server.md)）。
 - **直连 TLS 与无状态中继，专为蜂窝网络优化（`NET-005`）** — iOS 直接走系统原生 `URLSession` WebSocket + TLS 1.3（支持 CA 证书或自签名证书 SHA-256 指纹固定）与 256-bit Bearer Token 鉴权，支持公网/端口映射直连或自托管无状态 [`windrex-relay`](cmd/windrex-relay/main.go) 穿透内网。无需账号系统、不占用 iOS VPN 通道；切回前台 1.5 秒内完成存活探测并快速恢复，支持有序流水线写入以消除高 RTT 下的逐字卡顿（[`NET-005`](docs/NET-005-direct-relay.md)）。
 - **Mac + iPhone 配对与主机在线状态** — 通过 **空间 → 主机 → 项目 → 标签页 → 分屏** 统一管理多主机工作区，桌面与 iOS 均提供紧凑项目列表与主机绿色在线状态指示，支持扫码配对、iOS **实时活动（Live Activities）** 及桌面 **小组件（Widgets）**（[`MOD-002`](docs/MOD-002-projects.md)、[`IOS-006`](docs/IOS-006-live-activities.md)、[`IOS-010`](docs/IOS-010-widgets.md)）。
-- **面向 Coding Agent 的工作流** — 自动识别前台进程并解析 OSC 7501 状态协议（`working` / `blocked` / `done` / `error`）；支持 `gorex skill setup` 一键为 Claude Code、Codex、Antigravity CLI、Devin、OpenCode、Pi 注入技能与会话钩子；提供完整 CLI 编排命令（`ls` / `new` / `split` / `send` / `capture` / `wait` / `run`）、跨主机窗格 **Teleport**（[`DSK-003`](docs/DSK-003-teleport.md)）、Ghostty 主题配置兼容，以及本地浏览器与 Markdown 便签窗格。
+- **面向 Coding Agent 的工作流** — 自动识别前台进程并解析 OSC 7501 状态协议（`working` / `blocked` / `done` / `error`）；支持 `gorex skill setup` 一键为 Claude Code、Codex、Antigravity CLI、Devin、OpenCode、Pi 注入技能与会话钩子；提供完整 CLI 编排命令（`ls` / `new` / `split` / `send` / `capture` / `wait` / `run`）、跨主机窗格 **Teleport**（[`DSK-003`](docs/DSK-003-teleport.md)）、Ghostty 主题配置兼容，以及本地 Markdown 便签窗格。
 
 ## 各端能力与当前状态
 
@@ -38,11 +38,11 @@ WindRex 基于 [GoRex](https://github.com/si-mods/gorex) `v0.56.1` 独立演进�
 
 | 平台 | 角色 | 已支持能力 | 当前获取方式 |
 |---|---|---|---|
-| **macOS**（13.0+） | 桌面客户端 + 本地 Host | 持久标签与分屏、紧凑项目侧边栏、Ghostty 配置/主题、远程主机、浏览器/便签窗格、Teleport | 从源码构建（`go tool mygo dev` / `build`）· 签名 `.dmg` 待发布 |
+| **macOS**（13.0+） | 桌面客户端 + 本地 Host | 持久标签与分屏、紧凑项目侧边栏、Ghostty 配置/主题、远程主机、Markdown 便签窗格、Teleport | 从源码构建（`go tool mygo dev` / `build`）· 签名 `.dmg` 待发布 |
 | **iOS / iPadOS** | 移动端远程客户端 | 原生 Ghostty Metal 终端、蜂窝直连 TLS &amp; 中继、扫码配对、灵动岛实时活动、小组件、紧凑项目/会话列表 | 使用 Xcode 本地构建（`ios/GoRex.xcodeproj`）· TestFlight 分发接入中 |
 | **Linux** | 无头 Host + 桌面端 | 持久会话服务（`-server`）、原地热升级、直连 TLS / 中继接入、systemd 共享服务、桌面 GUI | 从源码构建（`go build`）· 安装包待发布 |
 | **Windows**（10 1809+） | 桌面客户端 + 本地 Host | ConPTY 会话服务、自绘标题栏、远程主机、Ghostty 配置 | 从源码构建（`go tool mygo build`）· 安装程序待发布 |
-| **Web（`web/`）** | 独立浏览器客户端（原型） | 基于 `libghostty-vt` WASM 的多主机远程终端、分屏、主题设置，无需本地后台 | 本地运行（`npm run dev`）或静态自托管 · 暂无公网演示地址 |
+| **Web（`web/`）** | 可选本地 / 自托管远程客户端 | 基于 `libghostty-vt` WASM 的多主机远程终端、分屏、主题设置，无需本地后台（已移除托管部署与 PWA 外壳，见 [`DSK-010`](docs/DSK-010-trim-browser-and-web.md)） | 本地运行（`npm run dev`）或自托管静态构建（`npm run build`） |
 | **`windrex-relay`** | 自托管无状态中继服务 | 通过单条主机出站 TLS WebSocket 桥接内网主机与 iOS/远程客户端，不落盘任何凭证 | 从源码构建（`go build ./cmd/windrex-relay`） |
 
 ## 界面预览与架构总览
@@ -77,7 +77,7 @@ flowchart LR
 
 | 客户端 | 核心界面元素 | 预览图状态 |
 |---|---|---|
-| **桌面端（macOS / Linux / Windows）** | 紧凑项目侧边栏、主机绿色在线状态点、终端/浏览器/便签分屏卡片、命令面板（`⇧⌘P`）、浅色/深色 Ghostty 主题 | WindRex 真实界面截图（使用脱敏示例数据与 `GOREX_DEBUG` 截图钩子生成）将随首个正式发布版本一并补齐。 |
+| **桌面端（macOS / Linux / Windows）** | 紧凑项目侧边栏、主机绿色在线状态点、终端与便签分屏卡片、命令面板（`⇧⌘P`）、浅色/深色 Ghostty 主题 | WindRex 真实界面截图（使用脱敏示例数据与 `GOREX_DEBUG` 截图钩子生成）将随首个正式发布版本一并补齐。 |
 | **iOS / iPadOS** | 紧凑项目与会话列表、Metal 终端视图、增强快捷键栏、灵动岛与锁屏实时活动 | WindRex iOS 实机/模拟器截图将随首个 TestFlight 构建一并补齐。 |
 | **Web（`web/`）** | 带连接状态点的多主机侧边栏、分屏终端、设置面板 | 可直接通过 `cd web && npm ci && npm run dev` 在本地预览。 |
 

@@ -445,75 +445,106 @@ func TestFollowTabToSpace(t *testing.T) {
 	quit(st)
 }
 
-// TestFollowBrowser follows another client's page in a browser pane, keeps
-// the pane's own navigation, and keeps the pane of a layout whose writer
-// drops browser IDs.
-func TestFollowBrowser(t *testing.T) {
+// TestLegacyBrowserLayoutMigration verifies that legacy saved layouts
+// containing embedded browser panes restore every sibling terminal, note,
+// split and float without failing or spawning broken empty panes
+// (docs/DSK-010-trim-browser-and-web.md).
+func TestLegacyBrowserLayoutMigration(t *testing.T) {
 	a, _ := newTestApp(t)
-	a.splitBrowser(false)
-	web := a.tab().Focus
-	other := followApp(t, a)
-	browser := func(s savedStore) *savedNode { return s.Sessions[0].Tabs[0].Root.B }
+	sid1 := a.tab().Focus.SID
+	a.split(false)
+	sid2 := a.tab().Focus.SID
+	for _, p := range a.tab().allPanes() {
+		if p.term != nil {
+			p.term.Close()
+		}
+	}
 
-	s := savedWorkspaces(t, other)
-	browser(s).URL = "https://theirs.test/"
-	setOther(t, other, s)
-	takeOther(t, a, other)
-	if p := a.tab().panes()[1]; p != web || web.browser.url != "https://theirs.test/" {
-		t.Errorf("pane %v at %q", p, web.browser.url)
+	const keepNoteID = "0123456789abcdef0123456789abcdef"
+	legacy := savedLayout{
+		Active: 1,
+		Tabs: []savedTab{
+			{
+				// Tiled split of terminal + nested browser/terminal split, plus a
+				// legacy floating browser pane beside a floating note.
+				Name: "mixed",
+				Root: &savedNode{
+					Ratio: 0.5,
+					A:     &savedNode{URL: "https://docs.example.com/", ID: "web-1"},
+					B: &savedNode{
+						Vertical: true,
+						Ratio:    0.5,
+						A:        &savedNode{SID: sid1},
+						B:        &savedNode{URL: "https://status.example.com/", ID: "web-2"},
+					},
+				},
+				Focus: 1,
+				Floats: []layout.Float{
+					{Pane: &savedNode{URL: "https://float.example.com/", ID: "web-f"}, X: 0.1, Y: 0.1, W: 0.3, H: 0.3},
+					{Pane: &savedNode{Kind: noteKind, Note: keepNoteID}, X: 0.2, Y: 0.2, W: 0.3, H: 0.3},
+				},
+				FocusFloat: 2,
+			},
+			{
+				// Browser-only tab is skipped cleanly.
+				Name: "browser-only",
+				Root: &savedNode{URL: "https://only.example.com/", ID: "web-only"},
+			},
+			{
+				// Tiled browser root with a floating terminal promotes the terminal.
+				Name: "promote",
+				Root: &savedNode{URL: "https://root.example.com/", ID: "web-root"},
+				Floats: []layout.Float{
+					{Pane: &savedNode{SID: sid2}, X: 0.15, Y: 0.15, W: 0.4, H: 0.4},
+				},
+			},
+		},
 	}
-	// The page went on by itself, unsaved; another change leaves it.
-	web.browser.url = "https://mine.test/"
-	s = savedWorkspaces(t, other)
-	s.Sessions[0].Tabs[0].Name = "renamed"
-	setOther(t, other, s)
-	takeOther(t, a, other)
-	if web.browser.url != "https://mine.test/" {
-		t.Errorf("own navigation lost: %q", web.browser.url)
-	}
-	// A writer that drops the ID: the pane is named by its place, once,
-	// and stays at the next such write.
-	a.st.out.wait(time.Second)
-	var kept *Pane
-	for i := range 2 {
-		s = savedWorkspaces(t, other)
-		browser(s).ID = ""
-		s.Sessions[0].Tabs[0].Name = fmt.Sprint("drop", i)
-		b, _ := json.Marshal(s)
-		var raw map[string]any
-		json.Unmarshal(b, &raw)
-		strip(raw)
-		b, _ = json.Marshal(raw)
-		if err := other.SetLayout(b); err != nil {
-			t.Fatal(err)
-		}
-		takeOther(t, a, other)
-		a.st.out.wait(time.Second)
-		p := a.tab().panes()[1]
-		if i == 1 && p != kept {
-			t.Error("the browser pane was made again")
-		}
-		kept = p
-	}
-	if id := browser(savedWorkspaces(t, other)).ID; id == "" {
-		t.Error("the ID given was not written back")
-	}
-}
 
-// strip drops every "id" of a browser pane of a decoded layout.
-func strip(v any) {
-	switch x := v.(type) {
-	case map[string]any:
-		if _, ok := x["url"]; ok {
-			delete(x, "id")
+	b := &App{client: a.client}
+	t.Cleanup(func() {
+		for _, tab := range b.tabs {
+			for _, p := range tab.allPanes() {
+				if p.term != nil {
+					p.term.Close()
+				}
+			}
 		}
-		for _, y := range x {
-			strip(y)
-		}
-	case []any:
-		for _, y := range x {
-			strip(y)
-		}
+	})
+	if !b.reconcile(legacy) {
+		t.Fatal("reconcile returned false for layout with surviving terminals")
+	}
+	if len(b.tabs) != 2 {
+		t.Fatalf("restored %d tabs, want 2 (browser-only tab dropped)", len(b.tabs))
+	}
+
+	mixed := b.tabs[0]
+	if mixed.Root == nil || mixed.Root.Pane == nil || mixed.Root.Pane.SID != sid1 {
+		t.Fatalf("mixed tab root did not collapse to terminal %q: %+v", sid1, mixed.Root)
+	}
+	if len(mixed.Floats) != 1 || mixed.Floats[0].Pane.note == nil || mixed.Floats[0].Pane.note.id != keepNoteID {
+		t.Fatalf("mixed tab floats did not drop browser and keep note: %+v", mixed.Floats)
+	}
+	if mixed.Focus != mixed.Floats[0].Pane {
+		t.Errorf("mixed tab focus = %v, want kept note float", mixed.Focus)
+	}
+
+	promoted := b.tabs[1]
+	if promoted.Root == nil || promoted.Root.Pane == nil || promoted.Root.Pane.SID != sid2 {
+		t.Fatalf("promote tab did not promote floating terminal %q: %+v", sid2, promoted.Root)
+	}
+	if len(promoted.Floats) != 0 {
+		t.Errorf("promote tab still has %d floats after promotion", len(promoted.Floats))
+	}
+
+	// A workspace containing only legacy browser tabs restores nothing so
+	// the caller opens a fresh default terminal tab.
+	onlyBrowsers := savedLayout{Tabs: []savedTab{
+		{Name: "web", Root: &savedNode{URL: "https://example.com/", ID: "web-a"}},
+	}}
+	c := &App{client: a.client}
+	if c.reconcile(onlyBrowsers) {
+		t.Fatalf("reconcile unexpectedly succeeded on browser-only workspace: %d tabs", len(c.tabs))
 	}
 }
 

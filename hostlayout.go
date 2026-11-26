@@ -13,7 +13,7 @@ import (
 )
 
 // The window shows the hosts' layouts (docs/MOD-002-projects.md, "The desktop
-// window"): each project's tabs, splits, floats and browser panes live in
+// window"): each project's tabs, splits and floats live in
 // the layout of the project's host, this machine's in its own. A host's
 // workspaces are the store's as this machine's are (Workspace.host): the
 // app takes the host's layout as it changes, and sends what it changes of

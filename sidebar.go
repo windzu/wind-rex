@@ -668,8 +668,6 @@ func savedTabLabel(t savedTab) (string, program) {
 	n := focusedLeaf(t)
 	prog := shellTile
 	switch {
-	case n.URL != "":
-		prog = browserProgram
 	case n.Kind == "note":
 		prog = noteProgram
 	case n.Prog != "":

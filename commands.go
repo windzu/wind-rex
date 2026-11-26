@@ -342,20 +342,6 @@ var (
 		Passthrough: true,
 		Available:   func(a *App) bool { return a.focusedNote() != nil },
 	}
-	cmdNewBrowser = command{
-		ID: "tab.new_browser", Name: locales.Messages.CmdNewBrowserTab,
-		Run: func(a *App) { a.newBrowserTab() },
-	}
-	cmdSplitBrowser = command{
-		ID: "pane.split.browser", Name: locales.Messages.CmdSplitBrowser,
-		Run:  func(a *App) { a.splitBrowser(false) },
-		Args: []actionArg{{Name: "direction", Type: "string", Optional: true, Values: []string{"right", "down"}}},
-		RunArgs: func(a *App, args map[string]any) error {
-			a.splitBrowser(argString(args, "direction") == "down")
-			return nil
-		},
-		Available: splitsLocal,
-	}
 	cmdClosePane    = command{ID: "pane.close", Name: locales.Messages.CmdClosePane, Accel: "CmdOrCtrl+W", Keys: "⌘W", Other: ctrlShift(ui.KeyW), Run: func(a *App) { a.closeFocused() }}
 	cmdPaneToNewTab = command{ID: "pane.to_new_tab", Name: locales.Messages.CmdPaneToNewTab, Run: func(a *App) { a.paneToNewTab() }}
 	cmdCloseTab     = command{ID: "tab.close", Name: locales.Messages.CmdCloseTab, Accel: "CmdOrCtrl+Shift+W", Keys: "⇧⌘W", Run: func(a *App) { a.closeActiveTab() }}
@@ -732,7 +718,7 @@ func (cmd *command) English() string { return cmd.Name(locales.In("en")) }
 
 // paletteCommands are those the command palette lists, before the tabs.
 var paletteCommands = []*command{
-	&cmdNewTab, &cmdNewBrowser, &cmdNewNote, &cmdSplitRight, &cmdSplitDown, &cmdSplitBrowser, &cmdSplitNote, &cmdNotePreview, &cmdZoom, &cmdEqualize, &cmdResetCanvas, &cmdPaneToNewTab, &cmdClosePane, &cmdCloseTab,
+	&cmdNewTab, &cmdNewNote, &cmdSplitRight, &cmdSplitDown, &cmdSplitNote, &cmdNotePreview, &cmdZoom, &cmdEqualize, &cmdResetCanvas, &cmdPaneToNewTab, &cmdClosePane, &cmdCloseTab,
 	&cmdFloatPane, &cmdNewFloat, &cmdToggleFloat, &cmdHideFloats, &cmdFloatState, &cmdRaiseFloat, &cmdLowerFloat, &cmdCycleFloat,
 	&cmdFloatMove, &cmdFloatResize, &cmdMoveFloatLeft, &cmdMoveFloatRight, &cmdMoveFloatUp, &cmdMoveFloatDown,
 	&cmdNextTab, &cmdPrevTab, &cmdJumpNeedy, &cmdNeeds, &cmdRenameTab, &cmdSidebar,
@@ -931,13 +917,11 @@ func (st *store) menu() *mygo.Menu {
 		{Role: mygo.RoleAppMenu},
 		{Label: locales.MenuShell(), Submenu: []*mygo.MenuItem{
 			item(&cmdNewTab),
-			item(&cmdNewBrowser),
 			item(&cmdNewNote),
 			item(&cmdNewWindow),
 			mygo.Separator(),
 			item(&cmdSplitRight),
 			item(&cmdSplitDown),
-			item(&cmdSplitBrowser),
 			item(&cmdSplitNote),
 			item(&cmdNotePreview),
 			mygo.Separator(),
@@ -1142,12 +1126,6 @@ func (a *App) restartFocused() {
 		return
 	}
 	old := t.Focus
-	if b := old.browser; b != nil {
-		if b.web != nil {
-			b.web.Page().Reload()
-		}
-		return
-	}
 	if old.note != nil {
 		return
 	}

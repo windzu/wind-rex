@@ -1966,26 +1966,6 @@
   "@aboutGhostty": {
     "description": "Settings › About, under libghostty-vt."
   },
-  "aboutInstallApp": "Install App",
-  "@aboutInstallApp": {
-    "description": "Settings › About: button that installs the page as an app."
-  },
-  "aboutInstall": "Install GoRex",
-  "@aboutInstall": {
-    "description": "Settings › About: the row of the install button."
-  },
-  "aboutInstallHint": "Opens GoRex in a window of its own, with its own icon.",
-  "@aboutInstallHint": {
-    "description": "Under Install GoRex."
-  },
-  "aboutHomeScreen": "Add to Home Screen",
-  "@aboutHomeScreen": {
-    "description": "Settings › About on iPhone and iPad."
-  },
-  "aboutHomeScreenHint": "To open GoRex as an app: in Safari, tap Share, then Add to Home Screen.",
-  "@aboutHomeScreenHint": {
-    "description": "Under Add to Home Screen; Share and Add to Home Screen are Safari's own words."
-  },
   "aboutResetAll": "Reset All Settings",
   "@aboutResetAll": {
     "description": "Settings › About: button that forgets everything kept in this browser."
@@ -2001,50 +1981,6 @@
   "aboutResetAllAsk": "Reset all settings? This forgets the settings, the hosts and the chosen host in this browser, and reloads the page.",
   "@aboutResetAllAsk": {
     "description": "Confirmation before Reset All Settings."
-  },
-  "aboutUpdates": "Updates",
-  "@aboutUpdates": {
-    "description": "The row of Check for Updates."
-  },
-  "aboutCheckUpdate": "Check for Updates",
-  "@aboutCheckUpdate": {
-    "description": "Settings › About: button that looks for a new version now."
-  },
-  "aboutChecking": "Checking…",
-  "@aboutChecking": {
-    "description": "Beside the button while the check runs."
-  },
-  "aboutUpToDate": "GoRex is up to date.",
-  "@aboutUpToDate": {
-    "description": "Result: no new version."
-  },
-  "aboutUpdateReady": "A new version is ready.",
-  "@aboutUpdateReady": {
-    "description": "Result: a new version is installed and waits."
-  },
-  "aboutUpdateFailed": "Couldn't check for updates.",
-  "@aboutUpdateFailed": {
-    "description": "Result: the check failed."
-  },
-  "aboutUpdateUnsupported": "Updates aren't available here.",
-  "@aboutUpdateUnsupported": {
-    "description": "Result: no Service Worker, as on the dev server."
-  },
-  "updateReady": "A new version of GoRex is ready.",
-  "@updateReady": {
-    "description": "The panel in the corner when a new version is installed and waits."
-  },
-  "updateReload": "Reload",
-  "@updateReload": {
-    "description": "The update panel's button that reloads into the new version."
-  },
-  "updateReloadTip": "Reload into the new version: the terminals reconnect",
-  "@updateReloadTip": {
-    "description": "Tooltip of the update panel's Reload button."
-  },
-  "updateLater": "Later",
-  "@updateLater": {
-    "description": "Tooltip and label of the update panel's close button."
   },
   "guideSteps": "Steps",
   "@guideSteps": {
@@ -2405,16 +2341,6 @@
   "fileDownloaded": "Downloaded {name}",
   "@fileDownloaded": {
     "description": "Status line when a file of a Tailscale host downloaded.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "report.pdf"
-      }
-    }
-  },
-  "fileCancelled": "Cancelled {name}",
-  "@fileCancelled": {
-    "description": "Status line when the user cancelled a download in the browser.",
     "placeholders": {
       "name": {
         "type": "String",

@@ -3,7 +3,6 @@
 // hosted on its own; each host is one the user added (hosts.ts), or one
 // built-in Tailscale found on the tailnet (tailnet.ts). Every host stays
 // connected at once (docs/WEB-003-multihost.md), each in its HostConn.
-import { onAppChange, startApp } from "./app";
 import { Chunk } from "./chunks";
 import { Ghostty } from "./ghostty";
 import type { Guide } from "./guide";
@@ -342,7 +341,6 @@ async function main() {
       link: linkOf, connect, disconnect, removed, connections: () => conns.size, share: () => shared,
     });
     for (const what of ["tabs", "font"] as const) applyPrefs(what);
-    onAppChange(() => settings?.appChanged());
     tailnet.onChange(tailnetChanged);
     tailcat.onChange(tailcatChanged);
     window.addEventListener("pagehide", () => {
@@ -1409,5 +1407,4 @@ const startAt = startPlace(loadHosts().map((h) => h.id));
 document.body.classList.toggle("onboarding", !loadHosts().length && !startAt);
 // The tabs' place from the first frame too.
 document.body.dataset.tabs = prefs.tabPlacement || "above";
-startApp();
 main();

@@ -409,6 +409,12 @@ func TestRestoreFocusesSavedFloat(t *testing.T) {
 			p.term.Close() // detach, as when the app quits
 		}
 	}
+	const (
+		noteA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		noteB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		noteC = "cccccccccccccccccccccccccccccccc"
+		noteD = "dddddddddddddddddddddddddddddddd"
+	)
 	l := savedLayout{Tabs: []savedTab{
 		{
 			Name:  "x",
@@ -416,16 +422,16 @@ func TestRestoreFocusesSavedFloat(t *testing.T) {
 			Focus: 0,
 			Floats: []layout.Float{
 				{Pane: &savedNode{Host: "missing", SID: "gone"}, X: 0.1, Y: 0.1, W: 0.2, H: 0.2},
-				{Pane: &savedNode{URL: "https://a.example/"}, X: 0.2, Y: 0.2, W: 0.2, H: 0.2},
-				{Pane: &savedNode{URL: "https://b.example/"}, X: 0.3, Y: 0.3, W: 0.2, H: 0.2},
+				{Pane: &savedNode{Kind: noteKind, Note: noteA}, X: 0.2, Y: 0.2, W: 0.2, H: 0.2},
+				{Pane: &savedNode{Kind: noteKind, Note: noteB}, X: 0.3, Y: 0.3, W: 0.2, H: 0.2},
 			},
 			FocusFloat: 3,
 		},
 		{
 			Name: "y",
 			Floats: []layout.Float{
-				{Pane: &savedNode{URL: "https://c.example/"}, X: 0.1, Y: 0.1, W: 0.2, H: 0.2},
-				{Pane: &savedNode{URL: "https://d.example/"}, X: 0.2, Y: 0.2, W: 0.2, H: 0.2},
+				{Pane: &savedNode{Kind: noteKind, Note: noteC}, X: 0.1, Y: 0.1, W: 0.2, H: 0.2},
+				{Pane: &savedNode{Kind: noteKind, Note: noteD}, X: 0.2, Y: 0.2, W: 0.2, H: 0.2},
 			},
 		},
 	}}
@@ -444,11 +450,11 @@ func TestRestoreFocusesSavedFloat(t *testing.T) {
 		t.Errorf("the focus went to %v, want the float saved third", x.Focus)
 	}
 	y := b.tabs[1]
-	if y.Root == nil || y.Root.Pane == nil || y.Root.Pane.browser == nil ||
-		y.Root.Pane.browser.url != "https://d.example/" {
+	if y.Root == nil || y.Root.Pane == nil || y.Root.Pane.note == nil ||
+		y.Root.Pane.note.id != noteD {
 		t.Errorf("the tree did not take the topmost float: %+v", y.Root)
 	}
-	if len(y.Floats) != 1 || y.Floats[0].Pane.browser.url != "https://c.example/" {
+	if len(y.Floats) != 1 || y.Floats[0].Pane.note.id != noteC {
 		t.Errorf("floats after the promotion: %+v", y.Floats)
 	}
 }
