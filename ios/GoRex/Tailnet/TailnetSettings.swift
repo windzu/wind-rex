@@ -46,3 +46,28 @@ enum TailnetSettings {
         return base.isEmpty ? "rex-\(letters)" : "\(base)-rex-\(letters)"
     }
 }
+
+/// Single activation policy choke point deciding whether WindRex's in-process
+/// Tailscale or tailcat engine is needed (docs/NET-005-direct-relay.md, Phase 3).
+/// When all hosts use direct TLS, a self-hosted relay, or LAN (`.system`) and
+/// Built-in Tailscale is off, the engine stays dormant on cold start,
+/// foreground resume, and network changes.
+enum TailnetActivationPolicy {
+    /// Whether any non-demo host is paired over tailcat.
+    static func needsTailcat(hosts: [HostConfig]) -> Bool {
+        hosts.contains { $0.demo != true && $0.tailcat != nil }
+    }
+
+    /// Whether Built-in Tailscale is enabled in Settings or any non-demo,
+    /// non-tailcat host uses `.tailnet` transport.
+    static func needsTailscale(hosts: [HostConfig], tailnetEnabled: Bool) -> Bool {
+        if tailnetEnabled { return true }
+        return hosts.contains { $0.demo != true && $0.tailcat == nil && $0.transport == .tailnet }
+    }
+
+    /// Whether the in-process Tailnet/tailcat engine should initialize or wake
+    /// on lifecycle transitions.
+    static func needsEngine(hosts: [HostConfig], tailnetEnabled: Bool) -> Bool {
+        needsTailscale(hosts: hosts, tailnetEnabled: tailnetEnabled) || needsTailcat(hosts: hosts)
+    }
+}

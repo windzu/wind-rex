@@ -1,6 +1,6 @@
 ---
 name: NET-005
-description: "WindRex adds a native TLS direct listener, a stateless reverse relay, and desktop Settings GUI controls so iOS reaches remote hosts over cellular networks without an in-process VPN stack. Use when you change direct TLS, windrex-relay, desktop Direct / Relay settings, certificate pinning, foreground probes, or pipelined terminal writes."
+description: "WindRex adds a native TLS direct listener, a stateless reverse relay, desktop Settings GUI controls, and on-demand iOS Tailscale activation so iOS reaches remote hosts over cellular networks without starting an in-process VPN stack unless needed. Use when you change direct TLS, windrex-relay, desktop Direct / Relay settings, certificate pinning, foreground probes, pipelined terminal writes, or iOS TailnetActivationPolicy."
 metadata:
   created: "2026-11-26"
   updated: "2026-11-26"
@@ -8,7 +8,7 @@ metadata:
 
 # NET-005: Direct TLS and stateless relay transport
 
-Status: phase 1 built (#22); phase 2 desktop GUI built (#25).
+Status: phase 1 built (#22); phase 2 desktop GUI built (#25); phase 3 iOS on-demand Tailscale activation built (#26).
 
 This doc defines a native TLS transport for cellular remote work, with two deployment modes that share one iOS client path, plus fast foreground recovery and pipelined terminal writes. It extends [`IOS-012`](IOS-012-background-and-network-changes.md) and coexists with [`IOS-001`](IOS-001-tailnet.md) and [`IOS-002`](IOS-002-tailcat.md) during migration.
 
@@ -32,7 +32,7 @@ Four code defects compound the transport overhead:
 
 ## Non-goals
 
-- Removing `ios/tailnet`, built-in Tailscale, or tailcat in this phase. Removal happens in phase 2 after real-device cellular verification.
+- Removing `Tailnet.xcframework` or breaking existing built-in Tailscale and tailcat hosts in phase 3. Making `Tailnet.xcframework` an optional build or removing it stays a later cleanup decision once all users migrate off Tailscale/tailcat.
 - Keeping sockets alive indefinitely while iOS suspends the app. The session server keeps processes alive, and the iOS client resumes rapidly in the foreground.
 - Adding user accounts or a stateful coordination server.
 
@@ -47,6 +47,7 @@ Four code defects compound the transport overhead:
 5. On the desktop app, the user can also configure the same `direct.json` settings in Settings › Server under Direct / Relay Access: toggle Direct TLS / Relay on or off, enter a self-hosted relay URL (plus optional relay token and certificate pin) or a direct public URL and listen address, watch live connection status, rotate the pairing token, and open the Direct / Relay QR sheet. When direct or relay access is ready, the above-the-fold Connect iPhone card also exposes the Direct / Relay QR… button.
 6. On iOS, the user scans the QR code (or pastes the URL) in Remote Hosts. WindRex stores the URL, Bearer token in Keychain, and optional certificate pin, then connects directly with native `URLSession`.
 7. When the user switches back from another app or unlocks the phone, WindRex probes the active control and data sockets with a 1.5-second ping timeout. Live sockets stay attached without flicker. Dead sockets close with `goingAway` and reconnect immediately using the reconnect token and stream byte offset.
+8. On iOS, when all configured hosts use direct TLS, a self-hosted relay, or LAN (`.system`) and Settings › Tailscale › Built-in Tailscale is off, WindRex skips initializing the in-process Tailscale/tailcat Go engine, its Keychain lookup, its `NWPathMonitor`, and its foreground `resume()` socket resets. Adding a tailcat or `.tailnet` host, pairing over tailcat, or turning on Built-in Tailscale activates `TailnetEngine` on demand; removing the last tailcat/tailnet host with Built-in Tailscale off stops further engine wakeups.
 
 ### Model
 
@@ -56,6 +57,7 @@ Four code defects compound the transport overhead:
 - **Certificate pinning**: When `HostConfig.tlsPin` is set, iOS builds a `URLSession` with a delegate that hashes the server's leaf certificate DER with SHA-256 and requires an exact match against the pinned base64url digest. When `tlsPin` is nil, standard iOS CA trust applies.
 - **Path-preserving URLs**: `URL.apiURL(_:)` and `URL.rexURL(_:)` preserve any non-empty base path prefix (such as `/h/<host_id>`) before appending `/api/control` or `/api/data`.
 - **Foreground liveness and ordering**: `HostStore.foreground` probes `.system` hosts with a 1.5-second ping when `control != nil`, resumes dead hosts immediately, and finishes any `TailnetEngine.resume()` before signaling `TerminalScreen` to verify or resume panes.
+- **On-demand iOS Tailnet activation (Phase 3)**: `TailnetActivationPolicy` is the single pure policy choke point (`needsTailcat`, `needsTailscale`, `needsEngine`) shared by `GoRexApp`, `HostStore`, and `TailnetEngine`. When `needsEngine` is false, cold start does not call `TailnetEngine.apply()`, `TailnetEngine.init()` runs zero Go FFI or Keychain calls, `syncHosts` skips `TailnetSetTailcatHosts` and `NWPathMonitor`, and `HostStore.foreground` / `TailnetEngine.resume()` / `TailnetEngine.reproxy()` return immediately without calling `TailnetResetSockets` or `TailnetProxy`. When the last tailcat host is removed, `syncHosts` clears the Go tailcat host list, drops `tailcatProxy`, and stops `PathMonitor` if Built-in Tailscale is stopped.
 - **Ordered pipelined writes**: The server adds `com.superlogical.terminal.write` to `orderedMethods` and advertises feature `gorex.ordered_write` in `welcome`. When that feature is present, `TerminalSession` pipelines up to 8 in-flight writes in order while keeping the existing 1-at-a-time fallback for older servers.
 
 ### Code
@@ -66,7 +68,8 @@ Four code defects compound the transport overhead:
 - `internal/rexapi/serve.go`, `origin.go`, `host.go`, `gateway.go`, `protocol.go`, `upload.go`: Wire `directListener` into `Gateway` and `Wanted`, allow direct and relay transports, add `com.superlogical.terminal.write` to `orderedMethods`, and advertise `gorex.ordered_write`.
 - `remoteview.go`, `hostqr.go`, `settingsview.go`, `locales/en.json`, `locales/zh-Hans.json`: Load and poll `direct.json` and `direct-status.json` alongside LAN settings, render the Direct / Relay Access section and Connect iPhone shortcut in Settings › Server, validate and save changes via `rexapi.SaveDirect`, rotate the pairing token, and display the `DirectConfig.PairURL` QR code in `hostPairQRSheet` with concealed clipboard copy and token masking.
 - `ios/GoRex/Rex/TLSPin.swift`: `PinnedTLSSession` delegate verifying leaf certificate SHA-256 against `HostConfig.tlsPin`.
-- `ios/GoRex/Rex/Host.swift`, `ControlConnection.swift`, `DataStream.swift`, `GoRexApp.swift`, `Views/TerminalScreen.swift`, `Views/RemoteHostsView.swift`: Parse `#k=...&p=...&n=...` and path-prefixed pairing URLs, preserve URL base paths, add `ControlConnection.probe` and `DataConnection.probe`, coordinate foreground resume before terminal resume, and shorten default control ping intervals to 15 seconds with an 8-second pong timeout.
+- `ios/GoRex/Tailnet/TailnetSettings.swift`, `ios/GoRex/Tailnet/TailnetEngine.swift`: Define `TailnetActivationPolicy`, remove eager Go/Keychain setup from `TailnetEngine.init()`, lazily initialize `PathMonitor`, and guard `syncHosts`, `applyNow`, `resume`, and `reproxy` through `TailnetActivationPolicy`.
+- `ios/GoRex/Rex/Host.swift`, `ControlConnection.swift`, `DataStream.swift`, `GoRexApp.swift`, `Views/TerminalScreen.swift`, `Views/RemoteHostsView.swift`: Parse `#k=...&p=...&n=...` and path-prefixed pairing URLs, preserve URL base paths, add `ControlConnection.probe` and `DataConnection.probe`, gate cold-start `TailnetEngine.apply()` and `HostStore.foreground` `resume()` through `TailnetActivationPolicy`, coordinate foreground resume before terminal resume, and shorten default control ping intervals to 15 seconds with an 8-second pong timeout.
 - `ios/GoRex/Terminal/TerminalSession.swift`: Pipeline up to 8 ordered `com.superlogical.terminal.write` requests when the server advertises `gorex.ordered_write`.
 
 ## Alternatives
@@ -95,11 +98,11 @@ Four code defects compound the transport overhead:
 - Relay mux and end-to-end WebSocket proxy: unit tests in `internal/directrelay` verifying concurrent HTTP and WebSocket streams, large payloads, close propagation, and reconnect.
 - Direct TLS listener, relay mode, Bearer auth, cert pinning, and ordered writes: unit tests in `internal/rexapi` covering valid/invalid tokens, cert pin verification, relay WebSocket `/api/control` + `/api/data` + `RESUME`, and strict write ordering (`docs/invariants.md` item 5).
 - Desktop Direct / Relay GUI: headless view tests (`ui.NewTester`) in `remoteview_test.go` covering status display, saving and validating relay and direct URLs, opening the Direct / Relay QR sheet without leaking the pairing token onto screen, and rotating the pairing token, alongside `TestDesignTokens`, `TestGlassInk`, `TestCatalogsAgree`, and `TestNoThreeDots`.
-- iOS pairing, path-preserving URLs, TLS pinning, foreground probe, and pipelined writes: unit tests in `ios/GoRexTests` (`PairingTests`, `ConnectionTests`, `HostTests`) built and executed with `xcodebuild` on the iOS Simulator.
+- iOS pairing, path-preserving URLs, TLS pinning, foreground probe, pipelined writes, and on-demand Tailnet activation: unit tests in `ios/GoRexTests` (`PairingTests`, `ConnectionTests`, `HostTests`, `TailnetActivationPolicyTests`) built and executed with `xcodebuild` on the iOS Simulator.
 - Real-device verification: deploy on the user's home router public IP and measure cellular connect time, Wi-Fi to 5G switch recovery, and typing echo latency.
 
 ## Phases
 
 1. Direct TLS listener, stateless `windrex-relay`, iOS native TLS pinning, foreground liveness probes, and pipelined ordered writes (#22).
 2. Desktop Settings › Server GUI for direct TLS / self-hosted relay configuration, live status, token rotation, and QR pairing (#25).
-3. Remove `ios/tailnet` and simplify onboarding UI (#19) after cellular real-device verification.
+3. On-demand iOS Tailscale/tailcat activation via `TailnetActivationPolicy` so direct TLS, relay, and LAN hosts skip Go Tailnet startup and foreground wakeups (#26). Future cleanup may make `Tailnet.xcframework` an optional build or remove it once Tailscale/tailcat migration is complete.

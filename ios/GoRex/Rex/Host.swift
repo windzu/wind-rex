@@ -1890,12 +1890,13 @@ final class HostStore {
     /// so live sockets stay untouched and dead sockets recover within ~1.5 s
     /// instead of waiting for a background keepalive timeout.
     func foreground(suspended: Bool, wasBackground: Bool = false, resume: () async -> Bool) async {
-        let forced = { (h: Host) in suspended && h.config.reach(tailnetOn: TailnetSettings.isOn) != .system }
+        let tailnetOn = TailnetSettings.isOn
+        let forced = { (h: Host) in suspended && h.config.reach(tailnetOn: tailnetOn) != .system }
         let unforced = hosts.filter { !forced($0) }
         if wasBackground {
             await withTaskGroup(of: Void.self) { group in
                 for h in unforced {
-                    if h.config.reach(tailnetOn: TailnetSettings.isOn) == .system && h.control != nil {
+                    if h.config.reach(tailnetOn: tailnetOn) == .system && h.control != nil {
                         group.addTask { await h.probeOrResume() }
                     } else {
                         h.reconnectIfNeeded()
@@ -1907,6 +1908,8 @@ final class HostStore {
         }
         unforced.forEach { $0.noteForegroundReady() }
         guard suspended else { return }
+        let configs = hosts.map(\.config)
+        guard TailnetActivationPolicy.needsEngine(hosts: configs, tailnetEnabled: tailnetOn) else { return }
         let proxied = hosts.filter(forced)
         let kept = await resume()
         proxied.filter { kept || $0.config.tailcat != nil }.forEach {
