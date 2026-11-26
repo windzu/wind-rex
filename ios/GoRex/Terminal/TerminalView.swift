@@ -122,12 +122,25 @@ final class TerminalView: UIView, TerminalOutput {
 
     /// The keyboard's height over the terminal.
     private var keys: CGFloat = 0
-    /// How far the keyboard reaches over the grid, past the band under it:
-    /// how far the terminal slides up to keep its cursor clear. The bars
-    /// ride the keyboard, and the grid ends above them.
-    var covered: CGFloat {
+    /// Extra bottom height covered by a transient floating overlay (such as
+    /// the live dictation transcript preview above `KeyBar`), so the terminal
+    /// slides clear of the cursor without resizing the Ghostty grid.
+    var overlayCover: CGFloat = 0 {
+        didSet {
+            guard overlayCover != oldValue else { return }
+            slide(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.2)
+        }
+    }
+    /// How far the keyboard reaches over the grid, past the band under it.
+    private var keyboardCover: CGFloat {
         guard band > 0 else { return keys }
         return max(0, keys - (superview?.safeAreaInsets.bottom ?? 0))
+    }
+    /// How far the keyboard and transient floating overlays reach over the
+    /// grid, past the band under it: how far the terminal slides up to keep
+    /// its cursor clear. The bars ride the keyboard, and the grid ends above them.
+    var covered: CGFloat {
+        keyboardCover + overlayCover
     }
 
     /// How tall the phone's bar is, and the pane bar over it.
@@ -189,7 +202,10 @@ final class TerminalView: UIView, TerminalOutput {
     private typealias Dictating = (recording: Recording, listening: any DictationSession, said: (Dictation.Said?) -> Void, told: Task<Void, Never>,
                                    level: Task<Void, Never>)
     /// An in-flight permission check or Apple Speech asset/analyzer startup.
-    private var preparingDictation: (id: UUID, task: Task<Void, Never>)?
+    private var preparingDictation: (id: UUID, task: Task<Void, Never>, said: (Dictation.Said?) -> Void)?
+    /// Set when the user releases a hold while Apple Speech assets are still
+    /// downloading, so the download completes without unexpectedly starting the mic.
+    private var cancelAfterDownload = false
     /// The dictation being finished (recognising its last phrase or polishing),
     /// so stopDictating can cancel it too.
     private var finishing: (task: Task<Void, Never>, listening: any DictationSession, said: (Dictation.Said?) -> Void)?
@@ -414,7 +430,7 @@ final class TerminalView: UIView, TerminalOutput {
         let curve = n.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt ?? 7
         // Measured on the host, which does not slide.
         keys = max(0, superview.bounds.maxY - window.screen.coordinateSpace.convert(end, to: superview).minY)
-        bar.keyboard.setNeedsUpdateConfiguration()
+        bar.setKeyboardVisible(keyboardCover > 0)
         slide(duration: duration, options: UIView.AnimationOptions(rawValue: curve << 16))
     }
 
@@ -608,6 +624,16 @@ final class TerminalView: UIView, TerminalOutput {
 
     override var canBecomeFirstResponder: Bool { true }
 
+    @discardableResult
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            bar.keyboard.setNeedsUpdateConfiguration()
+            if keyboardCover <= 0 { bar.setKeyboardVisible(false) }
+        }
+        return resigned
+    }
+
     /// Whether the terminal shows the bar: it is for the soft keyboard,
     /// which a hardware one keeps away, and for a phone's: an iPad's keys
     /// are in its bar of shortcuts.
@@ -710,8 +736,9 @@ final class TerminalView: UIView, TerminalOutput {
     /// strings, and streams recognized updates to `said`.
     @discardableResult
     func dictate(said: @escaping (Dictation.Said?) -> Void) -> Bool {
-        guard dictating == nil, preparingDictation == nil else { return false }
+        guard dictating == nil, preparingDictation == nil, finishing == nil else { return false }
         let id = UUID()
+        cancelAfterDownload = false
         let vocabulary = Dictation.contextualVocabulary(
             screen: screen,
             program: session.host.blocks[session.block]?.program
@@ -722,30 +749,49 @@ final class TerminalView: UIView, TerminalOutput {
                 if self.preparingDictation?.id == id { self.preparingDictation = nil }
             }
             let access = await Dictation.shared.requestAccess()
-            guard self.preparingDictation?.id == id, !Task.isCancelled else { return }
+            guard self.preparingDictation?.id == id, !Task.isCancelled else {
+                said(nil)
+                self.bar.dictationDidEnd()
+                return
+            }
             switch access {
             case .granted:
                 break
             case .denied(let title, let message):
+                said(nil)
+                self.bar.dictationDidEnd()
                 self.alert(title, message)
                 return
             case .needsRequest:
+                said(nil)
+                self.bar.dictationDidEnd()
                 return
             }
             let prepared: (session: any DictationSession, format: AVAudioFormat)?
             do {
                 prepared = try await Dictation.shared.startSession(vocabulary: vocabulary)
             } catch is CancellationError {
+                said(nil)
+                self.bar.dictationDidEnd()
                 return
             } catch {
                 if self.preparingDictation?.id == id, !Task.isCancelled {
+                    said(nil)
+                    self.bar.dictationDidEnd()
                     self.alert(String(localized: "Can't Recognise Speech"), error.localizedDescription)
                 }
                 return
             }
-            guard let prepared else { return }
-            guard self.preparingDictation?.id == id, !Task.isCancelled else {
+            guard let prepared else {
+                said(nil)
+                self.bar.dictationDidEnd()
+                return
+            }
+            guard self.preparingDictation?.id == id, !Task.isCancelled, !self.cancelAfterDownload else {
+                self.cancelAfterDownload = false
                 prepared.session.cancel()
+                said(nil)
+                self.bar.dictationDidEnd()
                 return
             }
             let listening = prepared.session
@@ -759,6 +805,7 @@ final class TerminalView: UIView, TerminalOutput {
                         self.alert(String(localized: "Can't Recognise Speech"), e.localizedDescription)
                     }
                     said(nil)
+                    self.bar.dictationDidEnd()
                 }
             }, Dictation.shared.show(meter))
             recording.start(format: prepared.format, onInput: { input in
@@ -769,7 +816,7 @@ final class TerminalView: UIView, TerminalOutput {
                 self?.started(listening, r)
             })
         }
-        preparingDictation = (id, task)
+        preparingDictation = (id, task, said)
         return true
     }
 
@@ -783,6 +830,8 @@ final class TerminalView: UIView, TerminalOutput {
         case .failure(let e):
             _ = mute()
             listening.cancel()
+            d.said(nil)
+            bar.dictationDidEnd()
             alert(String(localized: "Can't Record"), e.localizedDescription)
         }
     }
@@ -791,7 +840,17 @@ final class TerminalView: UIView, TerminalOutput {
     /// recognised, polished first with a service set (Polish), as a paste,
     /// not sent.
     func typeDictation() async {
-        guard let d = mute() else { return }
+        guard let d = mute() else {
+            if preparingDictation != nil {
+                if Dictation.shared.progress != nil {
+                    // Let the OS speech asset download finish, then skip starting the mic.
+                    cancelAfterDownload = true
+                } else {
+                    stopDictating()
+                }
+            }
+            return
+        }
         let task = Task { @MainActor in
             do {
                 var text = try await d.listening.finish()
@@ -818,9 +877,12 @@ final class TerminalView: UIView, TerminalOutput {
     /// Turns the mic off, typing nothing; cancels an in-flight startup, finish,
     /// or polish too.
     func stopDictating() {
+        cancelAfterDownload = false
+        bar.dictationDidEnd()
         if let p = preparingDictation {
             preparingDictation = nil
             p.task.cancel()
+            p.said(nil)
         }
         if let f = finishing {
             finishing = nil
@@ -1249,32 +1311,55 @@ final class TerminalHost: UIView, UIGestureRecognizerDelegate {
     }
 }
 
-/// The bar over the soft keyboard, which stays at the bottom while the
-/// keyboard is hidden: three capsules of Liquid Glass, dark as the keyboard
-/// is. ⌘ opens a menu of Paste, Add Photo and Add File, and spins while a
-/// file goes up; the middle one pages from Esc, the modifiers and Tab to
-/// the punctuation a shell wants and Backspace; the last holds a stick that
-/// sends arrows the way it is dragged, the screen's mic, and the key that
-/// hides or shows the keyboard. On an iPad the keys go in the keyboard's
-/// bar of shortcuts, which shows with a hardware keyboard too: ⌘, Esc, the
-/// modifiers and Tab before its middle, the punctuation and four arrows
-/// after it. Its keyboard has keys of its own to hide it and for Backspace.
+/// The single-row bottom bar on iPhone, which stays above the home indicator
+/// while the soft keyboard is hidden and rides the keyboard when shown.
+///
+/// Always one row tall (`KeyBar.height == 52`) in two modes driven by `VoiceBarState`:
+/// - **Voice Bar (default while keyboard hidden)**: left toggle to Terminal Keys,
+///   center wide Hold-to-Talk capsule (~68% width; hold ≥200 ms to speak, slide up
+///   >50 pt to cancel, short tap <200 ms to raise the soft keyboard), right Return (`↵`).
+/// - **Terminal Keys (auto-active while soft keyboard is visible, or pinned via left toggle)**:
+///   left toggle back to Voice Bar, middle paged shortcut capsule (`Esc`, `Tab`, `⌃`, `⌥`, `⇧`
+///   on page 1; `⌘` Paste/Add Photo/Add File, punctuation, and Backspace on page 2),
+///   right capsule with arrow stick, `↵`, and keyboard show/hide.
+///
+/// On iPad, the keys stay in the keyboard's shortcut bar (`inputAssistantItem`).
 final class KeyBar: UIView {
     let ctrl = KeyBar.button("control", String(localized: "Control"), size: KeyBar.small)
     let alt = KeyBar.button("option", String(localized: "Option"), size: KeyBar.small)
     let shift = KeyBar.button("shift", String(localized: "Shift"), size: KeyBar.small)
-    /// Where the screen puts its mic, and its voice capsule while dictating.
-    let mic = UIView()
-    let voice = UIView()
-    private var keysRow: UIView?
-    private var voiceCapsule: UIView?
-    private var voiceActive = false
+    /// Container where `TerminalScreen` mounts the SwiftUI `VoiceBarFace`.
+    let voiceFace = UIView()
     /// Hides the keyboard, or shows it while it is hidden.
     let keyboard = UIButton()
+
+    /// Voice Bar callbacks wired by `TerminalScreen`.
+    var onStartDictation: (() -> Bool)?
+    var onCommitDictation: (() -> Void)?
+    var onCancelDictation: (() -> Void)?
+    var onVoicePhaseChanged: ((VoicePressPhase) -> Void)?
+    var isVoiceBusy: (() -> Bool)?
+    var isDownloadingAssets: (() -> Bool)?
+    var onStopDownloadTapped: (() -> Void)?
+    var onVoiceOverToggleDictation: (() -> Void)?
+
+    private(set) var voiceBarState = VoiceBarState()
+    private var lastNotifiedPhase: VoicePressPhase = .idle
+    private var displayedMode: VoiceBarMode = .voice
+    private var voiceBarRow: UIView?
+    private var keysBarRow: UIView?
+    private var voiceHost: VoiceCapsuleHostView?
+    private var keysToggle: UIButton?
+
     private weak var target: TerminalView?
-    private let more = KeyBar.button("command", String(localized: "More"))
-    /// The files going up; ⌘ spins while there are any.
-    var uploading = 0 { didSet { more.setNeedsUpdateConfiguration() } }
+    private let more = KeyBar.button("command", String(localized: "More"), size: KeyBar.small)
+    /// The files going up; ⌘ and the Voice Bar's left toggle spin while there are any.
+    var uploading = 0 {
+        didSet {
+            more.setNeedsUpdateConfiguration()
+            keysToggle?.setNeedsUpdateConfiguration()
+        }
+    }
     /// Repeats the arrow the stick points to, with the modifiers held
     /// until the stick is let go.
     private var repeating: Task<Void, Never>?
@@ -1285,13 +1370,20 @@ final class KeyBar: UIView {
     /// What the stick turns into while held.
     private let pad = StickPad()
     private let tick = UIImpactFeedbackGenerator(style: .light)
+    private let cancelTick = UIImpactFeedbackGenerator(style: .medium)
+
+    /// Active hold-to-talk touch tracking.
+    private var activePressID: UUID?
+    private var holdTask: Task<Void, Never>?
+    private var voicePressOrigin: CGPoint = .zero
+    private var voicePressStart: TimeInterval = 0
 
     init(target: TerminalView) {
         self.target = target
         super.init(frame: CGRect(x: 0, y: 0, width: 0, height: Self.height))
         overrideUserInterfaceStyle = .dark
-        func key(_ face: String, _ label: String?, _ name: String) -> UIButton {
-            let b = Self.button(face, label, size: Self.small)
+        func key(_ face: String, _ label: String?, _ name: String, size: CGFloat = Self.small) -> UIButton {
+            let b = Self.button(face, label, size: size)
             b.addAction(UIAction { [weak target] _ in target?.send(name) }, for: .touchUpInside)
             return b
         }
@@ -1340,24 +1432,23 @@ final class KeyBar: UIView {
             },
         ])
         more.showsMenuAsPrimaryAction = true
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
         more.configurationUpdateHandler = { [weak self] b in
-            b.configuration = Self.config("command", text: false, size: 17, held: false)
+            b.configuration = Self.config("command", text: false, size: isPad ? 17 : Self.small, held: false)
             b.configuration?.showsActivityIndicator = (self?.uploading ?? 0) > 0
         }
 
         let escape = key("escape", String(localized: "Esc"), "escape")
         let tab = key("arrow.right.to.line", String(localized: "Tab"), "tab")
-        let enter = key("return", String(localized: "Enter"), "enter")
+        let enter = key("return", String(localized: "Enter"), "enter", size: 16)
         let tilde = text("~"), pipe = text("|"), slash = text("/"), dash = text("-")
         let first = [escape, ctrl, alt, shift, tab]
         let second = [tilde, pipe, slash, dash]
-        // Every key taps the hand as it goes down, as the keyboard's do.
-        // Backspace, the arrows and the stick tap on their own as they repeat.
-        for b in [more, keyboard] + first + second + [enter] {
-            b.addAction(UIAction { [tick] _ in tick.impactOccurred() }, for: .touchDown)
-        }
 
-        if UIDevice.current.userInterfaceIdiom == .pad {
+        if isPad {
+            for b in [more, keyboard] + first + second + [enter] {
+                b.addAction(UIAction { [tick] _ in tick.impactOccurred() }, for: .touchDown)
+            }
             let arrows = [
                 repeating("arrow.left", String(localized: "Left Arrow"), "arrow_left"),
                 repeating("arrow.up", String(localized: "Up Arrow"), "arrow_up"),
@@ -1376,15 +1467,89 @@ final class KeyBar: UIView {
             target.inputAssistantItem.trailingBarButtonGroups = [group(second + arrows)]
             return
         }
+
+        // MARK: Mode A — WeChat-style single-row Voice Bar
+        let keysToggle = Self.button("terminal", String(localized: "Terminal Keys"), size: 16)
+        keysToggle.accessibilityIdentifier = "voice-bar-keys-toggle"
+        keysToggle.configurationUpdateHandler = { [weak self] b in
+            b.configuration = Self.config("terminal", text: false, size: 16, held: false)
+            b.configuration?.showsActivityIndicator = (self?.uploading ?? 0) > 0
+        }
+        keysToggle.addAction(UIAction { [weak self] _ in self?.toggleBarMode() }, for: .touchUpInside)
+        self.keysToggle = keysToggle
+
+        let voiceEnter = key("return", String(localized: "Enter"), "enter", size: 17)
+        voiceEnter.accessibilityIdentifier = "voice-bar-enter"
+
+        let voiceHost = VoiceCapsuleHostView()
+        voiceHost.accessibilityIdentifier = "voice-bar-capsule"
+        voiceHost.accessibilityLabel = String(localized: "Hold to Talk, Tap to Type")
+        voiceHost.accessibilityTraits = [.button]
+        voiceHost.onActivate = { [weak self] in
+            guard let self else { return false }
+            if self.isDownloadingAssets?() == true {
+                self.tick.impactOccurred()
+                self.onStopDownloadTapped?()
+                return true
+            }
+            guard self.isVoiceBusy?() != true else { return false }
+            let actions = self.voiceBarState.pressBegan() + self.voiceBarState.pressEnded(elapsed: 0)
+            self.applyVoiceBarActions(actions)
+            self.notifyVoicePhaseIfNeeded()
+            return true
+        }
+        voiceHost.accessibilityCustomActions = [
+            UIAccessibilityCustomAction(name: String(localized: "Dictate")) { [weak self] _ in
+                self?.onVoiceOverToggleDictation?()
+                return true
+            },
+            UIAccessibilityCustomAction(name: String(localized: "Show Keyboard")) { [weak self] _ in
+                guard let self else { return false }
+                let actions = self.voiceBarState.pressBegan() + self.voiceBarState.pressEnded(elapsed: 0)
+                self.applyVoiceBarActions(actions)
+                self.notifyVoicePhaseIfNeeded()
+                return true
+            },
+        ]
+        voiceFace.isUserInteractionEnabled = false
+        voiceFace.translatesAutoresizingMaskIntoConstraints = false
+        voiceHost.addSubview(voiceFace)
+        NSLayoutConstraint.activate([
+            voiceFace.leadingAnchor.constraint(equalTo: voiceHost.leadingAnchor),
+            voiceFace.trailingAnchor.constraint(equalTo: voiceHost.trailingAnchor),
+            voiceFace.topAnchor.constraint(equalTo: voiceHost.topAnchor),
+            voiceFace.bottomAnchor.constraint(equalTo: voiceHost.bottomAnchor),
+        ])
+        let voicePress = UILongPressGestureRecognizer(target: self, action: #selector(handleVoicePress))
+        voicePress.minimumPressDuration = 0
+        voicePress.allowableMovement = .greatestFiniteMagnitude
+        voiceHost.addGestureRecognizer(voicePress)
+        self.voiceHost = voiceHost
+
+        let leftVoiceCapsule = Self.capsule(keysToggle)
+        let centerVoiceCapsule = Self.capsule(voiceHost, verticalInset: 0)
+        centerVoiceCapsule.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let rightVoiceCapsule = Self.capsule(voiceEnter)
+        leftVoiceCapsule.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        rightVoiceCapsule.widthAnchor.constraint(equalToConstant: 48).isActive = true
+
+        let voiceBarRow = UIStackView(arrangedSubviews: [leftVoiceCapsule, centerVoiceCapsule, rightVoiceCapsule])
+        voiceBarRow.spacing = 8
+
+        // MARK: Mode B — Compact single-row Terminal Keys bar
+        let voiceToggle = Self.button("mic", String(localized: "Voice Bar"), size: 16)
+        voiceToggle.accessibilityIdentifier = "keys-bar-voice-toggle"
+        voiceToggle.addAction(UIAction { [weak self] _ in self?.toggleBarMode() }, for: .touchUpInside)
+
         let delete = repeating("delete.left", String(localized: "Delete"), "backspace")
 
-        // Three pages of four slots, the last one short, inset from the
-        // capsule's ends, each page as wide as the capsule.
-        let pages = UIStackView(arrangedSubviews: [[escape, ctrl, alt, enter], [shift, slash, dash, delete], [tilde, pipe, tab]].map { keys in
-            let page = UIStackView(arrangedSubviews: keys + (keys.count..<4).map { _ in UIView() })
+        // Page 1: Esc, Tab, Ctrl, Alt, Shift (immediately visible without swiping).
+        // Page 2: More (Paste / Add Photo / Add File), shell punctuation, and Backspace.
+        let pages = UIStackView(arrangedSubviews: [[escape, tab, ctrl, alt, shift], [more, tilde, pipe, slash, dash, delete]].map { keys in
+            let page = UIStackView(arrangedSubviews: keys)
             page.distribution = .fillEqually
             page.isLayoutMarginsRelativeArrangement = true
-            page.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
+            page.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6)
             return page
         })
         let scroll = UIScrollView()
@@ -1400,7 +1565,7 @@ final class KeyBar: UIView {
             pages.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor),
         ] + pages.arrangedSubviews.map { $0.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor) })
 
-        let stick = Self.button("stick", String(localized: "Arrow Keys"))
+        let stick = Self.button("stick", String(localized: "Arrow Keys"), size: 16)
         let drag = UILongPressGestureRecognizer(target: self, action: #selector(steer))
         drag.minimumPressDuration = 0
         drag.allowableMovement = .greatestFiniteMagnitude
@@ -1411,61 +1576,57 @@ final class KeyBar: UIView {
         }, for: .touchUpInside)
         keyboard.configurationUpdateHandler = { [weak target] b in
             let hidden = target?.isFirstResponder != true
-            b.configuration = Self.config(hidden ? "keyboard" : "keyboard.chevron.compact.down", text: false, size: 17, held: false)
+            b.configuration = Self.config(hidden ? "keyboard" : "keyboard.chevron.compact.down", text: false, size: 16, held: false)
             b.accessibilityLabel = hidden ? String(localized: "Show Keyboard") : String(localized: "Hide Keyboard")
         }
 
-        // The mic taps the hand as the keys do, as the finger goes down.
-        // What the tap does is the screen's, so it never keeps the touch.
-        let micDown = PressWatcher(target: self, action: #selector(pressMic))
-        micDown.minimumPressDuration = 0
-        micDown.cancelsTouchesInView = false
-        mic.addGestureRecognizer(micDown)
+        // Every key taps the hand as it goes down, as the keyboard's do.
+        // Backspace and the stick tap on their own as they repeat.
+        for b in [keysToggle, voiceEnter, voiceToggle, more, keyboard, enter] + first + second {
+            b.addAction(UIAction { [tick] _ in tick.impactOccurred() }, for: .touchDown)
+        }
 
-        let middle = Self.capsule(scroll)
-        // The middle capsule takes the room the others leave.
-        middle.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let right = UIStackView(arrangedSubviews: [stick, mic, keyboard])
-        right.distribution = .fillEqually
-        let left = Self.capsule(more), last = Self.capsule(right)
-        // As in the bar this one copies: ⌘ 56pt wide, and 50 for each key
-        // of the last.
-        left.widthAnchor.constraint(equalToConstant: 56).isActive = true
-        last.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        let keysRow = UIStackView(arrangedSubviews: [middle, last])
-        keysRow.spacing = 8
-        let voiceCapsule = Self.capsule(voice)
-        voiceCapsule.alpha = 0
-        voiceCapsule.isHidden = true
-        let rightArea = UIView()
-        rightArea.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        for sub in [keysRow, voiceCapsule] {
+        let leftKeysCapsule = Self.capsule(voiceToggle)
+        let middleKeysCapsule = Self.capsule(scroll)
+        middleKeysCapsule.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let rightKeysStack = UIStackView(arrangedSubviews: [stick, enter, keyboard])
+        rightKeysStack.distribution = .fillEqually
+        let rightKeysCapsule = Self.capsule(rightKeysStack)
+        leftKeysCapsule.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        rightKeysCapsule.widthAnchor.constraint(equalToConstant: 108).isActive = true
+
+        let keysBarRow = UIStackView(arrangedSubviews: [leftKeysCapsule, middleKeysCapsule, rightKeysCapsule])
+        keysBarRow.spacing = 6
+        keysBarRow.alpha = 0
+        keysBarRow.isHidden = true
+        keysBarRow.isUserInteractionEnabled = false
+
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        for sub in [voiceBarRow, keysBarRow] {
             sub.translatesAutoresizingMaskIntoConstraints = false
-            rightArea.addSubview(sub)
+            container.addSubview(sub)
             NSLayoutConstraint.activate([
-                sub.leadingAnchor.constraint(equalTo: rightArea.leadingAnchor),
-                sub.trailingAnchor.constraint(equalTo: rightArea.trailingAnchor),
-                sub.topAnchor.constraint(equalTo: rightArea.topAnchor),
-                sub.bottomAnchor.constraint(equalTo: rightArea.bottomAnchor),
+                sub.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                sub.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                sub.topAnchor.constraint(equalTo: container.topAnchor),
+                sub.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             ])
         }
-        self.keysRow = keysRow
-        self.voiceCapsule = voiceCapsule
+        self.voiceBarRow = voiceBarRow
+        self.keysBarRow = keysBarRow
 
-        let row = UIStackView(arrangedSubviews: [left, rightArea])
-        row.spacing = 8
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
+        addSubview(container)
         addSubview(pad)
         // The width of a phone's bar at most, in the middle of a wider one.
-        let fill = row.widthAnchor.constraint(equalTo: widthAnchor, constant: -32)
+        let fill = container.widthAnchor.constraint(equalTo: widthAnchor, constant: -32)
         fill.priority = .defaultHigh
         NSLayoutConstraint.activate([
             fill,
-            row.widthAnchor.constraint(lessThanOrEqualToConstant: 440),
-            row.centerXAnchor.constraint(equalTo: centerXAnchor),
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            container.widthAnchor.constraint(lessThanOrEqualToConstant: 440),
+            container.centerXAnchor.constraint(equalTo: centerXAnchor),
+            container.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
         ])
     }
 
@@ -1476,39 +1637,202 @@ final class KeyBar: UIView {
 
     override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: Self.height) }
 
-    /// Transitions the middle and right capsules into a single horizontal
-    /// voice capsule while dictating, or back to the key capsules when done.
-    func setVoice(active: Bool) {
-        guard active != voiceActive, let keysRow, let voiceCapsule else { return }
-        voiceActive = active
-        if active {
-            voiceCapsule.isHidden = false
-            voiceCapsule.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
-            keysRow.isUserInteractionEnabled = false
-            UIView.animate(withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0) {
-                keysRow.alpha = 0
-                keysRow.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
-                voiceCapsule.alpha = 1
-                voiceCapsule.transform = .identity
-            }
+    /// Matches the bar's Liquid Glass material and ink to the terminal's light or dark theme.
+    func applyAppearance(light: Bool) {
+        let style: UIUserInterfaceStyle = light ? .light : .dark
+        if overrideUserInterfaceStyle != style { overrideUserInterfaceStyle = style }
+    }
+
+    /// Updates VoiceOver label on the center voice capsule for the current state.
+    func updateVoiceAccessibility(phase: VoicePressPhase, downloading: Bool, busy: Bool) {
+        guard let voiceHost else { return }
+        if downloading {
+            voiceHost.accessibilityLabel = String(localized: "Downloading Speech Assets")
+        } else if busy {
+            voiceHost.accessibilityLabel = String(localized: "Recognising")
         } else {
-            keysRow.isUserInteractionEnabled = true
-            UIView.animate(withDuration: 0.24, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0) {
-                keysRow.alpha = 1
-                keysRow.transform = .identity
-                voiceCapsule.alpha = 0
-                voiceCapsule.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
-            } completion: { _ in
-                if !self.voiceActive { voiceCapsule.isHidden = true }
+            switch phase {
+            case .idle, .pressing:
+                voiceHost.accessibilityLabel = String(localized: "Hold to Talk, Tap to Type")
+            case .speaking:
+                voiceHost.accessibilityLabel = String(localized: "Release to Send")
+            case .cancelling:
+                voiceHost.accessibilityLabel = String(localized: "Release to Cancel")
             }
         }
     }
 
-    /// The screen's mic, as it goes down: a light tap of the hand, as the
-    /// keys give.
-    @objc private func pressMic(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began else { return }
-        tick.impactOccurred()
+    /// Syncs soft keyboard visibility into `VoiceBarState`, switching automatically
+    /// to Terminal Keys while visible and returning to Voice Bar on dismiss unless pinned.
+    func setKeyboardVisible(_ visible: Bool) {
+        let actions = voiceBarState.setKeyboardVisible(visible)
+        if visible {
+            activePressID = nil
+            holdTask?.cancel()
+            holdTask = nil
+        }
+        applyVoiceBarActions(actions)
+        notifyVoicePhaseIfNeeded()
+        keyboard.setNeedsUpdateConfiguration()
+    }
+
+    /// Resets active press state when dictation ends externally (error, permission, background).
+    func dictationDidEnd() {
+        activePressID = nil
+        holdTask?.cancel()
+        holdTask = nil
+        voiceBarState.dictationEnded()
+        notifyVoicePhaseIfNeeded()
+    }
+
+    private func toggleBarMode() {
+        activePressID = nil
+        holdTask?.cancel()
+        holdTask = nil
+        let actions = voiceBarState.toggleMode()
+        applyVoiceBarActions(actions)
+        notifyVoicePhaseIfNeeded()
+    }
+
+    @objc private func handleVoicePress(_ g: UILongPressGestureRecognizer) {
+        switch g.state {
+        case .began:
+            if isDownloadingAssets?() == true {
+                tick.impactOccurred()
+                onStopDownloadTapped?()
+                return
+            }
+            guard isVoiceBusy?() != true else { return }
+            tick.prepare()
+            cancelTick.prepare()
+            voicePressOrigin = g.location(in: self)
+            voicePressStart = ProcessInfo.processInfo.systemUptime
+            let pressID = UUID()
+            activePressID = pressID
+            let actions = voiceBarState.pressBegan()
+            applyVoiceBarActions(actions)
+            notifyVoicePhaseIfNeeded()
+            holdTask?.cancel()
+            holdTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(Int(VoiceBarState.holdThreshold * 1000)))
+                guard let self, !Task.isCancelled, self.activePressID == pressID else { return }
+                let actions = self.voiceBarState.holdThresholdReached()
+                self.applyVoiceBarActions(actions)
+                self.notifyVoicePhaseIfNeeded()
+            }
+        case .changed:
+            guard activePressID != nil else { return }
+            let p = g.location(in: self)
+            let translation = CGPoint(x: p.x - voicePressOrigin.x, y: p.y - voicePressOrigin.y)
+            let actions = voiceBarState.dragChanged(translation: translation)
+            applyVoiceBarActions(actions)
+            notifyVoicePhaseIfNeeded()
+        case .ended:
+            guard activePressID != nil else { return }
+            activePressID = nil
+            holdTask?.cancel()
+            holdTask = nil
+            let p = g.location(in: self)
+            let translation = CGPoint(x: p.x - voicePressOrigin.x, y: p.y - voicePressOrigin.y)
+            let elapsed = ProcessInfo.processInfo.systemUptime - voicePressStart
+            let actions = voiceBarState.pressEnded(elapsed: elapsed, translation: translation)
+            applyVoiceBarActions(actions)
+            notifyVoicePhaseIfNeeded()
+        case .cancelled, .failed:
+            guard activePressID != nil else { return }
+            activePressID = nil
+            holdTask?.cancel()
+            holdTask = nil
+            let actions = voiceBarState.pressCancelled()
+            applyVoiceBarActions(actions)
+            notifyVoicePhaseIfNeeded()
+        default:
+            break
+        }
+    }
+
+    private func applyVoiceBarActions(_ actions: [VoiceBarAction]) {
+        for action in actions {
+            switch action {
+            case .raiseKeyboard:
+                _ = target?.becomeFirstResponder()
+                keyboard.setNeedsUpdateConfiguration()
+            case .dismissKeyboard:
+                _ = target?.resignFirstResponder()
+                keyboard.setNeedsUpdateConfiguration()
+            case .startDictation:
+                if onStartDictation?() == false {
+                    activePressID = nil
+                    holdTask?.cancel()
+                    holdTask = nil
+                    voiceBarState.dictationEnded()
+                }
+            case .commitDictation:
+                onCommitDictation?()
+            case .cancelDictation:
+                onCancelDictation?()
+            case .hapticLight:
+                tick.impactOccurred()
+            case .hapticCancelWarning:
+                cancelTick.impactOccurred(intensity: 0.9)
+            }
+        }
+        updateBarMode(animated: true)
+    }
+
+    private func notifyVoicePhaseIfNeeded() {
+        let phase = voiceBarState.phase
+        guard phase != lastNotifiedPhase else { return }
+        lastNotifiedPhase = phase
+        onVoicePhaseChanged?(phase)
+    }
+
+    /// Transitions smoothly between Mode A (Voice Bar) and Mode B (Terminal Keys)
+    /// within the same single-row frame, respecting Reduce Motion.
+    private func updateBarMode(animated: Bool) {
+        let mode = voiceBarState.mode
+        guard mode != displayedMode, let voiceBarRow, let keysBarRow else { return }
+        displayedMode = mode
+        let incoming = mode == .voice ? voiceBarRow : keysBarRow
+        let outgoing = mode == .voice ? keysBarRow : voiceBarRow
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+
+        incoming.isHidden = false
+        incoming.isUserInteractionEnabled = true
+        outgoing.isUserInteractionEnabled = false
+
+        guard animated else {
+            incoming.alpha = 1
+            incoming.transform = .identity
+            outgoing.alpha = 0
+            outgoing.transform = .identity
+            outgoing.isHidden = true
+            return
+        }
+
+        if reduceMotion {
+            incoming.transform = .identity
+            outgoing.transform = .identity
+            UIView.animate(withDuration: 0.15, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState]) {
+                incoming.alpha = 1
+                outgoing.alpha = 0
+            } completion: { _ in
+                if self.displayedMode == mode { outgoing.isHidden = true }
+            }
+        } else {
+            incoming.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
+            UIView.animate(withDuration: 0.24, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.beginFromCurrentState]) {
+                incoming.alpha = 1
+                incoming.transform = .identity
+                outgoing.alpha = 0
+                outgoing.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
+            } completion: { _ in
+                if self.displayedMode == mode {
+                    outgoing.isHidden = true
+                    outgoing.transform = .identity
+                }
+            }
+        }
     }
 
     /// Points the stick: past a dead zone, the arrow of the drag's main
@@ -1519,9 +1843,13 @@ final class KeyBar: UIView {
         if g.state == .began, let v = g.view {
             tick.prepare()
             pad.center = v.convert(CGPoint(x: v.bounds.midX, y: v.bounds.midY), to: self)
-            pad.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
             pad.isHidden = false
-            UIView.animate(withDuration: 0.18, delay: 0, usingSpringWithDamping: 0.75, initialSpringVelocity: 0) { self.pad.transform = .identity }
+            if UIAccessibility.isReduceMotionEnabled {
+                pad.transform = .identity
+            } else {
+                pad.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
+                UIView.animate(withDuration: 0.18, delay: 0, usingSpringWithDamping: 0.75, initialSpringVelocity: 0) { self.pad.transform = .identity }
+            }
         }
         if g.state == .ended || g.state == .cancelled || g.state == .failed {
             pad.isHidden = true
@@ -1571,7 +1899,7 @@ final class KeyBar: UIView {
     }.withRenderingMode(.alwaysTemplate)
 
     /// A capsule of glass around a view.
-    private static func capsule(_ content: UIView) -> UIView {
+    private static func capsule(_ content: UIView, verticalInset: CGFloat = 4) -> UIView {
         let glass = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
         glass.cornerConfiguration = .capsule()
         glass.clipsToBounds = true
@@ -1580,8 +1908,8 @@ final class KeyBar: UIView {
         NSLayoutConstraint.activate([
             content.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor),
-            content.topAnchor.constraint(equalTo: glass.contentView.topAnchor, constant: 4),
-            content.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor, constant: -4),
+            content.topAnchor.constraint(equalTo: glass.contentView.topAnchor, constant: verticalInset),
+            content.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor, constant: -verticalInset),
         ])
         return glass
     }
@@ -1595,7 +1923,7 @@ final class KeyBar: UIView {
         let b = UIButton(configuration: config(face, text: label == nil, size: size, held: false))
         b.accessibilityLabel = label
         b.changesSelectionAsPrimaryAction = false
-                // A held modifier is prominent glass, in the accent: white here.
+        // A held modifier is prominent glass, in the accent.
         b.configurationUpdateHandler = { b in b.configuration = config(face, text: label == nil, size: size, held: b.isSelected) }
         return b
     }
@@ -1613,18 +1941,28 @@ final class KeyBar: UIView {
             c.image = face == "stick" ? stick : UIImage(systemName: face)
             c.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: size, weight: .regular)
         }
-        c.baseForegroundColor = held ? .black : .label
+        c.baseForegroundColor = held ? .systemBackground : .label
         c.cornerStyle = .capsule
         c.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
         return c
     }
 }
 
-/// A touch, watched as it goes down: it never keeps the touch from the
-/// view, so what the view does with the tap still happens.
-final class PressWatcher: UILongPressGestureRecognizer {
-    override func canPrevent(_ other: UIGestureRecognizer) -> Bool { false }
-    override func canBePrevented(by other: UIGestureRecognizer) -> Bool { false }
+/// Interactive container for the center Voice Bar capsule, forwarding VoiceOver
+/// activation while keeping gesture tracking on the UIKit recognizer.
+private final class VoiceCapsuleHostView: UIView {
+    var onActivate: (() -> Bool)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isAccessibilityElement = true
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func accessibilityActivate() -> Bool {
+        onActivate?() ?? false
+    }
 }
 
 /// The stick while held: a disc over its capsule, the quarter it points to
