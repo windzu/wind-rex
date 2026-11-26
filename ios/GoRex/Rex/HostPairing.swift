@@ -1,11 +1,12 @@
 import Foundation
 
-/// Resolves a scanned pairing QR payload (direct TLS/relay or LAN)
-/// into a single outcome shared by the empty-state home scanner and Remote Hosts.
+/// Resolves a scanned pairing QR payload (Relay Fleet `#r=`, direct TLS/relay `#k=`,
+/// or LAN) into a single outcome shared by the empty-state home scanner and Remote Hosts.
 enum HostPairing {
     enum Outcome: Equatable {
         case existing(HostConfig)
         case added(HostConfig)
+        case relayFleet(RelayPairingPayload)
         case invalid(String)
     }
 
@@ -18,6 +19,9 @@ enum HostPairing {
         _ code: String,
         existing hosts: [HostConfig]
     ) -> Outcome {
+        if let relay = RelayPairingPayload(pairing: code) {
+            return .relayFleet(relay)
+        }
         guard let c = HostConfig(pairing: code) else {
             return .invalid(invalidMessage)
         }

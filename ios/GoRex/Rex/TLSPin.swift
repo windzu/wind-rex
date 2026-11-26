@@ -25,19 +25,31 @@ enum PinnedTLSSession {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    /// Builds a URLSession that accepts only servers presenting a leaf
-    /// certificate whose SHA-256 pin equals `pin`.
-    static func session(pin: String) -> URLSession {
-        URLSession(configuration: .default, delegate: Delegate(pin: pin), delegateQueue: nil)
+    /// Builds a URLSession that optionally enforces a leaf certificate SHA-256
+    /// pin and/or refuses HTTP redirects (so Bearer tokens never leak cross-origin).
+    static func session(pin: String?, rejectRedirects: Bool = false) -> URLSession {
+        let normalizedPin = pin.flatMap { $0.isEmpty ? nil : $0 }
+        if normalizedPin == nil && !rejectRedirects { return .shared }
+        return URLSession(
+            configuration: .default,
+            delegate: Delegate(pin: normalizedPin, rejectRedirects: rejectRedirects),
+            delegateQueue: nil
+        )
     }
 
-    nonisolated private final class Delegate: NSObject, URLSessionDelegate, @unchecked Sendable {
-        let pin: String
-        init(pin: String) { self.pin = pin }
+    nonisolated private final class Delegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        let pin: String?
+        let rejectRedirects: Bool
+
+        init(pin: String?, rejectRedirects: Bool) {
+            self.pin = pin
+            self.rejectRedirects = rejectRedirects
+        }
 
         func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-            guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+            guard let pin,
+                  challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
                   let trust = challenge.protectionSpace.serverTrust,
                   let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
                   let leaf = chain.first else {
@@ -50,6 +62,13 @@ enum PinnedTLSSession {
             } else {
                 completionHandler(.cancelAuthenticationChallenge, nil)
             }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+            completionHandler(rejectRedirects ? nil : request)
         }
     }
 }

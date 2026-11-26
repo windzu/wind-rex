@@ -62,6 +62,7 @@ private final class SystemSchemeView: UIView {
 @main
 struct GoRexApp: App {
     @State private var store: HostStore
+    @State private var relays: RelayStore
     @State private var spaces: SpaceBook
     @Environment(\.scenePhase) private var phase
     @AppStorage("scheme") private var scheme = "dark"
@@ -82,6 +83,7 @@ struct GoRexApp: App {
         Notifier.shared.start()
         let store = HostStore()
         _store = State(initialValue: store)
+        _relays = State(initialValue: RelayStore())
         // The Live Activity's buttons answer through this store's hosts
         // (docs/IOS-006-live-activities.md, Actions).
         ActivityAnswerer.send = { host, session, block, action in
@@ -124,11 +126,13 @@ struct GoRexApp: App {
         WindowGroup {
             HostListView()
                 .environment(store)
+                .environment(relays)
                 .environment(spaces)
                 .promptSheet(store)
                 .preferredColorScheme(ScreenStyle.shared.terminal ?? Self.colorScheme(scheme))
                 .background { SystemScheme().accessibilityHidden(true) }
                 .onAppear(perform: Self.startGhostty)
+                .task { await relays.syncAll(into: store, force: false) }
                 .onChange(of: phase) { _, p in
                     if p == .background { Notifier.shared.inFront = false }
                     if p == .active { Notifier.shared.inFront = true }
@@ -166,7 +170,10 @@ struct GoRexApp: App {
                     // hears it once its register's answer lands
                     // (gorex.push.seen, Host.activitySeen).
                     TerminalLive.shared.reportSeen()
-                    Task { await store.foreground(wasBackground: wasBackground) }
+                    Task {
+                        await store.foreground(wasBackground: wasBackground)
+                        await relays.syncAll(into: store, force: false)
+                    }
                 }
                 // A new network: the hosts reconnect at once, not after a ping
                 // finds the old path dead (docs/IOS-012-background-and-network-changes.md).

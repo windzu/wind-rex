@@ -29,9 +29,18 @@ struct HostConfig: Codable, Identifiable, Hashable {
     /// self-hosted stateless relay using a self-signed certificate
     /// (docs/NET-005-direct-relay.md).
     var tlsPin: String? = nil
+    /// The saved `RelayConfig.id` that discovered and manages this host;
+    /// nil for manually added or single-host QR paired hosts.
+    var relayID: UUID? = nil
+    /// The host's identifier on its relay (`/h/<relayHostID>`), used for
+    /// deduplication, rename syncing, and respecting ignored hosts.
+    var relayHostID: String? = nil
+    /// Whether the user manually renamed this host on iOS; when true,
+    /// relay fleet sync preserves the user's custom display name.
+    var customName: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, url, desktop, icon, command, demo, tlsPin
+        case id, name, url, desktop, icon, command, demo, tlsPin, relayID, relayHostID, customName
     }
 
     /// The token the host's requests carry; none for Demo Mode.
@@ -41,7 +50,8 @@ struct HostConfig: Codable, Identifiable, Hashable {
 extension HostConfig {
     /// Tolerantly decodes a saved HostConfig, ignoring removed legacy fields
     /// (`transport`, `tailcat`) and defaulting `desktop` to false when omitted
-    /// (docs/NET-009-remove-tailscale.md).
+    /// (docs/NET-009-remove-tailscale.md). Pre-#55 records without relay fleet
+    /// fields decode with nil `relayID`, `relayHostID`, and `customName`.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -52,6 +62,9 @@ extension HostConfig {
         command = try c.decodeIfPresent(String.self, forKey: .command)
         demo = try c.decodeIfPresent(Bool.self, forKey: .demo)
         tlsPin = try c.decodeIfPresent(String.self, forKey: .tlsPin)
+        relayID = try c.decodeIfPresent(UUID.self, forKey: .relayID)
+        relayHostID = try c.decodeIfPresent(String.self, forKey: .relayHostID)
+        customName = try c.decodeIfPresent(Bool.self, forKey: .customName)
     }
 
     private struct IgnoredJSON: Decodable {

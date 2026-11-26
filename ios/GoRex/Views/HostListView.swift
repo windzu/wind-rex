@@ -22,6 +22,7 @@ extension Color {
 /// pushes the terminal over the list.
 struct HostListView: View {
     @Environment(HostStore.self) private var store
+    @Environment(RelayStore.self) private var relays
     @Environment(SpaceBook.self) private var book
     @Environment(\.horizontalSizeClass) private var width
     /// The terminal open, pushed or beside the list: one at most.
@@ -50,6 +51,10 @@ struct HostListView: View {
     @Environment(\.colorScheme) private var windowScheme
     /// The QR scanner opened directly from the empty state.
     @State private var scanning = false
+    /// Whether an initial Relay Fleet scan is currently querying `/api/hosts`.
+    @State private var syncingFleet = false
+    /// Summary message shown after scanning a Relay Fleet QR code.
+    @State private var fleetNotice: (title: String, message: String)?
     /// The host whose New Project sheet is open.
     @State private var newProject: Host?
     @State private var addingSpace = false
@@ -180,6 +185,10 @@ struct HostListView: View {
         } message: {
             Text(failure?.why ?? "")
         }
+        .alert(fleetNotice?.title ?? "", isPresented: Binding { fleetNotice != nil } set: { if !$0 { fleetNotice = nil } }) {
+        } message: {
+            Text(fleetNotice?.message ?? "")
+        }
     }
 
     /// The sidebar and the terminal beside it, on a wide window.
@@ -250,11 +259,13 @@ struct HostListView: View {
     }
 
     /// A pull to refresh (docs/IOS-016-pull-refresh.md): the hand feels a
-    /// tap, and each host not online dials at once. The refresh control
-    /// stays while a host still dials, up to three seconds.
+    /// tap, each host not online dials at once, and saved Relay Fleet servers
+    /// are polled for newly joined hosts. The refresh control stays while a
+    /// host still dials, up to three seconds.
     private func refresh() async {
         Haptics.refreshed()
         store.reconnectDown()
+        await relays.syncAll(into: store, force: true)
         let end = ContinuousClock.now + .seconds(3)
         while ContinuousClock.now < end,
               store.hosts.contains(where: { !$0.isDemo && $0.status == .connecting }) {
@@ -272,7 +283,8 @@ struct HostListView: View {
         }
     }
 
-    /// Pairs a QR code scanned directly from the empty home screen.
+    /// Pairs a QR code (single host `#k=` or Relay Fleet `#r=`) scanned directly
+    /// from the empty home screen.
     private func scanEmptyStateCode(_ code: String) -> String? {
         switch HostPairing.resolve(code, existing: store.hosts.map(\.config)) {
         case .existing(let updated):
@@ -285,8 +297,29 @@ struct HostListView: View {
             store.add(config)
             scanning = false
             return nil
+        case .relayFleet(let payload):
+            scanning = false
+            Task { await importRelayFleet(payload) }
+            return nil
         case .invalid(let why):
             return why
+        }
+    }
+
+    private func importRelayFleet(_ payload: RelayPairingPayload) async {
+        syncingFleet = true
+        defer { syncingFleet = false }
+        do {
+            let summary = try await relays.pairAndSync(payload, into: store)
+            fleetNotice = (
+                String(localized: "Relay Connected"),
+                summary.userMessage
+            )
+        } catch {
+            failure = (
+                String(localized: "Couldn't Sync Relay Fleet"),
+                error.localizedDescription
+            )
         }
     }
 
@@ -303,6 +336,7 @@ struct HostListView: View {
                 // middle, above the keyboard or the bottom bar.
                 NoHostsView(
                     zoom: zoom,
+                    syncingFleet: syncingFleet,
                     scanQR: { scanning = true },
                     tryDemo: { store.enterDemo() },
                     addHost: {
@@ -553,7 +587,10 @@ struct HostListView: View {
 
     /// The settings sheet's content, of its own for the type-checker.
     private var settingsSheet: some View {
-        SettingsView().environment(store).navigationTransition(.zoom(sourceID: settingsSource, in: zoom))
+        SettingsView()
+            .environment(store)
+            .environment(relays)
+            .navigationTransition(.zoom(sourceID: settingsSource, in: zoom))
     }
 
     /// A host's section in the list: the dragged one dims, and each is
@@ -729,6 +766,7 @@ private struct ListPicker<Content: View>: View {
 private struct NoHostsView: View {
     /// Where Add a Host is the source Settings zooms out of.
     let zoom: Namespace.ID
+    let syncingFleet: Bool
     let scanQR: () -> Void
     let tryDemo: () -> Void
     let addHost: () -> Void
@@ -741,16 +779,26 @@ private struct NoHostsView: View {
                 .padding(.bottom, 2)
             Text("No Hosts Yet")
                 .font(.title2.bold())
-            Text("On your Mac, open WindRex › Settings › Server and click Connect iPhone to show the pairing QR code.")
+            Text("On your Mac, open WindRex › Settings › Server and click Connect iPhone to show a host or Relay Fleet QR code.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
             VStack(spacing: 12) {
                 Button { scanQR() } label: {
-                    Label("Scan QR to Pair", systemImage: "qrcode.viewfinder")
-                        .frame(maxWidth: .infinity)
+                    Group {
+                        if syncingFleet {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Discovering Relay Fleet…")
+                            }
+                        } else {
+                            Label("Scan QR to Pair", systemImage: "qrcode.viewfinder")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
+                .disabled(syncingFleet)
                 .buttonStyle(.glassProminent)
                 // The prominent glass is the accent, which is white in the
                 // dark scheme: its label takes the page's color, as the
