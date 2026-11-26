@@ -17,12 +17,6 @@ struct HostConfig: Codable, Identifiable, Hashable {
     /// The program and arguments new windows run, as typed; nil or empty
     /// runs the host's login shell.
     var command: String?
-    /// How the app reaches the host; nil is through the system. Optional,
-    /// as a list saved without it must still decode.
-    var transport: Transport?
-    /// The GoRex machine's tailcat address, for a host paired by its Rex
-    /// Go code; optional as transport is.
-    var tailcat: Tailcat?
     /// Whether the host is Demo Mode's: a Mac that answers on the phone,
     /// which the hosts saved never hold. Optional, as a list saved before
     /// Demo Mode must still decode.
@@ -37,50 +31,88 @@ struct HostConfig: Codable, Identifiable, Hashable {
     var tlsPin: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, url, desktop, icon, command, transport, tailcat, demo, tlsPin
+        case id, name, url, desktop, icon, command, demo, tlsPin
     }
 
-    /// The token the host's requests carry: the LAN token of a host the
-    /// system's network reaches by its address; none for a tailcat host.
-    var auth: String? { tailcat == nil && demo != true ? lanToken : nil }
-
-    enum Transport: String, Codable {
-        /// The phone's own network, or the Tailscale app's VPN.
-        case system
-        /// The built-in Tailscale's proxy (docs/IOS-001-tailnet.md).
-        case tailnet
-        /// The engine's tailcat client, through the same proxy
-        /// (docs/IOS-002-tailcat.md).
-        case tailcat
-    }
-
-    /// A GoRex machine as its WindRex code names it: its tailcat address, a
-    /// secret, and its name.
-    struct Tailcat: Codable, Hashable {
-        var address: String
-        var machine: String
-    }
+    /// The token the host's requests carry; none for Demo Mode.
+    var auth: String? { demo != true ? lanToken : nil }
 }
 
-/// The built-in Tailscale's SOCKS5 proxy on loopback, as one run of the
-/// engine uses it: user name "tsnet" and a password of its own. The
-/// proxy lasts until iOS reclaims its listener in a suspension, when the
-/// engine reads a new one (TailnetEngine.resume); its tailnet connections
-/// end with the run, so another run is another value, even on the same
-/// port.
-struct LoopbackProxy: Equatable {
-    let port: Int
-    let password: String
-    let run: Int
+extension HostConfig {
+    /// Tolerantly decodes a saved HostConfig, ignoring removed legacy fields
+    /// (`transport`, `tailcat`) and defaulting `desktop` to false when omitted
+    /// (docs/NET-009-remove-tailscale.md).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        url = try c.decode(URL.self, forKey: .url)
+        desktop = try c.decodeIfPresent(Bool.self, forKey: .desktop) ?? false
+        icon = try c.decodeIfPresent(String.self, forKey: .icon)
+        command = try c.decodeIfPresent(String.self, forKey: .command)
+        demo = try c.decodeIfPresent(Bool.self, forKey: .demo)
+        tlsPin = try c.decodeIfPresent(String.self, forKey: .tlsPin)
+    }
 
-    /// A session whose connections go through the proxy, which resolves
-    /// the hosts' names on the tailnet itself.
-    func session() -> URLSession {
-        let c = URLSessionConfiguration.default
-        let p = ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(integerLiteral: UInt16(port))))
-        p.applyCredential(username: "tsnet", password: password)
-        c.proxyConfigurations = [p]
-        return URLSession(configuration: c)
+    private struct IgnoredJSON: Decodable {
+        init(from decoder: Decoder) throws {}
+    }
+
+    private struct SavedHostRecord: Decodable {
+        let config: HostConfig
+        let isLegacyUnroutable: Bool
+
+        private enum LegacyKeys: String, CodingKey {
+            case transport, tailcat
+        }
+
+        init(from decoder: Decoder) throws {
+            config = try HostConfig(from: decoder)
+            let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+            let transport = (try? legacy.decodeIfPresent(String.self, forKey: .transport))?.lowercased()
+            let hasTailcat = legacy.contains(.tailcat) && ((try? legacy.decodeNil(forKey: .tailcat)) == false)
+            let host = config.url.host()?.lowercased().trimmingCharacters(in: ["."]) ?? ""
+            let isTailcatHost = host == "tailcat.invalid" || host.hasSuffix(".tailcat.invalid")
+            isLegacyUnroutable = hasTailcat || isTailcatHost || transport == "tailcat" || transport == "tailnet"
+        }
+    }
+
+    private struct SavedHostList: Decodable {
+        let hosts: [HostConfig]
+        let dropped: Int
+
+        init(from decoder: Decoder) throws {
+            var container = try decoder.unkeyedContainer()
+            var kept: [HostConfig] = []
+            var droppedCount = 0
+            while !container.isAtEnd {
+                let before = container.currentIndex
+                if let record = try? container.decode(SavedHostRecord.self) {
+                    if record.config.demo == true || record.isLegacyUnroutable {
+                        droppedCount += 1
+                    } else {
+                        kept.append(record.config)
+                    }
+                } else {
+                    _ = try? container.decode(IgnoredJSON.self)
+                    droppedCount += 1
+                }
+                if container.currentIndex == before { break }
+            }
+            hosts = kept
+            dropped = droppedCount
+        }
+    }
+
+    /// Decodes `UserDefaults["hosts"]` element by element so pre-#46 lists
+    /// containing `.tailnet`, `.tailcat`, `*.tailcat.invalid`, `demo`, or
+    /// malformed entries never discard surviving Direct TLS, Relay, or LAN
+    /// hosts (docs/NET-009-remove-tailscale.md).
+    static func decodeSaved(_ data: Data) -> (hosts: [HostConfig], dropped: Int) {
+        guard let list = try? JSONDecoder().decode(SavedHostList.self, from: data) else {
+            return ([], 0)
+        }
+        return (list.hosts, list.dropped)
     }
 }
 
@@ -98,43 +130,6 @@ extension HostConfig {
 
     /// The SF Symbol of the host's icon.
     var symbol: String { icon ?? (desktop ? "desktopcomputer" : "laptopcomputer") }
-}
-
-extension HostConfig {
-    /// The transport of a host as entered: as switched, else the host's
-    /// own while its address stays, else by its address (rule).
-    static func transport(switched: Bool?, was old: HostConfig?, at url: URL, rule: @autoclosure () -> Transport?) -> Transport? {
-        if let switched { return switched ? .tailnet : .system }
-        if let old, old.url == url { return old.transport }
-        return rule()
-    }
-
-    /// How the app reaches the host: over tailcat when it has a tailcat
-    /// address, whether or not the built-in Tailscale is on; through the
-    /// built-in Tailscale when the host is on it and it is on; else the
-    /// system's way, as through the Tailscale app.
-    func reach(tailnetOn: Bool) -> Transport {
-        if tailcat != nil { return .tailcat }
-        return transport == .tailnet && tailnetOn ? .tailnet : .system
-    }
-
-    /// The transport of a host added now: .tailnet while the built-in
-    /// Tailscale is on, for a name under the tailnet's MagicDNS suffix or
-    /// an address of Tailscale's, in 100.64.0.0/10 or fd7a:115c:a1e0::/48;
-    /// else nil, the system's way.
-    static func transport(of url: URL, tailnetOn: Bool, suffix: String?) -> Transport? {
-        guard tailnetOn, let host = url.host()?.lowercased().trimmingCharacters(in: ["[", "]"]) else { return nil }
-        if let s = suffix?.lowercased().trimmingCharacters(in: ["."]), !s.isEmpty,
-           host.trimmingCharacters(in: ["."]).hasSuffix("." + s) { return .tailnet }
-        if let a = IPv4Address(host) {
-            let b = [UInt8](a.rawValue)
-            return b[0] == 100 && b[1] & 0xC0 == 64 ? .tailnet : nil
-        }
-        if let a = IPv6Address(host) {
-            return [UInt8](a.rawValue).starts(with: [0xFD, 0x7A, 0x11, 0x5C, 0xA1, 0xE0]) ? .tailnet : nil
-        }
-        return nil
-    }
 }
 
 extension HostConfig {
@@ -201,22 +196,6 @@ extension HostConfig {
         t.count <= 256 && t.wholeMatch(of: /[A-Za-z0-9_-]+/) != nil
     }
 
-    /// The host of a WindRex code, rexgo://tailcat?a=<address>&n=<machine>,
-    /// as GoRex's WindRex QR… shows it; nil for anything else. The engine
-    /// checks the address in full as it pairs.
-    init?(tailcat code: String) {
-        guard let c = URLComponents(string: code.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = c.scheme?.lowercased(), ["windrex", "rexgo"].contains(scheme),
-              c.host?.lowercased() == "tailcat", c.path.isEmpty,
-              c.user == nil, c.password == nil, c.port == nil, c.fragment == nil,
-              let a = c.queryItems?.first(where: { $0.name == "a" })?.value,
-              a.wholeMatch(of: /tc[A-Za-z0-9_-]+/) != nil
-        else { return nil }
-        let n = c.queryItems?.first { $0.name == "n" }?.value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let id = UUID()
-        self.init(id: id, name: n.isEmpty ? "GoRex" : n, url: Self.tailcatURL(id), tailcat: Tailcat(address: a, machine: n))
-    }
-
     /// Why a typed address is refused, when it names a scheme other than
     /// http(s); nil for a bare host[:port], which reads as http, and for
     /// any other fault.
@@ -230,18 +209,9 @@ extension HostConfig {
         return String(localized: "Unsupported address. Enter an http:// or https:// address, like http://192.168.1.2:7297.")
     }
 
-    /// Where the engine's proxy reaches a tailcat host: Rex's API port at
-    /// <id>.tailcat.invalid, a name that resolves nowhere else.
-    static func tailcatURL(_ id: UUID) -> URL {
-        URL(string: "http://\(tailcatID(id)).tailcat.invalid:7297")!
-    }
-
-    /// The host's name to the engine (SetTailcatHosts), a DNS label.
-    static func tailcatID(_ id: UUID) -> String { id.uuidString.lowercased() }
-
     /// A host's name by its address, as Rex's API tells no machine name: an
-    /// IP address as is, else the first label of the DNS name, less the
-    /// "-gorex" that GoRex's built-in Tailscale adds.
+    /// IP address as is, else the first label of the DNS name, less any
+    /// legacy "-gorex" suffix.
     static func name(_ host: String) -> String {
         let h = host.trimmingCharacters(in: ["[", "]"])
         if IPv4Address(h) != nil || IPv6Address(h) != nil { return h }
@@ -507,20 +477,6 @@ final class Host: Identifiable {
     @ObservationIgnored private var reread: Set<String> = []
     @ObservationIgnored private var wanted: [String: Int] = [:]
     @ObservationIgnored private var stopped = false
-    /// The built-in Tailscale's proxy of the moment; nil while it isn't
-    /// running. The app sets it.
-    static var tailnetProxy: () -> LoopbackProxy? = { nil }
-    /// The proxy the tailcat hosts go through, the same one whether or not
-    /// the built-in Tailscale runs; nil when there is none. The app sets it.
-    static var tailcatProxy: () -> LoopbackProxy? = { nil }
-    /// Tells the engine the hosts, as their list changes, for it to reach
-    /// those with a tailcat address. The app sets it.
-    static var tailcatHosts: ([HostConfig]) -> Void = { _ in }
-    /// Tells the engine a dial through its proxy failed, so that it reads
-    /// the proxy again at once rather than at the next resume: iOS may
-    /// have taken the listener in a suspension no resume has seen. The
-    /// app sets it.
-    static var proxyFailed: () -> Void = {}
     /// The coordinator of the activities' push tokens (PushTokens,
     /// docs/NET-003-push-relay.md); a test's stands in.
     static var pushTokens: () -> PushTokens = { PushTokens.shared }
@@ -534,51 +490,26 @@ final class Host: Identifiable {
     /// The terminal on screen the host's pushes are for, registered with
     /// it (pushTarget); nil while no terminal shows.
     @ObservationIgnored private(set) var pushTarget: (session: String, block: String)?
-    /// Bumped after HostStore.foreground finishes preparing this host (probing
-    /// system sockets or resetting the tailnet proxy), so open terminals resume
-    /// or probe after the host's transport is ready instead of racing it.
+    /// Bumped after HostStore.foreground finishes probing/resuming this host,
+    /// so open terminals verify or resume after foreground recovery completes.
     private(set) var foregroundReady = 0
-    @ObservationIgnored private var proxySession: (proxy: LoopbackProxy, session: URLSession)?
     @ObservationIgnored private var pinnedSession: (pin: String, session: URLSession)?
 
     init(_ config: HostConfig) {
         self.config = config
     }
 
-    /// Whether the host's connections go through the built-in Tailscale.
-    var viaTailnet: Bool { config.reach(tailnetOn: TailnetSettings.isOn) == .tailnet }
-
-    /// The session the host's connections go through: the system's (optionally
-    /// pinned to config.tlsPin), or one through the engine's proxy of the
-    /// moment, made anew for each run of the built-in Tailscale and each new proxy.
-    func session() throws -> URLSession {
-        let p: LoopbackProxy
-        switch config.reach(tailnetOn: TailnetSettings.isOn) {
-        case .system:
-            if let pin = config.tlsPin, !pin.isEmpty {
-                if let s = pinnedSession, s.pin == pin { return s.session }
-                pinnedSession?.session.invalidateAndCancel()
-                let s = PinnedTLSSession.session(pin: pin)
-                pinnedSession = (pin, s)
-                return s
-            }
-            return .shared
-        case .tailnet:
-            guard let t = Self.tailnetProxy() else {
-                throw RexError(code: "offline", message: String(localized: "Tailscale is not running"))
-            }
-            p = t
-        case .tailcat:
-            guard let t = Self.tailcatProxy() else {
-                throw RexError(code: "offline", message: String(localized: "WindRex's connection to GoRex is not ready"))
-            }
-            p = t
+    /// The session the host's connections go through: the system's shared
+    /// session, or a leaf-certificate-pinned session when config.tlsPin is set.
+    func session() -> URLSession {
+        if let pin = config.tlsPin, !pin.isEmpty {
+            if let s = pinnedSession, s.pin == pin { return s.session }
+            pinnedSession?.session.invalidateAndCancel()
+            let s = PinnedTLSSession.session(pin: pin)
+            pinnedSession = (pin, s)
+            return s
         }
-        if let s = proxySession, s.proxy == p { return s.session }
-        proxySession?.session.invalidateAndCancel()
-        let s = p.session()
-        proxySession = (p, s)
-        return s
+        return .shared
     }
 
     /// Connects, unless connected or connecting. Tried again after a
@@ -609,16 +540,7 @@ final class Host: Identifiable {
             isRetrying = true
         }
         let name = "control \(config.url.host() ?? "")"
-        let session: URLSession
-        do {
-            session = try self.session()
-        } catch {
-            ConnectionLog.note("\(name): \(error.diagnosis)")
-            status = .offline(error.localizedDescription)
-            scheduleRetry(reason: error.localizedDescription)
-            return
-        }
-        let c = ControlConnection(base: config.url, auth: config.auth, session: session)
+        let c = ControlConnection(base: config.url, auth: config.auth, session: self.session())
         control = c
         describes.cancelAll()
         gate = EventGate()
@@ -639,8 +561,8 @@ final class Host: Identifiable {
             self.prompt = nil
             let offline = Status.offline(error?.localizedDescription ?? "")
             if self.status != offline { self.status = offline }
-            // Refused, it waits for a change: the engine running again, as
-            // after a sign-in, or the app back in the foreground.
+            // Refused: waits for a user-triggered reconnect, updated credential,
+            // or returning to the foreground.
             if let error, (error as? RexError)?.code == "refused" {
                 self.isRetrying = false
                 self.settle(.failure(error))
@@ -650,7 +572,7 @@ final class Host: Identifiable {
             }
         }
         let began = ContinuousClock.now
-        ConnectionLog.note("\(name): opening via \(config.reach(tailnetOn: TailnetSettings.isOn).rawValue)")
+        ConnectionLog.note("\(name): opening")
         Task {
             do {
                 try await c.open(token: token)
@@ -664,16 +586,7 @@ final class Host: Identifiable {
                 attempts = 0
                 settle(.success(c))
                 ConnectionLog.note("\(name): online, \(elapsed.ms)")
-            } catch let e as RexError where e.code == "refused" && viaTailnet {
-                // The gateway lets in only whom it says (docs/IOS-001-tailnet.md, Server).
-                c.close(RexError(code: e.code, message: String(localized: "Refused: sign WindRex in as the Tailscale user who signed in the GoRex machine, not with a tagged key, or turn on --allow-tailnet-members there.")))
             } catch {
-                // A dial through the proxy that fails may be a listener
-                // iOS took: the engine reads the proxy again at once.
-                if config.reach(tailnetOn: TailnetSettings.isOn) != .system {
-                    ConnectionLog.note("\(name): dial through the proxy failed")
-                    Self.proxyFailed()
-                }
                 c.close(error)
             }
         }
@@ -690,8 +603,6 @@ final class Host: Identifiable {
         Self.pushTokens().drop(host: id)
         control?.close()
         describes.cancelAll()
-        proxySession?.session.invalidateAndCancel()
-        proxySession = nil
         pinnedSession?.session.invalidateAndCancel()
         pinnedSession = nil
         settle(.failure(CancellationError()))
@@ -1200,7 +1111,7 @@ final class Host: Identifiable {
             throw RexError(code: "not_supported", message: String(localized: "Server does not accept uploads"))
         }
         try await Upload.send(file, name: file.lastPathComponent, session: sid, block: block,
-                              control: c, to: config.url, auth: config.auth, urlSession: { try self.session() })
+                              control: c, to: config.url, auth: config.auth, urlSession: { self.session() })
     }
 
     /// Whether the server supports rev 13+ file downloads.
@@ -1217,7 +1128,7 @@ final class Host: Identifiable {
         }
         return try await Download.fetch(path: path, session: sid, block: block,
                                         ifNoneMatch: ifNoneMatch, maxBytes: maxBytes,
-                                        control: c, to: config.url, auth: config.auth, urlSession: { try self.session() })
+                                        control: c, to: config.url, auth: config.auth, urlSession: { self.session() })
     }
 
     /// Whether the server supports rev 14+ com.superlogical.tunnel blocks.
@@ -1263,7 +1174,7 @@ final class Host: Identifiable {
             throw RexError(code: "not_supported", message: String(localized: "Server does not support tunnels"))
         }
         return try await Tunnel.connect(session: session, block: block, dataRefID: dataRefID,
-                                        control: c, to: config.url, auth: config.auth, urlSession: { try self.session() })
+                                        control: c, to: config.url, auth: config.auth, urlSession: { self.session() })
     }
 
     private func sessionID(forBlock block: String) -> String? {
@@ -1819,15 +1730,20 @@ final class HostStore {
 
     init(tokens: LANTokens = KeychainLANTokens()) {
         self.tokens = tokens
-        // A saved list never holds the demo host; one from an older build
-        // that did is dropped, as it answers nothing.
-        var saved = (UserDefaults.standard.data(forKey: "hosts")
-            .flatMap { try? JSONDecoder().decode([HostConfig].self, from: $0) } ?? []).filter { $0.demo != true }
-        for i in saved.indices where saved[i].tailcat == nil {
+        // Tolerantly decode pre-#46 host lists: keep all Direct TLS, Relay,
+        // and LAN hosts (with their Keychain tokens) while dropping legacy
+        // tailcat, built-in tailnet, demo, and malformed records.
+        let decoded = UserDefaults.standard.data(forKey: "hosts")
+            .map(HostConfig.decodeSaved) ?? (hosts: [], dropped: 0)
+        var saved = decoded.hosts
+        for i in saved.indices {
             saved[i].lanToken = tokens.token(for: saved[i].id)
         }
         hosts = saved.map(Host.init)
-        Host.tailcatHosts(saved)
+        if decoded.dropped > 0 {
+            ConnectionLog.note("hosts: dropped \(decoded.dropped) legacy or invalid record(s)")
+            save()
+        }
         hosts.forEach { $0.connect() }
         Self.current = self
     }
@@ -1851,7 +1767,7 @@ final class HostStore {
         hosts.removeAll { $0 === h }
     }
 
-    /// Adds a host; the engine hears of it before it connects.
+    /// Adds a host and starts connecting.
     func add(_ config: HostConfig) {
         let h = Host(config)
         hosts.append(h)
@@ -1867,36 +1783,25 @@ final class HostStore {
         save()
     }
 
-    /// Changes a host; one with a new address or transport connects
-    /// again. The host stays the same, for the terminals open on it.
+    /// Changes a host; one with a new address, token, or certificate pin
+    /// connects again. The host stays the same, for the terminals open on it.
     func update(_ config: HostConfig) {
         guard let h = host(config.id) else { return }
-        let moved = h.config.url != config.url || h.config.transport != config.transport || h.config.auth != config.auth || h.config.tlsPin != config.tlsPin
+        let moved = h.config.url != config.url || h.config.auth != config.auth || h.config.tlsPin != config.tlsPin
         if h.config.auth != config.auth { tokens.set(config.auth, for: config.id) }
         h.config = config
         if moved { h.reconnect() }
         save()
     }
 
-    /// Back in the foreground. After a suspension (suspended), resume
-    /// gets the engine going again first; while the built-in Tailscale
-    /// runs on as before, the hosts on it then connect anew, as their
-    /// connections to its proxy can look open while their tailnet side
-    /// died. Started anew, its old run's connections end with it, and the
-    /// hosts connect, on a new session, once it runs (docs/IOS-001-tailnet.md,
-    /// Lifecycle). The tailcat hosts connect anew either way: their
-    /// clients outlive the tailnet's runs. System hosts (including direct TLS
-    /// and stateless relay hosts) are probed when returning from background
-    /// so live sockets stay untouched and dead sockets recover within ~1.5 s
-    /// instead of waiting for a background keepalive timeout.
-    func foreground(suspended: Bool, wasBackground: Bool = false, resume: () async -> Bool) async {
-        let tailnetOn = TailnetSettings.isOn
-        let forced = { (h: Host) in suspended && h.config.reach(tailnetOn: tailnetOn) != .system }
-        let unforced = hosts.filter { !forced($0) }
+    /// Back in the foreground. Probes active host sockets when returning from
+    /// background so live connections stay untouched and dead sockets recover
+    /// within ~1.5 s instead of waiting for a keepalive timeout.
+    func foreground(wasBackground: Bool = false) async {
         if wasBackground {
             await withTaskGroup(of: Void.self) { group in
-                for h in unforced {
-                    if h.config.reach(tailnetOn: tailnetOn) == .system && h.control != nil {
+                for h in hosts {
+                    if h.control != nil {
                         group.addTask { await h.probeOrResume() }
                     } else {
                         h.reconnectIfNeeded()
@@ -1904,31 +1809,17 @@ final class HostStore {
                 }
             }
         } else {
-            unforced.forEach { $0.reconnectIfNeeded() }
+            hosts.forEach { $0.reconnectIfNeeded() }
         }
-        unforced.forEach { $0.noteForegroundReady() }
-        guard suspended else { return }
-        let configs = hosts.map(\.config)
-        guard TailnetActivationPolicy.needsEngine(hosts: configs, tailnetEnabled: tailnetOn) else { return }
-        let proxied = hosts.filter(forced)
-        let kept = await resume()
-        proxied.filter { kept || $0.config.tailcat != nil }.forEach {
-            $0.resume()
-            ConnectionLog.note("\($0.config.name): resumed after a suspension")
-        }
-        proxied.forEach { $0.noteForegroundReady() }
+        hosts.forEach { $0.noteForegroundReady() }
     }
 
     /// The phone changed network (NetworkPath). Unless in the background
-    /// (inactive counts as the foreground), each host the system's way
-    /// reaches connects anew, as its connection can look open while its
-    /// path died; so does one waiting in its retry backoff, which dials
-    /// now rather than after up to ten seconds. A host behind the engine
-    /// is left to it: its connection rides the proxy's loopback, which a
-    /// change of the phone's path cannot strand, and the engine hears the
-    /// change itself (scheduleRetry retries one that comes too early).
-    /// In the background, nothing: coming back to the foreground sees to
-    /// it.
+    /// (inactive counts as the foreground), each connected real host connects
+    /// anew, as its connection can look open while its path died; so does one
+    /// waiting in its retry backoff, which dials now rather than after up to
+    /// ten seconds. In the background, nothing: coming back to the foreground
+    /// sees to it.
     func networkChanged(inBackground: Bool) {
         for h in Self.resumedOnNetworkChange(hosts, inBackground: inBackground) {
             h.resume()
@@ -1937,13 +1828,9 @@ final class HostStore {
     }
 
     /// The hosts a change of network resumes: out of the background, the
-    /// real ones on the system's way — whose connection rides the path
-    /// that changed, as a proxied one's does not — and those waiting to
-    /// retry; in the background, none.
-    static func resumedOnNetworkChange(_ hosts: [Host], inBackground: Bool, tailnetOn: Bool = TailnetSettings.isOn) -> [Host] {
-        inBackground ? [] : hosts.filter {
-            !$0.isDemo && ($0.isRetrying || ($0.control != nil && $0.config.reach(tailnetOn: tailnetOn) == .system))
-        }
+    /// connected real hosts and those waiting to retry; in the background, none.
+    static func resumedOnNetworkChange(_ hosts: [Host], inBackground: Bool) -> [Host] {
+        inBackground ? [] : hosts.filter { !$0.isDemo && ($0.isRetrying || $0.control != nil) }
     }
 
     /// A pull to refresh in the host list (docs/IOS-016-pull-refresh.md):
@@ -2001,12 +1888,8 @@ final class HostStore {
 
     func host(at url: URL) -> Host? { hosts.first { $0.config.url == url } }
 
-    /// The host of a GoRex machine's tailcat address.
-    func host(tailcat address: String) -> Host? { hosts.first { $0.config.tailcat?.address == address } }
-
     private func save() {
         let saved = hosts.filter { !$0.isDemo }.map(\.config)
-        Host.tailcatHosts(saved)
         UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: "hosts")
     }
 }

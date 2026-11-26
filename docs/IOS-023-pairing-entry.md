@@ -33,9 +33,9 @@ Pairing an iPhone running WindRex with a Mac for the first time required hunting
 
 ### iOS: Direct Scan QR to Pair on the empty state
 
-- Extract scanned-code handling into a shared `HostPairing` helper (`ios/GoRex/Rex/HostPairing.swift`) used by both `HostListView` and `RemoteHostsView` so tailcat (`rexgo://tailcat?...`), direct TLS/relay (`https://...#k=...&pin=...`), and LAN pairing codes follow one code path.
+- Extract scanned-code handling into a shared `HostPairing` helper (`ios/GoRex/Rex/HostPairing.swift`) used by both `HostListView` and `RemoteHostsView` so direct TLS/relay (`https://...#k=...&p=...`) and LAN pairing codes follow one code path (tailcat QR handling was removed in [`NET-009`](NET-009-remove-tailscale.md)).
 - Update `NoHostsView` (`HostListView.swift`) to:
   - State explicitly where to get the QR code on Mac (`WindRex › Settings › Server › Connect iPhone`).
-  - Make **Scan QR to Pair** the primary prominent button, launching `QRScanner` directly from the home screen and transitioning straight into `TailcatPairSheet` (or adding a direct/relay host immediately).
+  - Make **Scan QR to Pair** the primary prominent button, launching `QRScanner` directly from the home screen and adding a direct/relay or LAN host immediately.
   - Keep **Add a Host** and **Try Demo Mode** available directly below.
 - Update pairing sheet copy in `RemoteHostsView.swift` to consistently name **WindRex › Settings › Server**.

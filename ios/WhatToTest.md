@@ -10,6 +10,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 `web` job of `.github/workflows/ci.yml` fails it.
 
 ## en-US
+- Built-in Tailscale and Share on Hotspot have been removed; connect hosts using Direct TLS, a self-hosted relay, or LAN. Saved Direct TLS, relay, and LAN hosts stay intact.
 - On iPhone, the terminal bar now defaults to a single-row Voice Bar: hold to talk, slide up to cancel, tap to raise the keyboard, tap Return to send, or toggle to Terminal Keys on the left.
 - Voice dictation now uses Apple's on-device iOS 26 Speech recognition with terminal vocabulary hints and no separate model downloads; choose a language in Settings > Terminal.
 - Diagnostics and connection logging now write safely in the background with no visible UI change.
@@ -150,6 +151,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 - With Developer Mode on, the floating connection bar at the top no longer covers the first row of the computer list.
 
 ## zh-Hans
+- 已移除内置 Tailscale 与个人热点共享，现统一通过直连 TLS、自建中继或局域网连接主机；原有的直连、中继和局域网主机与凭据会自动保留。
 - 在 iPhone 上，终端底栏现改为微信式单排双态大语音条：按住中间长条说话、上滑取消、轻点弹键盘，右侧一键回车发送，左侧一键切换终端快捷键排。
 - 语音听写现改用 iOS 26 原生本机语音识别并结合终端词汇提示，无需单独下载大模型；可在「设置 › 终端」选择听写语言。
 - 优化连接日志与后台状态处理的并发安全性，界面与操作体验保持不变。

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build and upload WindRex from a Mac with XcodeGen and both iOS frameworks.
+# Build and upload WindRex from a Mac with XcodeGen and GhosttyVt.xcframework.
 # The default uses an App Store Connect API key for cloud-managed signing.
 # WINDREX_RELEASE_SIGNING=local uses installed distribution signing assets.
 # DESTINATION=export writes a signed IPA without uploading. Set BUILD to

@@ -1,6 +1,6 @@
 ---
 name: NET-005
-description: "WindRex adds a native TLS direct listener, a stateless reverse relay, desktop Settings GUI controls, and on-demand iOS Tailscale activation so iOS reaches remote hosts over cellular networks without starting an in-process VPN stack unless needed. Use when you change direct TLS, windrex-relay, desktop Direct / Relay settings, certificate pinning, foreground probes, pipelined terminal writes, or iOS TailnetActivationPolicy."
+description: "WindRex adds a native TLS direct listener, a stateless reverse relay, and desktop Settings GUI controls so iOS reaches remote hosts over cellular networks over native TLS. Use when you change direct TLS, windrex-relay, desktop Direct / Relay settings, certificate pinning, foreground probes, or pipelined terminal writes."
 metadata:
   created: "2026-11-26"
   updated: "2026-11-26"
@@ -8,9 +8,9 @@ metadata:
 
 # NET-005: Direct TLS and stateless relay transport
 
-Status: phase 1 built (#22); phase 2 desktop GUI built (#25); phase 3 iOS on-demand Tailscale activation built (#26).
+Status: phase 1 built (#22); phase 2 desktop GUI built (#25); phase 3 superseded by [`NET-009`](NET-009-remove-tailscale.md) (iOS built-in Tailscale removed).
 
-This doc defines a native TLS transport for cellular remote work, with two deployment modes that share one iOS client path, plus fast foreground recovery and pipelined terminal writes. It extends [`IOS-012`](IOS-012-background-and-network-changes.md) and coexists with [`IOS-001`](IOS-001-tailnet.md) and [`IOS-002`](IOS-002-tailcat.md) during migration.
+This doc defines a native TLS transport for cellular remote work, with two deployment modes that share one iOS client path, plus fast foreground recovery and pipelined terminal writes. It extends [`IOS-012`](IOS-012-background-and-network-changes.md). Built-in iOS Tailscale and tailcat were later removed in [`NET-009`](NET-009-remove-tailscale.md).
 
 ## Problem
 

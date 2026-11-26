@@ -8,7 +8,7 @@ metadata:
 
 # DSK-010: Remove desktop embedded browser and converge web client
 
-Status: phase 1 built (Refs #13). Phase 2 (iOS bundled ASR removal and Hotspot Share review) not built.
+Status: phase 1 built (Refs #13). iOS Hotspot Share removed in [`NET-009`](NET-009-remove-tailscale.md).
 
 This document defines the desktop and web scope of Issue #13. It extends [`DSK-002`](DSK-002-pane-drop-zones.md), [`DSK-006`](DSK-006-empty-states.md) and [`REF-007`](REF-007-web-client.md).
 
@@ -47,7 +47,7 @@ WindRex focuses on managing, connecting and resuming terminal sessions across de
 | Core browser terminal (`web/src/`, `libghostty-vt` WASM, themes, split panes, transports) | Keep | Useful lightweight fallback for local or self-hosted browser access with no local daemon. |
 | Cloudflare Workers & R2 deploy (`web/wrangler.jsonc`, `web/r2-upload.mjs`, `npm run deploy`, `.github/workflows/web.yml`, `ci.yml` `web-r2`) | Remove | WindRex publishes no hosted Cloudflare Worker or R2 web mirror. |
 | PWA install & Service Worker (`web/sw.js`, `web/manifest.webmanifest`, `web/src/app.ts`, About install/update rows) | Remove | Native desktop and iOS apps are the installed clients; removing the SW and PWA shell eliminates caching edge cases and update-banner state. Tailnet downloads use the existing Blob download path (`saveBlob`). |
-| Hotspot Share hooks (`web/src/share.ts`, `files.json` in `web/build.mjs`) | Keep for now | Still consumed by `ios/share` and `ios/GoRex/Share/WebClientStore.swift`. Re-evaluate in Wave 2 when `ios/**` is in scope. |
+| Hotspot Share hooks (`web/src/share.ts`, `files.json` in `web/build.mjs`) | Remove in [`NET-009`](NET-009-remove-tailscale.md) Phase 2 | iOS Hotspot Share (`ios/share`, `ios/GoRex/Share/*`) was removed in [`NET-009`](NET-009-remove-tailscale.md) Phase 1. |
 | Opt-in `WINDREX_WEB_ORIGIN` pairing (`hostqr.go`, `internal/rexapi/web.go`) | Keep | Empty by default (zero UI clutter); still allows self-hosted web pairing when configured. |
 
 ### Model and Code

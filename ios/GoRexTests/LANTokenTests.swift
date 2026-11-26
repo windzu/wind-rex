@@ -72,19 +72,19 @@ nonisolated final class LANTokenTests: XCTestCase {
         XCTAssertNil(tokens.tokens[c.id])
     }
 
-    /// The bearer goes on a request only for a host with a token: a
-    /// tailcat host's never carries one, even with a token set.
+    /// The bearer goes on a request only for a real host with a token: a
+    /// demo host's never carries one, even with a token set.
     @MainActor func testBearerOnlyForTokenHost() throws {
         let r = URLRequest(url: URL(string: "http://192.0.2.10:7297/api/upload")!)
         XCTAssertEqual(r.authorized("test-token-AAAA").value(forHTTPHeaderField: "Authorization"), "Bearer test-token-AAAA")
         XCTAssertNil(r.authorized(nil).value(forHTTPHeaderField: "Authorization"))
         XCTAssertNil(r.authorized("").value(forHTTPHeaderField: "Authorization"))
 
-        var t = try XCTUnwrap(HostConfig(tailcat: "rexgo://tailcat?a=tcx&n=mac"))
-        t.lanToken = "test-token-AAAA"
-        XCTAssertNil(t.auth)
-        XCTAssertNil(r.authorized(t.auth).value(forHTTPHeaderField: "Authorization"))
-        XCTAssertNil(try XCTUnwrap(HostConfig(pairing: "https://mac-gorex.example.ts.net")).auth)
+        var demo = Demo.config()
+        demo.lanToken = "test-token-AAAA"
+        XCTAssertNil(demo.auth)
+        XCTAssertNil(r.authorized(demo.auth).value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(try XCTUnwrap(HostConfig(pairing: "https://alice-laptop.example.com:7443")).auth)
     }
 
     /// HTTP requests (as /api/upload's) and WebSocket upgrades

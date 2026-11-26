@@ -358,7 +358,7 @@ struct TerminalScreen: View {
                 // Back within the grace, nothing was suspended. What the
                 // terminal's program reported meanwhile is seen now.
                 // Actual stream resume/probe runs once HostStore.foreground
-                // finishes (host.foregroundReady) so panes do not race proxy reset.
+                // finishes (host.foregroundReady) so panes run after host probes.
                 if p == .active {
                     TerminalLive.shared.active()
                     host.see(session: currentTarget.session, block: currentTarget.block)

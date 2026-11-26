@@ -200,8 +200,7 @@ nonisolated final class WidgetTests: XCTestCase {
         XCTAssertEqual(s.away.map(\.name), ["bob-desktop"])
     }
 
-    /// windrex://open and windrex://inbox read back as written; the pairing
-    /// code is neither, and they are no pairing code.
+    /// windrex://open and windrex://inbox read back as written; anything else is nil.
     @MainActor func testLinks() throws {
         let id = UUID()
         let open = WidgetLink.open(host: id, session: "s 1", block: "b&2")
@@ -214,9 +213,6 @@ nonisolated final class WidgetTests: XCTestCase {
                     "rexgo://other", "https://inbox", "rexgo://tailcat?a=tcx&n=mac"] {
             XCTAssertNil(WidgetLink(url: try XCTUnwrap(URL(string: bad))), bad)
         }
-        XCTAssertNotNil(HostConfig(tailcat: "rexgo://tailcat?a=tcx&n=mac"))
-        XCTAssertNil(HostConfig(tailcat: open.url.absoluteString))
-        XCTAssertNil(HostConfig(tailcat: WidgetLink.inbox.url.absoluteString))
     }
 
     /// Draws each family, light and dark, of a made-up snapshot, as PNGs in

@@ -72,25 +72,18 @@ nonisolated final class DeveloperModeTests: XCTestCase {
             interfaces: ["en0 Wi-Fi", "pdp_ip0 cellular", "utun5 tunnel"],
             supportsIPv4: true,
             supportsIPv6: false,
-            tailscaleInterface: nil,
             changedAt: base
         )
 
         XCTAssertEqual(
-            snap.summaryLine(now: now, tailnetOn: false, tailnetState: "Stopped", tailnetIP: nil),
-            "Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 · for 81.3s · no Tailscale interface"
-        )
-
-        snap.tailscaleInterface = "utun4"
-        XCTAssertEqual(
-            snap.summaryLine(now: now, tailnetOn: false, tailnetState: "Stopped", tailnetIP: nil),
-            "Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 · for 81.3s · Tailscale utun4"
+            snap.summaryLine(now: now),
+            "Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 · for 81.3s"
         )
 
         snap.supportsIPv6 = true
         XCTAssertEqual(
-            snap.summaryLine(now: now, tailnetOn: true, tailnetState: "Running", tailnetIP: "100.64.1.2"),
-            "Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 + IPv6 · for 81.3s · Tailnet Running (100.64.1.2)"
+            snap.summaryLine(now: now),
+            "Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 + IPv6 · for 81.3s"
         )
     }
 
@@ -138,7 +131,7 @@ nonisolated final class DeveloperModeTests: XCTestCase {
             version: "1.1",
             build: "0",
             system: "iOS 26.0",
-            networkLine: "Wi-Fi · en0 Wi-Fi · IPv4 · for 1.0s · no Tailscale interface",
+            networkLine: "Wi-Fi · en0 Wi-Fi · IPv4 · for 1.0s",
             hosts: [host],
             entries: ConnectionLog.entries
         )

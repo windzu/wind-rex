@@ -48,10 +48,6 @@ struct HostListView: View {
     @AppStorage("scheme") private var scheme = "dark"
     /// The window's scheme, a terminal's while one is open.
     @Environment(\.colorScheme) private var windowScheme
-    /// The GoRex machine of a WindRex code opened from outside, to pair with;
-    /// waiting is one that waits for Settings to close first.
-    @State private var pairing: HostConfig?
-    @State private var waiting: HostConfig?
     /// The QR scanner opened directly from the empty state.
     @State private var scanning = false
     /// The host whose New Project sheet is open.
@@ -118,34 +114,20 @@ struct HostListView: View {
             Notifier.shared.opening = nil
         }
         // A widget's tap opens a terminal, as a notification's does, or the
-        // inbox; a host gone opens the list. A WindRex code opened from the
-        // camera pairs, once Settings, open over the list, has closed.
+        // inbox; a host gone opens the list.
         .onOpenURL { url in
-            if let link = WidgetLink(url: url) {
-                switch link {
-                case let .open(host, session, block) where store.host(host) != nil:
-                    Notifier.shared.opening = TerminalTarget(host: host, session: session, block: block, title: "", explicit: true)
-                case .open:
-                    go(nil)
-                case .inbox:
-                    // Beside a terminal the list shows already.
-                    if width != .regular { go(nil) }
-                    inbox = true
-                }
-                return
-            }
-            guard let c = HostConfig(tailcat: url.absoluteString),
-                  let t = c.tailcat, store.host(tailcat: t.address) == nil else { return }
-            if settings {
-                waiting = c
-                settings = false
-            } else {
-                pairing = c
+            guard let link = WidgetLink(url: url) else { return }
+            switch link {
+            case let .open(host, session, block) where store.host(host) != nil:
+                Notifier.shared.opening = TerminalTarget(host: host, session: session, block: block, title: "", explicit: true)
+            case .open:
+                go(nil)
+            case .inbox:
+                // Beside a terminal the list shows already.
+                if width != .regular { go(nil) }
+                inbox = true
             }
         }
-        // As in RemoteHostsView: a sheet on a Mac loses the injected
-        // objects, so the store goes back in.
-        .sheet(item: $pairing) { TailcatPairSheet(code: $0).environment(store) }
         .sheet(isPresented: $scanning) {
             QRScanner(onScan: scanEmptyStateCode)
         }
@@ -292,11 +274,7 @@ struct HostListView: View {
 
     /// Pairs a QR code scanned directly from the empty home screen.
     private func scanEmptyStateCode(_ code: String) -> String? {
-        switch HostPairing.resolve(code, existing: store.hosts.map(\.config), transportForURL: TailnetEngine.shared.transport(of:)) {
-        case .pairTailcat(let config):
-            scanning = false
-            pairing = config
-            return nil
+        switch HostPairing.resolve(code, existing: store.hosts.map(\.config)) {
         case .existing(let updated):
             if let cur = store.host(updated.id), cur.config != updated {
                 store.update(updated)
@@ -455,10 +433,7 @@ struct HostListView: View {
         }
         // A sheet on a Mac loses the injected objects; the store goes
         // back in.
-        .sheet(isPresented: $settings, onDismiss: {
-            if let c = waiting { pairing = c }
-            waiting = nil
-        }) { settingsSheet }
+        .sheet(isPresented: $settings) { settingsSheet }
     }
 
     // MARK: Spaces

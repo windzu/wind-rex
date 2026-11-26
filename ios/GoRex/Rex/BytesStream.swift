@@ -17,9 +17,8 @@ final class BytesStream {
         }
         var request = URLRequest(url: base.rexURL("/api/data"))
         request.timeoutInterval = 30
-        // A session of the built-in Tailscale's proxy is invalid once the
-        // proxy changes, as it can during the ticket's round trip, and a
-        // task on it aborts the app, so the session is the one of the moment.
+        // Resolve the session at dial time so a replaced pinned URLSession is
+        // never reused after invalidation.
         let task = try urlSession().webSocketTask(with: request.withSubprotocol(RexProtocol.bytesProtocol).authorized(auth))
         task.resume()
         do {

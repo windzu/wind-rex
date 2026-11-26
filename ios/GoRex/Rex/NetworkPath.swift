@@ -3,14 +3,14 @@ import Network
 import Observation
 
 /// The network the hosts' connections go over, watched from launch for
-/// the app's life: a change of the interface or of its gateways, as
-/// TailnetEngine.PathMonitor tells them, asks the hosts and the open
-/// terminal to reconnect at once (docs/IOS-012-background-and-network-changes.md).
+/// the app's life: a change of the interface or of its gateways asks the
+/// hosts and the open terminal to reconnect at once
+/// (docs/IOS-012-background-and-network-changes.md).
 /// The first network told is no change. A change to a network reconnects
 /// at once; one to none does not, as dialing with no route only fails and
 /// drops streams that could resume. The changes in the second after a
-/// reconnect give one more, at that second's end, not one each. The
-/// engine's monitor, Diagnostics' and the hotspot's keep their own, which have other lifetimes.
+/// reconnect give one more, at that second's end, not one each.
+/// Diagnostics keeps its own monitor, which has another lifetime.
 @Observable final class NetworkPath {
     /// Starts telling each network as it is: its interface's name, "" for
     /// none, and what makes it this network, the name and the gateways.
@@ -78,9 +78,8 @@ import Observation
         }
     }
 
-    /// The system's network, with the interface filter and the notion of a
-    /// network of TailnetEngine.PathMonitor.update. The gateways stay out
-    /// of the log: they are addresses.
+    /// The system's network: the active physical interface and its sorted
+    /// gateways. The gateways stay out of the log: they are addresses.
     nonisolated private static func system(_ told: @escaping @MainActor @Sendable (String, String) -> Void) -> AnyObject {
         let m = NWPathMonitor(prohibitedInterfaceTypes: [.other, .loopback])
         m.pathUpdateHandler = { path in
