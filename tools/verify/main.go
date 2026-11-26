@@ -123,7 +123,7 @@ func plan(files []string, f facts) []check {
 		cs = append(cs, check{name: "web typecheck", dir: "web", args: []string{"npm", "run", "typecheck"}, skip: webSkip, unverified: webSkip != ""})
 	}
 	if goChanged {
-		// Only the packages that build for linux: web/tailnet builds for js/wasm only.
+		// Only the packages that build for linux.
 		cs = append(cs, check{name: "golangci-lint", tool: golangciLint,
 			args: []string{"run", "{pkgs}"}, env: []string{"GOOS=linux", "CGO_ENABLED=0"}, pkgsFor: "linux", pkgsList: pkgs})
 	}

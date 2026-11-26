@@ -84,7 +84,7 @@ func TestServerStatusStoppedAndSecretRedaction(t *testing.T) {
 	const secretToken = "super-secret-bearer-token-value"
 	const relaySecret = "super-secret-relay-key-value"
 	const validPin = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	if err := rexapi.SaveDirect(rexapi.TailnetDir(), rexapi.DirectConfig{
+	if err := rexapi.SaveDirect(rexapi.StateDir(), rexapi.DirectConfig{
 		Enabled:      true,
 		RelayURL:     "https://relay.example.com:7443",
 		RelaySecret:  relaySecret,

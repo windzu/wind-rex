@@ -6,16 +6,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/tailscale/tailcat"
-	"tailscale.com/types/key"
 )
 
 func TestLineLimit(t *testing.T) {
@@ -115,95 +111,23 @@ func TestAddressNotInErrors(t *testing.T) {
 	if strings.Contains(got, "Ab1-Ab1-") || strings.Contains(got, "Zq9_") || !strings.Contains(got, "refused") {
 		t.Errorf("scrub = %q", got)
 	}
-	for in, want := range map[string]string{
-		"connect tcp [fd7a:115c:a1e0:7690:FF45:5b76:b13f:f19d]:7464: timed out": "connect tcp [<redacted>]:7464: timed out",
-		"dial fd7a:115c:a1e0:7690:ff45:5b76:b13f:f19d:7464 failed":              "dial <redacted>:7464 failed",
-		"read fd7a:115c:a1e0:7690:ff45:5b76:b13f:f19d: i/o timeout":             "read <redacted>: i/o timeout",
-		"to fd7a:115c:a1e0::1, then":                                            "to <redacted>, then",
-	} {
-		if got := scrub(in); got != want {
-			t.Errorf("scrub(%q) = %q, want %q", in, got, want)
-		}
-	}
 }
 
-// failAccept is a listener whose accepting fails.
-type failAccept struct{ net.Listener }
-
-func (failAccept) Accept() (net.Conn, error) { return nil, errors.New("boom") }
-
-func TestAcceptFailureRestarts(t *testing.T) {
-	s, _ := testServer(t)
-	oldRetry, oldListen := remoteRetry, remoteListen
-	remoteRetry = 400 * time.Millisecond
-	defer func() { remoteRetry, remoteListen = oldRetry, oldListen }()
-	var calls atomic.Int32
-	remoteListen = func(ctx context.Context, ts *tailcat.Server, region int) (net.Listener, tailcat.Addr, int, error) {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if calls.Add(1) == 1 {
-			ln = failAccept{ln}
-		}
-		return ln, "tcFAKE", 7, err
-	}
-	c := pipe(s, "")
-	defer c.Close()
-	if err := c.AllowRemote("alice-laptop", key.NewNode().Public().String()); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.EnableRemote(); err != nil {
-		t.Fatal(err)
-	}
-	// While it waits to start again, it does not claim to listen.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		st, err := c.RemoteStatus()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !st.Running && strings.Contains(st.LastError, "boom") && st.Address == "" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no error state: %+v", st)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	st := waitRunning(t, c, true)
-	if st.LastError != "" || calls.Load() != 2 {
-		t.Errorf("after the restart: %+v, %d listens", st, calls.Load())
-	}
-}
-
-func TestClientKeyConcurrent(t *testing.T) {
+func TestMachineIDConcurrent(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
-	keys := make([]string, 16)
+	ids := make([]string, 16)
 	var wg sync.WaitGroup
-	for i := range keys {
+	for i := range ids {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			keys[i] = ClientPublicKey()
+			ids[i] = MachineID()
 		}()
 	}
 	wg.Wait()
-	for _, k := range keys {
-		if k == "" || k != keys[0] {
-			t.Fatalf("keys differ: %q and %q", k, keys[0])
-		}
-	}
-}
-
-func TestNormalizePublicKey(t *testing.T) {
-	k := key.NewNode().Public().String()
-	if got, err := NormalizePublicKey("  " + strings.ToUpper(k[8:]) + " "); err == nil {
-		t.Errorf("accepted a key without its prefix: %q", got)
-	}
-	if got, err := NormalizePublicKey(" " + k + "\n"); err != nil || got != k {
-		t.Errorf("NormalizePublicKey = %q, %v", got, err)
-	}
-	for _, bad := range []string{"", "nodekey:", "nodekey:abc", "x"} {
-		if _, err := NormalizePublicKey(bad); err == nil {
-			t.Errorf("accepted %q", bad)
+	for _, id := range ids {
+		if id == "" || id != ids[0] {
+			t.Fatalf("machine IDs differ: %q and %q", id, ids[0])
 		}
 	}
 }

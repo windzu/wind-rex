@@ -92,30 +92,6 @@ func TestCLI(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	code, _, _, errOut = runMain(t, "remote", "control", "on")
-	if code != ExitOK {
-		t.Fatalf("remote control on: %d %s", code, errOut)
-	}
-	code, _, out, errOut = runMain(t, "remote", "status", "--json")
-	if code != ExitOK || !strings.Contains(out, `"remoteControl": true`) {
-		t.Fatalf("remote status: %d %q %s", code, out, errOut)
-	}
-	if code, _, _, _ = runMain(t, "remote", "relay", "https://derp.example.com"); code != ExitUsage {
-		t.Errorf("remote relay with a URL: %d", code)
-	}
-	code, _, _, errOut = runMain(t, "remote", "relay", "derp.example.com")
-	if code != ExitOK {
-		t.Fatalf("remote relay: %d %s", code, errOut)
-	}
-	_, _, out, _ = runMain(t, "remote", "status")
-	if !strings.Contains(out, "relay=derp.example.com") {
-		t.Errorf("remote status: %q", out)
-	}
-	runMain(t, "remote", "relay", "default")
-	_, _, out, _ = runMain(t, "remote", "status")
-	if !strings.Contains(out, "relay=default") {
-		t.Errorf("remote status after relay default: %q", out)
-	}
 	code, _, out, errOut = runMain(t, "ls", "--json")
 	if code != ExitOK || !strings.Contains(out, info.ID) {
 		t.Fatalf("ls: %d %q %s", code, out, errOut)
@@ -166,55 +142,6 @@ func TestCLI(t *testing.T) {
 	}
 }
 
-// gorex remote key prints this machine's client key, and remote relay
-// gorex sets the team's relay by its name, which remote status shows;
-// remote access stays off here, so no relay starts and no host key yet.
-func TestRemoteKeyAndRelayAlias(t *testing.T) {
-	startServer(t)
-	code, _, out, errOut := runMain(t, "remote", "key")
-	if code != ExitOK {
-		t.Fatalf("remote key: %d %s", code, errOut)
-	}
-	if _, err := rex.NormalizePublicKey(strings.TrimSpace(out)); err != nil {
-		t.Fatalf("remote key printed %q: %v", out, err)
-	}
-	code, _, out, errOut = runMain(t, "remote", "relay", "gorex")
-	if code != ExitOK {
-		t.Fatalf("remote relay gorex: %d %s", code, errOut)
-	}
-	// The enrollment hint wants the host's key, which remote access makes
-	// when turned on: nothing prints while off.
-	if out != "" {
-		t.Errorf("remote relay gorex printed %q", out)
-	}
-	_, _, out, _ = runMain(t, "remote", "status")
-	if !strings.Contains(out, "relay=derp.gorex.uk") {
-		t.Errorf("remote status after relay gorex: %q", out)
-	}
-}
-
-// gorex remote reachable sets Reachable at, which remote status shows;
-// remote access stays off here, so no relay starts.
-func TestRemoteReachable(t *testing.T) {
-	startServer(t)
-	if code, _, _, _ := runMain(t, "remote", "reachable", "0.0.0.0"); code != ExitUsage {
-		t.Errorf("remote reachable on every address: %d", code)
-	}
-	if code, _, _, errOut := runMain(t, "remote", "reachable", "192.0.2.10"); code != ExitOK {
-		t.Fatalf("remote reachable: %d %s", code, errOut)
-	}
-	if _, _, out, _ := runMain(t, "remote", "status"); !strings.Contains(out, "reachable=192.0.2.10 running=false") {
-		t.Errorf("remote status with reachable: %q", out)
-	}
-	if _, _, out, _ := runMain(t, "remote", "status", "--json"); !strings.Contains(out, `"reachableAt": "192.0.2.10"`) {
-		t.Errorf("remote status --json with reachable: %q", out)
-	}
-	runMain(t, "remote", "reachable", "off")
-	if _, _, out, _ := runMain(t, "remote", "status"); strings.Contains(out, "reachable=") {
-		t.Errorf("remote status after reachable off: %q", out)
-	}
-}
-
 func TestMainLeavesAppArguments(t *testing.T) {
 	if _, handled := Main([]string{"-NSWindowResizeTime", "0.1"}, &bytes.Buffer{}, &bytes.Buffer{}, "x"); handled {
 		t.Error("an AppKit argument was handled as a command")
@@ -259,12 +186,6 @@ func TestUsageErrors(t *testing.T) {
 	}
 	if code, handled, _, _ := runMain(t, "-S", "", "ls"); code != ExitUsage || !handled {
 		t.Fatalf("-S with an empty host: %d %v", code, handled)
-	}
-	if code, handled, _, _ := runMain(t, "remote", "bogus"); code != ExitUsage || !handled {
-		t.Fatalf("remote bogus: %d %v", code, handled)
-	}
-	if code, handled, _, _ := runMain(t, "remote", "control"); code != ExitUsage || !handled {
-		t.Fatalf("remote control without a value: %d %v", code, handled)
 	}
 	if code, handled, _, _ := runMain(t, "-S", "host", "server", "restart"); code != ExitUsage || !handled {
 		t.Fatalf("-S server restart: %d %v", code, handled)
@@ -603,44 +524,4 @@ func TestSessionCommandReachesItsServer(t *testing.T) {
 	spawn(def)
 	t.Setenv("GOREX_DIR", "")
 	ls("with a server in the default directory")
-}
-
-// TestPairOutput checks what "gorex pair" prints: the address as JSON, or
-// as a QR code that starts on its light quiet zone and names the address.
-func TestPairOutput(t *testing.T) {
-	var out bytes.Buffer
-	if err := writePair(&out, "https://pair.example", true); err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]string
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got["url"] != "https://pair.example" {
-		t.Fatalf("pair JSON %q: %v", out.String(), err)
-	}
-	out.Reset()
-	if err := writePair(&out, "https://pair.example", false); err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(out.String(), "\n")
-	if lines[0] == "" || strings.Trim(lines[0], "█") != "" {
-		t.Fatalf("the code starts on %q, not on the light quiet zone", lines[0])
-	}
-	if !strings.Contains(out.String(), "\nScan with Rex on a device on the same tailnet: https://pair.example\n") {
-		t.Errorf("pair output names no address: %q", out.String())
-	}
-}
-
-// TestPairWithoutGateway: with no gateway to ask, "gorex pair" says which
-// command serves one, and prints no code.
-func TestPairWithoutGateway(t *testing.T) {
-	t.Setenv("GOREX_DIR", t.TempDir())
-	code, handled, out, errOut := runMain(t, "pair")
-	if !handled || code != ExitFailed {
-		t.Fatalf("pair: %d %v %q", code, handled, out)
-	}
-	if !strings.Contains(errOut, "gorex rexapi") || strings.Contains(out, "█") {
-		t.Errorf("pair without a gateway: %q %q", out, errOut)
-	}
-	if code, _, _, _ := runMain(t, "pair", "extra"); code != ExitUsage {
-		t.Errorf("pair with an argument: %d", code)
-	}
 }

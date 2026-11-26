@@ -77,18 +77,13 @@ func TestRevisionHidesFields(t *testing.T) {
 		t.Fatalf("revision 8 attach sees a layer's state: %v", got)
 	}
 
-	// Revision 10 adds Tailscale's control server, which older clients
-	// do not see.
-	tail := map[string]any{"tailscale": map[string]any{"state": "running", "control_url": "https://headscale.example.com"}}
-	if got := transformResult(9, "server.status", tail).(map[string]any); got["tailscale"].(map[string]any)["control_url"] != nil {
-		t.Fatalf("revision 9 sees control_url: %v", got)
+	// Revision 12 adds server.status's listeners, which older clients do not see.
+	listeners := map[string]any{"pid": 1, "listeners": []any{map[string]any{"kind": "unix"}}}
+	if got := transformResult(11, "server.status", listeners).(map[string]any); got["listeners"] != nil {
+		t.Fatalf("revision 11 sees listeners: %v", got)
 	}
-	if got := transformResult(10, "server.status", tail).(map[string]any); got["tailscale"].(map[string]any)["control_url"] == nil {
-		t.Fatalf("revision 10 lost control_url: %v", got)
-	}
-	event := map[string]any{"state": "running", "control_url": "https://headscale.example.com"}
-	if got := transformResult(9, "tailscale_status_changed", event).(map[string]any); got["control_url"] != nil {
-		t.Fatalf("revision 9 event sees control_url: %v", got)
+	if got := transformResult(12, "server.status", listeners).(map[string]any); got["listeners"] == nil {
+		t.Fatalf("revision 12 lost listeners: %v", got)
 	}
 }
 

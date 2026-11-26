@@ -381,8 +381,7 @@ func BenchmarkEventSessions(b *testing.B) {
 }
 
 // TestShareLayoutGone: every remote client reads the layout, with no
-// setting (docs/MOD-002-projects.md); an app of before that turns Share Layout
-// off changes nothing, and the status says the layout is shared.
+// setting (docs/MOD-002-projects.md).
 func TestShareLayoutGone(t *testing.T) {
 	s := &Server{layout: []byte(`{"tabs":[]}`)}
 	for _, op := range []string{"getLayout", "getLayoutState"} {
@@ -391,22 +390,12 @@ func TestShareLayoutGone(t *testing.T) {
 			t.Fatalf("%s of a remote client: %q %q", op, res.Error, res.Data)
 		}
 	}
-	if _, err := s.remoteDo(Request{Op: "remote.shareLayoutSet", On: false}); err != nil {
-		t.Fatalf("remote.shareLayoutSet of an app of before: %v", err)
-	}
-	if res := s.request(Request{ID: 2, Op: "getLayout"}, "peer", nil); res.Error != "" {
-		t.Fatalf("the layout after Share Layout off: %q", res.Error)
-	}
-	if !s.remoteStatusLocked(nil).ShareLayout {
-		t.Error("the status of an app of before says the layout is not shared")
-	}
 }
 
 func TestFilterLayout(t *testing.T) {
 	raw := []byte(`{"version":2,"sessions":[{"id":"w","name":"w","active":0,"tabs":[{"root":{"a":{"sid":"a"},"b":{"sid":"b"}},"focus":0},{"root":{"sid":"h","host":"other"}}]}],"windows":["w"]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}},
-		rem:      remote{cfg: RemoteConfig{Allowed: []RemoteClient{{PublicKey: "p"}}}},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -438,7 +427,6 @@ func TestFilterLayoutFocusAcrossBrowser(t *testing.T) {
 	raw := []byte(`{"version":2,"sessions":[{"id":"w","name":"w","tabs":[{"root":{"a":{"sid":"a"},"b":{"a":{"url":"https://example.com/"},"b":{"sid":"b"}}},"focus":2}]}],"windows":["w"]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}, "b": {id: "b", owner: "p"}},
-		rem:      remote{cfg: RemoteConfig{Allowed: []RemoteClient{{PublicKey: "p"}}}},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -500,7 +488,6 @@ func TestFilterLayoutFocusPastUnavailable(t *testing.T) {
 	raw := []byte(`{"version":2,"sessions":[{"id":"w","name":"w","tabs":[{"root":{"a":{"sid":"a"},"b":{"a":{"sid":"b"},"b":{"sid":"c"}}},"focus":2}]}],"windows":["w"]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}, "c": {id: "c", owner: "p"}},
-		rem:      remote{cfg: RemoteConfig{Allowed: []RemoteClient{{PublicKey: "p"}}}},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -522,7 +509,6 @@ func TestFilterLayoutFloats(t *testing.T) {
 	raw := []byte(`{"version":2,"sessions":[{"id":"w","name":"w","tabs":[{"root":{"sid":"a"},"focus":0,"floats":[{"pane":{"sid":"a"},"x":0.1},{"pane":null},{"pane":{"sid":"b"}}],"focusFloat":2}]}],"windows":["w"]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}},
-		rem:      remote{cfg: RemoteConfig{Allowed: []RemoteClient{{PublicKey: "p"}}}},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -562,7 +548,6 @@ func TestFilterLayoutKeepsBrowserFloats(t *testing.T) {
 	]}],"windows":["w"]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}, "c": {id: "c", owner: "p"}},
-		rem:      remote{cfg: RemoteConfig{Allowed: []RemoteClient{{PublicKey: "p"}}}},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -588,7 +573,6 @@ func TestFilterLayoutMirror(t *testing.T) {
 	raw := []byte(`{"version":2,"sessions":[{"id":"w","name":"w","tabs":[{"root":{"sid":"a"}}]}],"windows":["w"],"tabs":[{"root":{"sid":"a"}},{"root":{"sid":"b"}}]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}},
-		rem:      remote{},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -609,7 +593,6 @@ func TestFilterLayoutDropsNotes(t *testing.T) {
 	raw := []byte(`{"version":2,"sessions":[{"id":"w","name":"w","tabs":[{"root":{"a":{"sid":"a"},"b":{"a":{"kind":"note","note":"secret text"},"b":{"sid":"b"}}},"focus":2}]}],"windows":["w"]}`)
 	s := &Server{
 		sessions: map[string]*session{"a": {id: "a", owner: "p"}, "b": {id: "b", owner: "p"}},
-		rem:      remote{cfg: RemoteConfig{Allowed: []RemoteClient{{PublicKey: "p"}}}},
 	}
 	got, err := s.filterLayout(raw, "p")
 	if err != nil {
@@ -628,31 +611,5 @@ func TestFilterLayoutDropsNotes(t *testing.T) {
 	}
 	if bytes.Contains(got, []byte("secret text")) || bytes.Contains(got, []byte("note")) {
 		t.Fatalf("leaked the note pane: %s", got)
-	}
-}
-
-// TestHelloPairURL checks that only a remote peer's hello asks for the
-// pairing address: the gateway's own hello must not wait on the gateway.
-func TestHelloPairURL(t *testing.T) {
-	asked := 0
-	defer func(f func() string) { RexPairURL = f }(RexPairURL)
-	RexPairURL = func() string { asked++; return "https://pair.example" }
-	s, _ := testServer(t)
-	local := pipe(s, "")
-	defer local.Close()
-	h, err := local.Hello()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if asked != 0 || h.RexPairURL != "" {
-		t.Fatalf("a local hello asked for the pairing address: %d times, %q", asked, h.RexPairURL)
-	}
-	remote := pipe(s, "peer-key")
-	defer remote.Close()
-	if h, err = remote.Hello(); err != nil {
-		t.Fatal(err)
-	}
-	if asked != 1 || h.RexPairURL != "https://pair.example" {
-		t.Fatalf("a remote hello: asked %d times, %q", asked, h.RexPairURL)
 	}
 }

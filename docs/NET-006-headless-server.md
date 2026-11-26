@@ -38,23 +38,22 @@ There is also no dedicated Linux server release artifact, no checksum-verified i
 
 1. On a headless Linux machine (`alice-server`), the operator installs `windrex-server` (and optionally `windrex-relay`) with `scripts/install-server.sh`. For a personal account, `--user` installs under `~/.local/lib/windrex` and symlinks `~/.local/bin/windrex-server`. For a shared host, `--system` installs under `/usr/local/lib/windrex` and symlinks `/usr/local/bin/windrex-server`.
 2. With `--systemd`, the script installs `windrex-server.service` (and `windrex-relay.service` when `--with-relay` is passed) and reloads systemd. The operator starts the service with `systemctl --user enable --now windrex-server` (or `sudo systemctl enable --now windrex-server` for system mode), or runs `windrex-server server start` directly.
-3. To pair iPhone or desktop clients over cellular or WAN, the operator enables direct TLS (`windrex-server rexapi direct on --listen :7443 --public https://203.0.113.10:7443`) or stateless relay mode (`windrex-server rexapi direct relay --url https://relay.example.com:7443 --pin <pin>`), then scans the printed QR code. For tailcat remote access, the operator runs `windrex-server remote enable` and `windrex-server remote pair start`.
-4. To inspect health and active transports, the operator runs `windrex-server server status` (or `--json`). The command reports PID, executable path, protocol version, session count, data directory, socket path, and redacted remote, direct, relay, and LAN status.
+3. To pair iPhone or desktop clients over cellular or WAN, the operator enables direct TLS (`windrex-server rexapi direct on --listen :7443 --public https://203.0.113.10:7443`) or stateless relay mode (`windrex-server rexapi direct relay --url https://relay.example.com:7443 --pin <pin>`), then scans the printed QR code.
+4. To inspect health and active transports, the operator runs `windrex-server server status` (or `--json`). The command reports PID, executable path, protocol version, session count, data directory, socket path, and redacted direct, relay, and LAN status.
 5. To upgrade a running server, the operator re-runs `scripts/install-server.sh` (or installs a new archive and runs `windrex-server server upgrade` or `systemctl reload windrex-server`). The installer replaces files atomically and hands running PTYs over in place. Active shells and long-running commands continue without interruption, and reconnecting clients resume their screens.
 
 ### Model
 
-- **Shared server core**: `cmd/windrex-server` wires the exact `rex.OnServe`, `rex.RexPairURL`, `rex.TailnetNode`, and `rex.EnableBuiltinTailscale` hooks used by `main.go`. It sets `rexapi.RexVersion` to `<version>-windrex` from build-time `-ldflags`.
-- **Entrypoint dispatch**: `-server` (including `-resume`, `-handoff-version`, and `-protocol-version`) runs `rex.ServerMain`. `-session-exec` and `-session-read` run `rex.SessionExecMain` so `GOREX_SESSION_USER` works identically. `rexapi` dispatches to `rexapi.Main`. `server` handles `start`, `status`, `upgrade`, and `restart`. All other CLI commands (`remote`, `ls`, `clients`, `layout`, `new`, `split`, `send`, `capture`, `wait`, `run`, `version`, `-S`) delegate to `cli.Main`.
+- **Shared server core**: `cmd/windrex-server` wires the exact `rex.OnServe` hook used by `main.go` to run the embedded `rexapi.Gateway`. It sets `rexapi.RexVersion` to `<version>-windrex` from build-time `-ldflags`.
+- **Entrypoint dispatch**: `-server` (including `-resume`, `-handoff-version`, and `-protocol-version`) runs `rex.ServerMain`. `-session-exec` and `-session-read` run `rex.SessionExecMain` so `GOREX_SESSION_USER` works identically. `rexapi` dispatches to `rexapi.Main`. `server` handles `start`, `status`, `upgrade`, and `restart`. All other CLI commands (`ls`, `clients`, `layout`, `new`, `split`, `send`, `capture`, `wait`, `run`, `version`, `-S`) delegate to `cli.Main`.
 - **Native terminal library layout**: `mygo/plugins/terminal` loads `libghostty-vt.so` via `purego` from the resolved executable directory (`os.Executable()`). Installing the binary and `libghostty-vt.so` together in `<prefix>/lib/windrex` and symlinking `<prefix>/bin/windrex-server` keeps `bin/` clean and avoids runtime downloads on offline hosts.
 - **Cross-binary migration upgrade**: `upgradeRunningServer` allows an in-place handoff without `--force` when `hello.Exe != exe` (such as migrating from `gorex -server` to `windrex-server`), while still requiring the running server to verify `-server -handoff-version` via `probe` before pausing sessions. For the same executable path, it skips identical builds and requires `--force` when the target modification time is not newer.
-- **Artifact sizes and runtime dependencies**: Measured with `CGO_ENABLED=0` and `-trimpath -ldflags "-s -w"` against the desktop binary.
+- **Artifact sizes and runtime dependencies**: Measured with `CGO_ENABLED=0` and `-trimpath -ldflags "-s -w"` after [`NET-009`](NET-009-remove-tailscale.md) removed built-in Tailscale and `tailcat` (previously 31 MB on `linux/amd64`).
 
 | Artifact | Arch | Stripped binary size | Runtime dependencies |
 | --- | --- | --- | --- |
-| Desktop `gorex` (baseline) | `linux/amd64` | 50 MB | `ld-linux`, glibc, `libghostty-vt.so`, desktop display libs when UI starts |
-| `windrex-server` | `linux/amd64` | 31 MB | `ld-linux`, glibc, bundled `libghostty-vt.so` (zero X11/Wayland/GTK) |
-| `windrex-server` | `linux/arm64` | 29 MB | `ld-linux-aarch64`, glibc, bundled `libghostty-vt.so` (zero X11/Wayland/GTK) |
+| Desktop `gorex` (pre-NET-009 baseline) | `linux/amd64` | 50 MB | `ld-linux`, glibc, `libghostty-vt.so`, desktop display libs when UI starts |
+| `windrex-server` | `linux/amd64` | 17 MB | `ld-linux`, glibc, bundled `libghostty-vt.so` (zero X11/Wayland/GTK) |
 | `windrex-relay` | `linux/amd64` | 7.9 MB | Statically linked (zero shared library dependencies) |
 | `windrex-relay` | `linux/arm64` | 7.4 MB | Statically linked (zero shared library dependencies) |
 
@@ -78,7 +77,7 @@ There is also no dedicated Linux server release artifact, no checksum-verified i
 
 - `scripts/install-server.sh` always downloads `SHA256SUMS` and verifies the SHA-256 digest of every archive before extraction. It never pipes `curl` output into `tar` or a shell.
 - `.github/workflows/release-server.yml` verifies the downloaded `libghostty-vt.so` against the exact SHA-256 pinned in `mygo`'s `mygo-plugin.json` before packaging.
-- `windrex-server server status` (both human-readable and `--json`) omits secrets: it never prints the direct Bearer token, the relay registration secret, or the tailcat secret address.
+- `windrex-server server status` (both human-readable and `--json`) omits secrets: it never prints the direct Bearer token or the relay registration secret.
 - Systemd system units run under dedicated unprivileged accounts (`windrex` and `windrex-relay`) with `NoNewPrivileges=true` and `PrivateTmp=true`. `windrex-relay.service` adds `ProtectSystem=strict` and `ProtectHome=true`.
 - Authentication and transport security remain unchanged from [`NET-005`](NET-005-direct-relay.md) and [`REF-004`](REF-004-shared-server.md).
 

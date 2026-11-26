@@ -1,6 +1,6 @@
 // Loading a large file of the page's own with its progress, as the loader
-// (loader.ts) reads one: the terminal's wasm as the page starts, built-in
-// Tailscale's engine (tailengine.ts), the theme list in Settings, a code
+// (loader.ts) reads one: the terminal's wasm as the page starts,
+// the theme list in Settings, a code
 // chunk's busy bar (chunks.ts). The bytes come through a stream reader,
 // counted as they arrive; the
 // total is the size build.mjs knew, else Content-Length when the server

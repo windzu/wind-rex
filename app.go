@@ -56,10 +56,6 @@ type App struct {
 	expandedProjectTabs map[string]bool
 	// hosts are the remote hosts saved, in their order.
 	hosts []*hostConn
-	// tailnetHosts are the GoRex hosts the tailnet showed, for the sheet
-	// that adds a host, which saves none of them itself; the store's when
-	// there is one, shared by the windows.
-	tailnetHosts []rex.TailnetHost
 	// spaces is the space picker's state and its dialogs', and pickerOpen
 	// tells that the title bar's menu of projects shows.
 	spaces     spaceUI

@@ -2682,11 +2682,11 @@ func sortedInfos(m map[string]rex.SessionInfo) []rex.SessionInfo {
 // poll asks this machine's server what runs in each session, every half
 // second, for every window, until stop closes or the connection does;
 // update runs a change on the main thread. The windows draw again as the
-// list changes (its ETag). Less often it refreshes the remote host lists.
+// list changes (its ETag).
 func (st *store) poll(client *rex.Client, stop chan struct{}, update func(func())) {
 	tick := time.NewTicker(500 * time.Millisecond)
 	defer tick.Stop()
-	rounds, etag := 0, ""
+	etag := ""
 	for {
 		select {
 		case <-stop:
@@ -2704,13 +2704,6 @@ func (st *store) poll(client *rex.Client, stop chan struct{}, update func(func()
 			return
 		case <-tick.C:
 		}
-		rounds++
-		var tailnet *rex.TailnetStatus
-		if rounds%30 == 1 {
-			if s, err := client.RemoteStatus(); err == nil {
-				tailnet = s.Tailnet
-			}
-		}
 		infos, next, changed, err := client.ListSince(etag)
 		if err != nil {
 			continue
@@ -2726,14 +2719,11 @@ func (st *store) poll(client *rex.Client, stop chan struct{}, update func(func()
 			if st.polling != stop {
 				return
 			}
-			if tailnet != nil {
-				st.apps[0].reconcileTailnet(tailnet)
-			}
 			if changed {
 				st.infos = byID
 			}
-			st.pollRound(changed || tailnet != nil)
-			if changed || tailnet != nil {
+			st.pollRound(changed)
+			if changed {
 				st.redraw()
 			}
 		})

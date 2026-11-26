@@ -15,15 +15,11 @@ import (
 // The transports a client reaches the gateway by, as Rex names them in a
 // principal.
 const (
-	transportUnix      = "unix"
-	transportTCP       = "tcp"
-	transportTailscale = "tailscale"
+	transportUnix = "unix"
+	transportTCP  = "tcp"
 	// transportLAN is the listener on the local network, whose callers
 	// Rex sees as plain TCP ones.
 	transportLAN = "lan"
-	// transportTailcat is the session server's tailcat address, whose
-	// callers are the remote clients it allows.
-	transportTailcat = "tailcat"
 	// transportDirect is the native TLS direct listener authenticated by Bearer token.
 	transportDirect = "direct"
 	// transportRelay is the outbound stateless relay tunnel authenticated by Bearer token.
@@ -166,22 +162,6 @@ func (g *Gateway) HandlerFor(transport string) http.Handler {
 				return
 			}
 			r = withoutToken(r)
-		case transportTailscale:
-			if g.tailnet == nil {
-				writeRefusal(w, "built-in Tailscale is off")
-				return
-			}
-			var err error
-			if p, err = g.tailnet.identify(r.Context(), r.RemoteAddr); err != nil {
-				writeRefusal(w, err.Error())
-				return
-			}
-		case transportTailcat:
-			var ok bool
-			if p, ok = tailcatPrincipal(r); !ok {
-				writeRefusal(w, "this connection did not come over tailcat")
-				return
-			}
 		case transportDirect, transportRelay:
 			if g.direct == nil {
 				writeRefusal(w, "direct access is off")

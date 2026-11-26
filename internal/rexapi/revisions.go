@@ -14,7 +14,6 @@ import (
 //	r6 hides terminal format's paging fields from clients that predate them;
 //	r8 hides session.bootstrap's data_tickets from clients that predate it;
 //	r9 hides a layer's state from clients that predate minimized layers;
-//	r10 hides Tailscale's control_url from clients that predate it;
 //	r12 hides server.status's listeners from clients that predate them.
 //
 // A client that speaks revision R sees the shape that was current at R:
@@ -55,20 +54,6 @@ var revisionChanges = []revisionChange{
 	{at: 9, kind: "hide", method: "session.view", paths: []string{
 		"/windows/-/layers/-/state",
 	}},
-	// Revision 10 adds Tailscale's control server to every status that
-	// names the device, and the control_url a call may start it with.
-	{at: 10, kind: "hide", method: "server.status", paths: []string{"/tailscale/control_url"}},
-	{at: 10, kind: "hide", method: "server.tailscale.disable", paths: []string{"/tailscale/control_url"}},
-	{at: 10, kind: "hide", method: "server.tailscale.enable", paths: []string{
-		"/control_url", "/tailscale/control_url",
-	}},
-	{at: 10, kind: "hide", method: "server.tailscale.login", paths: []string{"/tailscale/control_url"}},
-	{at: 10, kind: "hide", method: "server.tailscale.logout", paths: []string{"/tailscale/control_url"}},
-	{at: 10, kind: "hide", method: "server.tailscale.rename", paths: []string{"/tailscale/control_url"}},
-	{at: 10, kind: "hide", method: "session.bootstrap", paths: []string{
-		"/server_status/tailscale/control_url",
-	}},
-	{at: 10, kind: "hide", method: "tailscale_status_changed", paths: []string{"/control_url"}},
 	// Revision 12 adds the listeners server.status lists, which
 	// session.bootstrap's server_status has too.
 	{at: 12, kind: "hide", method: "server.status", paths: []string{"/listeners"}},

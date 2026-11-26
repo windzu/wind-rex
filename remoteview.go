@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -11,36 +10,19 @@ import (
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
-	"gorex/internal/rex"
 	"gorex/internal/rexapi"
-	"gorex/internal/tailnode"
 	"gorex/locales"
 )
 
-// The Remote page of the settings window: the server's remote access, as
-// the server tells it, inbound only; the hosts this machine connects to
-// have a page of their own.
-// Every call to the server runs off the UI thread.
+// The Server page's remote access and local API controls: Direct TLS /
+// Self-Hosted Relay access, Connect iPhone QR card, and the Local API & LAN
+// listener.
 
-// remoteUI is the page's state; the main thread owns it.
+// remoteUI is the Server page's state; the main thread owns it.
 var remoteUI struct {
-	stop        chan struct{} // closed to stop the refresh; non-nil while it runs
-	st          rex.RemoteStatus
-	loaded      bool          // st is what the server said
-	unreachable bool          // the last ask failed
-	myKey       string        // this machine's public key
-	busy        bool          // a change is on its way
-	err         func() string // what went wrong with the last change, said when drawn
-	// reveal is that the address is shown. The address is a secret: st
-	// holds it only while reveal is on, and the page asks for it again
-	// to copy it.
-	reveal bool
-	// revealDirect is the same for the second address, of Reachable at.
-	revealDirect bool
-	confirm      bool   // regenerate asks to be sure
-	copied       string // what was copied just now
-	name, key    string // the client to add
-	addErr       bool   // the client to add is not valid: its reason shows
+	stop   chan struct{} // closed to stop the refresh; non-nil while it runs
+	err    func() string // what went wrong with the last clipboard copy, said when drawn
+	copied string        // what was copied just now
 	// lan is the gateway's listener on the local network, as its files
 	// say (rexapi.LoadLAN, LoadLANStatus); lanListen and lanAdd are what
 	// is typed in its fields, and lanErr what was wrong with the last.
@@ -51,13 +33,6 @@ var remoteUI struct {
 	lanAdd    string
 	lanErr    string
 	focusLAN  bool
-	// ts is the gateway's built-in Tailscale settings, as its files say
-	// (rexapi.LoadTailscale); tsURL is what is typed in its field, and
-	// tsErr what was wrong with the last save.
-	ts       rexapi.TailscaleConfig
-	tsURL    string
-	tsEdited bool
-	tsErr    string
 	// direct is the gateway's native TLS direct listener and outbound
 	// stateless relay settings (rexapi.LoadDirect, LoadDirectStatus),
 	// shared on disk with "gorex rexapi direct".
@@ -70,31 +45,7 @@ var remoteUI struct {
 	directListen      string
 	directEdited      bool
 	directErr         string
-	// relay is what is typed in the relay field, relayErr what was wrong
-	// with it.
-	relay       string
-	relayEdited bool
-	relayErr    string
-	pairQR      *hostPairQR
-	// reach is what is typed in the Reachable at field, reachErr what was
-	// wrong with it.
-	reach       string
-	reachEdited bool
-	reachErr    string
-	// fwFailed tells that Allow did not change Windows Firewall.
-	fwFailed bool
-	// addingKey shows the form that adds a client by its key, in place
-	// of the button that opens it.
-	addingKey bool
-	// signing is that Sign in waits for the built-in node's link; signErr
-	// is what was wrong with the last.
-	signing bool
-	signErr string
-	// details shows this machine's key and address under the devices.
-	details bool
-	// wantPhoneQR opens the WindRex pairing QR dialog automatically once
-	// remote access finishes starting after clicking "Turn On & Show QR…".
-	wantPhoneQR bool
+	pairQR            *hostPairQR
 }
 
 // showSection chooses a settings section and refreshes its Rex listener
@@ -123,51 +74,12 @@ func stopRemotePoll() {
 		close(remoteUI.stop)
 	}
 	page := &remoteUI
-	page.stop, page.st, page.loaded, page.unreachable, page.busy = nil, rex.RemoteStatus{}, false, false, false
-	page.reveal, page.confirm, page.err, page.addErr, page.name, page.key = false, false, nil, false, "", ""
-	page.revealDirect = false
-	page.addingKey, page.details, page.wantPhoneQR = false, false, false
+	page.stop, page.err, page.copied = nil, nil, ""
 	page.focusLAN = false
-	page.ts, page.tsURL, page.tsEdited, page.tsErr = rexapi.TailscaleConfig{}, "", false, ""
 	page.direct, page.directStatus = rexapi.DirectConfig{}, rexapi.DirectStatus{}
 	page.directRelayURL, page.directRelaySecret, page.directRelayPin = "", "", ""
 	page.directPublicURL, page.directListen = "", ""
 	page.directEdited, page.directErr = false, ""
-	page.relay, page.relayEdited, page.relayErr = "", false, ""
-	page.reach, page.reachEdited, page.reachErr, page.fwFailed = "", false, "", false
-}
-
-// firewallAllow adds Windows Firewall's rules for Reachable at, as
-// administrator; tests fake it.
-var firewallAllow = rex.AllowFirewall
-
-// remoteAsk runs work off the UI thread, with the app's client of the
-// moment, which a restarted server replaces; the function work returns
-// runs on the UI thread afterwards, unless the page has gone. It reports
-// whether work was started. Call it from the UI thread.
-func (a *App) remoteAsk(work func(srv *rex.Client) (apply func())) bool {
-	win, srv, stop := settingsUI.win, a.client, remoteUI.stop
-	if srv == nil || stop == nil {
-		return false
-	}
-	update := a.post // no window in tests: the app's posts
-	if win != nil {
-		update = func(fn func()) { win.Update(fn) }
-	}
-	go func() {
-		apply := work(srv)
-		update(func() {
-			select {
-			case <-stop:
-				return // the page is gone
-			default:
-			}
-			if apply != nil {
-				apply()
-			}
-		})
-	}()
-	return true
 }
 
 func (a *App) startRemotePoll() {
@@ -177,10 +89,7 @@ func (a *App) startRemotePoll() {
 	}
 	stop := make(chan struct{})
 	remoteUI.stop = stop
-	refresh := a.fetchRemote
 	go func() {
-		pub := rex.ClientPublicKey()
-		win.Update(func() { remoteUI.myKey = pub })
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		for {
@@ -189,7 +98,8 @@ func (a *App) startRemotePoll() {
 				case <-stop:
 					return
 				default:
-					refresh()
+					fetchLAN()
+					fetchDirect()
 				}
 			})
 			select {
@@ -201,21 +111,10 @@ func (a *App) startRemotePoll() {
 	}()
 }
 
-// fetchTailscale reads built-in Tailscale's settings, which the gateway
-// keeps and follows when it next turns the device on.
-func fetchTailscale() {
-	if c, err := rexapi.LoadTailscale(rexapi.TailnetDir()); err == nil {
-		remoteUI.ts = c
-		if !remoteUI.tsEdited {
-			remoteUI.tsURL = c.ControlURL
-		}
-	}
-}
-
 // fetchLAN reads the local network listener's settings and state, which
 // the server's gateway follows.
 func fetchLAN() {
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	c, _ := rexapi.LoadLAN(dir)
 	remoteUI.lan = c
 	if !remoteUI.lanEdited {
@@ -227,7 +126,7 @@ func fetchLAN() {
 // fetchDirect reads the direct TLS / self-hosted relay settings and runtime
 // status from disk, keeping the GUI in sync with "gorex rexapi direct".
 func fetchDirect() {
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	c, _ := rexapi.LoadDirect(dir)
 	remoteUI.direct = c
 	if !remoteUI.directEdited {
@@ -244,7 +143,7 @@ func fetchDirect() {
 // second. It preserves CLI-owned fields (Token, HostID, CertFile, KeyFile)
 // from disk so a concurrent CLI rotation or custom cert is not clobbered.
 func saveDirect(c rexapi.DirectConfig) bool {
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	if cur, err := rexapi.LoadDirect(dir); err == nil {
 		cur.Enabled = c.Enabled
 		cur.RelayURL = strings.TrimSpace(c.RelayURL)
@@ -287,7 +186,7 @@ func saveDirect(c rexapi.DirectConfig) bool {
 // rotateDirectToken generates a new 256-bit pairing token in direct.json so
 // the gateway disconnects existing direct/relay clients and issues a new QR.
 func rotateDirectToken() bool {
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	cur, err := rexapi.LoadDirect(dir)
 	if err != nil {
 		remoteUI.directErr = err.Error()
@@ -342,6 +241,54 @@ func directState(c rexapi.DirectConfig, st rexapi.DirectStatus, k *colors) (stri
 	default:
 		return locales.RemoteDirectWaiting(), k.attention
 	}
+}
+
+// connectPhoneCard is the above-the-fold iPhone pairing entry on Settings ›
+// Server (docs/IOS-023-pairing-entry.md). It reflects Direct TLS / Self-Hosted
+// Relay readiness (with Local Network fallback) so the user can open the
+// WindRex pairing QR code immediately without scrolling.
+func (a *App) connectPhoneCard(c *ui.Context, k *colors) {
+	page := &remoteUI
+	label, dot := directState(page.direct, page.directStatus, k)
+	ready := directReady(page.direct, page.directStatus)
+	lan := localRexPair()
+	if !ready && !page.direct.Enabled && lan != "" {
+		label, dot = locales.RemoteLanListening("http://"+page.lanStatus.Listening), k.busy
+	}
+	settingsGroup(c, k, "", "", "", func() {
+		groupRow(c, k, "connect-phone").Children(func() {
+			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Box(c).Size(40, 40).Radius(radiusM).Background(k.accent).Center().Shrink(0).Children(func() {
+					glyphIcon(c, "globe", 22, ui.RGB(255, 255, 255))
+				})
+				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+					ui.Text(c, locales.RemoteConnectPhoneTitle()).FontSize(fontTitle).FontWeight(600).TextColor(k.text)
+					statusLine(c, k, dot, label)
+				})
+				switch {
+				case ready:
+					if ui.PrimaryButton(c.Key("direct-phone-qr"), locales.RemoteDirectRelayQR()).Clicked() {
+						a.openDirectPairQR()
+					}
+				case lan != "":
+					if ui.PrimaryButton(c.Key("lan-phone-qr"), locales.HostsRexQR()).Clicked() {
+						a.openLocalPairQR()
+					}
+				}
+			})
+			switch {
+			case ready:
+				rowHint(c, k, locales.RemoteConnectPhoneReady())
+			case !page.direct.Enabled && lan != "":
+				rowHint(c, k, locales.RemoteConnectPhoneReady())
+			case !page.direct.Enabled:
+				rowHint(c, k, locales.RemoteConnectPhoneOff())
+			}
+			if page.err != nil {
+				rowError(c, k, page.err())
+			}
+		})
+	})
 }
 
 // directSettings renders the Direct / Relay Access group on Settings › Server
@@ -454,7 +401,7 @@ func (a *App) directSettings(c *ui.Context, k *colors) {
 // file as it is now, never from the page's copy, which a gorex rexapi lan
 // token rotate or legacy add may have left behind.
 func saveLAN(c rexapi.LANConfig) bool {
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	if cur, err := rexapi.LoadLAN(dir); err == nil {
 		cur.Enabled, cur.Listen, cur.Allow = c.Enabled, c.Listen, c.Allow
 		c = cur
@@ -565,7 +512,7 @@ func (a *App) lanRow(c *ui.Context, k *colors) {
 		if page.lanErr != "" {
 			rowError(c, k, page.lanErr)
 		}
-		if tailnet, lan := localRexPairs(); tailnet != "" || lan != "" {
+		if lan := localRexPair(); lan != "" {
 			ui.Row(c).Children(func() {
 				if ui.Button(c.Key("local-rex-qr"), locales.HostsRexQR()).Clicked() {
 					a.openLocalPairQR()
@@ -669,73 +616,6 @@ func admissionLabel(l rexapi.Listener) (label string, open bool) {
 	return l.Admission, false
 }
 
-// fetchRemote asks the server for its status; the address comes only
-// while it is shown.
-func (a *App) fetchRemote() {
-	fetchLAN()
-	fetchDirect()
-	fetchTailscale()
-	withAddress, withDirect := remoteUI.reveal, remoteUI.revealDirect
-	a.remoteAsk(func(srv *rex.Client) func() {
-		st, err := srv.RemoteStatus()
-		if !withAddress {
-			st.Address = ""
-		}
-		if !withDirect {
-			st.ReachableAddress = ""
-		}
-		return func() {
-			remoteUI.unreachable = err != nil
-			if err == nil {
-				if !remoteUI.reveal {
-					st.Address = "" // hidden since the ask
-				}
-				if !remoteUI.revealDirect {
-					st.ReachableAddress = ""
-				}
-				remoteUI.st, remoteUI.loaded = st, true
-				if !remoteUI.relayEdited {
-					remoteUI.relay = st.Relay
-				}
-				if !remoteUI.reachEdited {
-					remoteUI.reach = st.ReachableAt
-				}
-				if !st.Enabled {
-					remoteUI.wantPhoneQR = false
-				} else if st.Running && remoteUI.wantPhoneQR && !remoteUI.busy {
-					remoteUI.wantPhoneQR = false
-					a.openRexGoQR(false)
-				}
-			}
-		}
-	})
-}
-
-// remoteDo makes a change on the server, then asks for the status; ok runs
-// on the UI thread when it worked.
-func (a *App) remoteDo(change func(srv *rex.Client) error, ok func()) {
-	if remoteUI.busy {
-		return
-	}
-	remoteUI.busy, remoteUI.err = true, nil
-	started := a.remoteAsk(func(srv *rex.Client) func() {
-		err := change(srv)
-		return func() {
-			remoteUI.busy = false
-			if err != nil {
-				msg := serverMessage(err)
-				remoteUI.err = func() string { return msg }
-			} else if ok != nil {
-				ok()
-			}
-			a.fetchRemote()
-		}
-	})
-	if !started {
-		remoteUI.busy, remoteUI.err = false, locales.RemoteNotConnected
-	}
-}
-
 // serverMessage is an error of the server without its package prefix.
 func serverMessage(err error) string {
 	s := strings.TrimPrefix(err.Error(), "rex: ")
@@ -744,75 +624,6 @@ func serverMessage(err error) string {
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
 }
-
-type remoteKind int
-
-const (
-	remoteOff remoteKind = iota
-	remoteStarting
-	remoteListening
-	remoteError
-	remoteDown
-)
-
-// remoteState tells what the status line says: its label, the detail
-// under it and its kind. unreachable is that the server did not answer.
-func remoteState(st rex.RemoteStatus, unreachable bool) (label, detail string, kind remoteKind) {
-	switch {
-	case unreachable:
-		return locales.RemoteUnreachable(), locales.RemoteUnreachableHint(), remoteDown
-	case st.Running:
-		return locales.RemoteListening(), "", remoteListening
-	case st.LastError != "" && st.Enabled:
-		return locales.RemoteError(), locales.RemoteErrorRetry(st.LastError), remoteError
-	case st.LastError != "":
-		return locales.RemoteError(), st.LastError, remoteError
-	case st.Enabled:
-		return locales.RemoteStarting(), "", remoteStarting
-	}
-	return locales.RemoteOff(), "", remoteOff
-}
-
-// validateClientKey returns what is wrong with a public key, "" when the
-// server takes it.
-func validateClientKey(s string) string {
-	if strings.TrimSpace(s) == "" {
-		return locales.RemotePasteKey()
-	}
-	if _, err := rex.NormalizePublicKey(s); err != nil {
-		return locales.RemoteBadKey()
-	}
-	return ""
-}
-
-// validateNewClient returns what is wrong with a client to add, "" if none.
-func validateNewClient(name, pub string, allowed []rex.RemoteClient) string {
-	if strings.TrimSpace(name) == "" {
-		return locales.RemoteNameClient()
-	}
-	if m := validateClientKey(pub); m != "" {
-		return m
-	}
-	want, _ := rex.NormalizePublicKey(pub)
-	for _, c := range allowed {
-		if have, _ := rex.NormalizePublicKey(c.PublicKey); have == want {
-			return locales.RemoteAlreadyAllowed(c.Name)
-		}
-	}
-	return ""
-}
-
-// shortKey shortens a public key to its first and last digits.
-func shortKey(k string) string {
-	prefix, digits, ok := strings.Cut(strings.TrimSpace(k), ":")
-	if !ok || len(digits) < 16 {
-		return k
-	}
-	return prefix + ":" + digits[:6] + "…" + digits[len(digits)-6:]
-}
-
-// maskedAddress is the dots in place of a hidden address.
-var maskedAddress = strings.Repeat("•", 28)
 
 // monoFamily is the font of keys and addresses: the terminal's.
 func monoFamily() string {
@@ -825,12 +636,6 @@ func monoFamily() string {
 // copyText copies s, and says so on the button named by what for a while.
 // It does not clear the clipboard afterwards.
 func copyText(what, s string) { copyWith(what, s, mygo.ClipboardOptions{}) }
-
-// copySecret is copyText for a secret, as the remote access address, which
-// the page shows masked. The clipboard managers that read the platform's
-// mark for it keep it out of their histories, and macOS keeps it off
-// Universal Clipboard.
-func copySecret(what, s string) { copyWith(what, s, mygo.ClipboardOptions{Concealed: true}) }
 
 func copyWith(what, s string, opts mygo.ClipboardOptions) {
 	if err := mygo.Clipboard.Write(transfer.TextData(s), opts); err != nil {
@@ -858,36 +663,9 @@ func copyLabel(what string) string {
 	return locales.RemoteCopy()
 }
 
-// copyAddress asks the server for the address, or the direct one, and
-// copies it, keeping it nowhere.
-func (a *App) copyAddress(direct bool) {
-	a.remoteAsk(func(srv *rex.Client) func() {
-		st, err := srv.RemoteStatus()
-		addr, what := st.Address, "addr"
-		if direct {
-			addr, what = st.ReachableAddress, "direct"
-		}
-		return func() {
-			if err != nil || addr == "" {
-				remoteUI.err = locales.RemoteNoAddress
-				return
-			}
-			copySecret(what, addr)
-		}
-	})
-}
-
 // rowError says what went wrong, under a row's first line.
 func rowError(c *ui.Context, k *colors, msg string) {
 	ui.Text(c, msg).FontSize(fontFootnote).TextColor(k.danger).LineHeight(1.4).MaxWidth(settingsHintW)
-}
-
-// remoteTile is the small grey tile of a row of the Remote page, with
-// its glyph.
-func remoteTile(c *ui.Context, k *colors, glyph string) {
-	ui.Box(c).Size(30, 30).Radius(radiusM).Background(k.hover).Center().Shrink(0).Children(func() {
-		glyphIcon(c, glyph, 16, k.iconMuted)
-	})
 }
 
 // statusLine is a dot of a state's color and its label.
@@ -898,710 +676,4 @@ func statusLine(c *ui.Context, k *colors, dot ui.Color, label string) ui.Element
 		text = ui.Text(c, label).FontSize(fontFootnote).FontWeight(500).TextColor(k.textMuted).MinWidth(0)
 	})
 	return text
-}
-
-// tileLine is a row's first line with a tile: the tile, the title and what
-// under shows below it, and the controls at the right. under and control
-// may be nil.
-func tileLine(c *ui.Context, k *colors, glyph, title string, under, control func()) {
-	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-		remoteTile(c, k, glyph)
-		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-			ui.Text(c, title).FontSize(fontBody).FontWeight(500).TextColor(k.text).SingleLine().Ellipsis("…")
-			if under != nil {
-				under()
-			}
-		})
-		if control != nil {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(control)
-		}
-	})
-}
-
-// remoteSwitch is a row of the Remote page's first group: a switch of the
-// server's, its title, and its hint under them.
-func remoteSwitch(c *ui.Context, k *colors, key, title, hint string, on *bool, disabled bool) bool {
-	changed := false
-	groupRow(c, k, nil).Children(func() {
-		rowLine(c, k, title, func() {
-			changed = ui.Switch(c.Key(key), on).Label(title).Disabled(disabled).Changed()
-		})
-		rowHint(c, k, hint)
-	})
-	return changed
-}
-
-// connectPhoneCard is the above-the-fold iPhone pairing entry on Settings ›
-// Server (docs/IOS-023-pairing-entry.md). It stays visible whether remote
-// access is off, starting, or listening, guides the user through enabling
-// remote access and showing the WindRex QR code, and surfaces pending
-// fingerprint approval requests without scrolling.
-func (a *App) connectPhoneCard(c *ui.Context, k *colors) {
-	page := &remoteUI
-	st := page.st
-	label, detail, kind := remoteState(st, page.unreachable)
-	if !page.loaded && !page.unreachable {
-		label, detail, kind = locales.RemoteAsking(), "", remoteStarting
-	}
-	dot := map[remoteKind]ui.Color{
-		remoteOff: k.exited, remoteStarting: k.attention, remoteListening: k.busy, remoteError: k.danger, remoteDown: k.danger,
-	}[kind]
-	settingsGroup(c, k, "", "", "", func() {
-		groupRow(c, k, "connect-phone").Children(func() {
-			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(40, 40).Radius(radiusM).Background(k.accent).Center().Shrink(0).Children(func() {
-					glyphIcon(c, "globe", 22, ui.RGB(255, 255, 255))
-				})
-				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-					ui.Text(c, locales.RemoteConnectPhoneTitle()).FontSize(fontTitle).FontWeight(600).TextColor(k.text)
-					statusLine(c, k, dot, label)
-				})
-				if page.loaded && !page.unreachable {
-					switch {
-					case st.Running:
-						if ui.PrimaryButton(c.Key("phone-qr"), locales.RemoteRexGoQR()).Disabled(page.busy).Clicked() {
-							a.openRexGoQR(false)
-						}
-					case !st.Enabled:
-						if ui.PrimaryButton(c.Key("phone-enable"), locales.RemoteConnectPhoneEnable()).Disabled(page.busy).Clicked() {
-							page.wantPhoneQR = true
-							a.remoteDo((*rex.Client).EnableRemote, nil)
-						}
-					case page.wantPhoneQR:
-						if ui.Button(c.Key("phone-cancel"), locales.RemoteCancel()).Clicked() {
-							page.wantPhoneQR = false
-						}
-					}
-				}
-			})
-			switch {
-			case !page.loaded || page.unreachable:
-				if detail != "" {
-					rowHint(c, k, detail)
-				}
-			case st.Running:
-				rowHint(c, k, locales.RemoteConnectPhoneReady())
-			case st.Enabled && page.wantPhoneQR:
-				rowHint(c, k, locales.RemoteConnectPhoneStarting())
-			case !st.Enabled:
-				rowHint(c, k, locales.RemoteConnectPhoneOff())
-			case detail != "":
-				rowHint(c, k, detail)
-			}
-			if page.err != nil {
-				rowError(c, k, page.err())
-			}
-		})
-		if directReady(page.direct, page.directStatus) {
-			directLabel, directDot := directState(page.direct, page.directStatus, k)
-			groupRow(c, k, "connect-phone-direct").Children(func() {
-				tileLine(c, k, "shield-check", locales.RemoteDirectTitle(), func() {
-					statusLine(c, k, directDot, directLabel)
-				}, func() {
-					if !st.Running {
-						if ui.PrimaryButton(c.Key("direct-phone-qr"), locales.RemoteDirectRelayQR()).Clicked() {
-							a.openDirectPairQR()
-						}
-					} else {
-						if ui.Button(c.Key("direct-phone-qr"), locales.RemoteDirectRelayQR()).Clicked() {
-							a.openDirectPairQR()
-						}
-					}
-				})
-			})
-		}
-		for _, p := range st.Pending {
-			a.pendingRow(c, k, p)
-		}
-	})
-}
-
-// pendingRow renders an incoming pairing request with its fingerprint and
-// Reject/Approve actions.
-func (a *App) pendingRow(c *ui.Context, k *colors, p rex.RemotePending) {
-	page := &remoteUI
-	groupRow(c, k, "pending:"+p.PublicKey).Children(func() {
-		tileLine(c, k, "laptop", p.Name, func() {
-			ui.Text(c, rex.Fingerprint(p.PublicKey)).Font(monoFamily()).FontSize(fontFootnote).TextColor(k.textMuted).SingleLine().
-				Ellipsis("…").Tooltip(p.PublicKey)
-		}, func() {
-			if ui.Button(c.Key("r"), locales.RemoteReject()).Disabled(page.busy).Clicked() {
-				a.remoteDo(func(srv *rex.Client) error { return srv.RejectPairing(p.PublicKey) }, nil)
-			}
-			if ui.PrimaryButton(c.Key("a"), locales.RemoteApprove()).Disabled(page.busy).Clicked() {
-				a.remoteDo(func(srv *rex.Client) error { return srv.ApprovePairing(p.PublicKey) }, nil)
-			}
-		})
-	})
-}
-
-func (a *App) remoteSettings(c *ui.Context, k *colors) {
-	page := &remoteUI
-	if !page.loaded {
-		label := locales.RemoteAsking()
-		if page.unreachable {
-			label, _, _ = remoteState(rex.RemoteStatus{}, true)
-		}
-		ui.Text(c, label).FontSize(fontCallout).TextColor(k.textFaint).Padding(0, 0, 0, 14)
-		// The control server is the gateway's file, not the server's: it
-		// can be set, a bad one fixed, while the server does not answer.
-		settingsGroup(c, k, "", "", "", func() { a.remoteControlServer(c, k) })
-		return
-	}
-	a.remoteHeader(c, k, page.st)
-	a.remoteDevices(c, k, page.st)
-	settingsGroup(c, k, "", "", "", func() { a.remoteDetails(c, k, page.st) })
-}
-
-// remoteServes is that remote clients can reach this machine: Tailcat's
-// remote access is on, or Tailscale's discovery runs. Off, the Remote
-// page shows its switches alone.
-func remoteServes(st rex.RemoteStatus) bool {
-	return st.Enabled || st.Tailnet != nil && st.Tailnet.Running
-}
-
-// remoteControlServer is the row of built-in Tailscale's control server,
-// under its switch: the field that sets it, saved to the gateway's
-// settings, as the Tailscale the switch turns on registers with it.
-func (a *App) remoteControlServer(c *ui.Context, k *colors) {
-	page := &remoteUI
-	conf := page.ts
-	groupRow(c, k, nil).Children(func() {
-		rowLine(c, k, locales.RemoteTailscaleControl(), func() {
-			if ui.TextInput(c.Key("ts-url"), &page.tsURL).Placeholder(locales.RemoteTailscalePlaceholder()).
-				Label(locales.RemoteTailscaleControl()).Font(monoFamily()).Width(260).Changed() {
-				page.tsEdited, page.tsErr = true, ""
-			}
-			if ui.Button(c.Key("ts-save"), locales.RemoteLanSave()).Disabled(!page.tsEdited).Clicked() {
-				url := strings.TrimSpace(page.tsURL)
-				if url != "" && !tailnode.ValidControlURL(url) {
-					page.tsErr = locales.RemoteTailscaleInvalid()
-					return
-				}
-				next := conf
-				next.ControlURL = url
-				if err := rexapi.SaveTailscale(rexapi.TailnetDir(), next); err != nil {
-					page.tsErr = err.Error()
-					return
-				}
-				page.ts, page.tsErr, page.tsEdited = next, "", false
-			}
-		})
-		rowHint(c, k, locales.RemoteTailscaleNote())
-		// A saved control server this version refuses, such as a
-		// cleartext one from before it, keeps the device off.
-		if page.tsErr != "" {
-			rowError(c, k, page.tsErr)
-		} else if !page.tsEdited && conf.ControlURL != "" && !tailnode.ValidControlURL(conf.ControlURL) {
-			rowError(c, k, locales.RemoteTailscaleInvalid())
-		}
-	})
-}
-
-// remoteHeader is the Server page's first group: the switch that lets
-// other devices connect, and its state.
-func (a *App) remoteHeader(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	label, detail, kind := remoteState(st, page.unreachable)
-	if kind == remoteOff {
-		detail = locales.RemoteOffNote()
-	}
-	dot := map[remoteKind]ui.Color{
-		remoteOff: k.exited, remoteStarting: k.attention, remoteListening: k.busy, remoteError: k.danger, remoteDown: k.danger,
-	}[kind]
-	settingsGroup(c, k, "", "", "", func() {
-		// The switch and the state.
-		on := st.Enabled && !page.unreachable
-		groupRow(c, k, nil).Children(func() {
-			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(40, 40).Radius(radiusM).Background(k.accent).Center().Shrink(0).Children(func() {
-					glyphIcon(c, "globe", 22, ui.RGB(255, 255, 255))
-				})
-				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-					ui.Text(c, locales.RemoteConnect()).FontSize(fontTitle).FontWeight(600).TextColor(k.text)
-					statusLine(c, k, dot, label)
-				})
-				sw := ui.Switch(c.Key("allow"), &on).Label(locales.RemoteConnect()).Disabled(page.unreachable || page.busy)
-				if sw.Changed() {
-					if on {
-						a.remoteDo((*rex.Client).EnableRemote, nil)
-					} else {
-						a.remoteDo((*rex.Client).DisableRemote, nil)
-					}
-				}
-			})
-			rowHint(c, k, detail)
-			if page.err != nil {
-				rowError(c, k, page.err())
-			}
-		})
-	})
-}
-
-// remoteReachable is the Reachable at row: the IP address of this machine
-// where it is its own relay, as the field sets it, and Turn Off while one
-// is set; the relay's error shows under it.
-func (a *App) remoteReachable(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	groupRow(c, k, "reachable").Children(func() {
-		rowLine(c, k, locales.RemoteReachableTitle(), func() {
-			if ui.TextInput(c.Key("reach"), &page.reach).Placeholder("192.0.2.10").
-				Label(locales.RemoteReachableTitle()).Font(monoFamily()).Width(160).Changed() {
-				page.reachEdited, page.reachErr = true, ""
-			}
-			if ui.Button(c.Key("reach-save"), locales.RemoteLanSave()).Label(locales.RemoteReachableTitle() + ": " + locales.RemoteLanSave()).Disabled(!page.reachEdited || page.busy).Clicked() {
-				ip, err := rex.NormalizeReachable(strings.TrimSpace(page.reach))
-				if err != nil || ip == "" {
-					page.reachErr = locales.RemoteReachableInvalid()
-					return
-				}
-				a.remoteDo(func(srv *rex.Client) error { return srv.SetReachable(ip) },
-					func() { page.reach, page.reachEdited = ip, false })
-			}
-			if st.ReachableAt != "" && ui.Button(c.Key("reach-off"), locales.RemoteReachableOff()).Disabled(page.busy).Clicked() {
-				a.remoteDo(func(srv *rex.Client) error { return srv.SetReachable("") },
-					func() { page.reach, page.reachEdited, page.reachErr = "", false, "" })
-			}
-		})
-		rowHint(c, k, locales.RemoteReachableNote(strconv.Itoa(rex.RemotePort)))
-		if page.reachErr != "" {
-			rowError(c, k, page.reachErr)
-		}
-		if st.ReachableError != "" {
-			rowError(c, k, st.ReachableError)
-		}
-		a.remoteFirewall(c, k, st)
-	})
-}
-
-// remoteFirewall is the line under Reachable at while Windows Firewall
-// blocks its port, with Allow, which adds a rule as administrator and asks
-// the server to check again; or, when a rule blocks GoRex, where to
-// remove it.
-func (a *App) remoteFirewall(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	switch st.ReachableFirewall {
-	case "blockRule":
-		rowError(c, k, locales.RemoteFirewallBlockRule())
-	case "blocked":
-		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, locales.RemoteFirewallBlocked(strconv.Itoa(rex.RemotePort))).FontSize(fontFootnote).TextColor(k.danger).
-				LineHeight(1.4).Grow(1).MinWidth(0)
-			if ui.Button(c.Key("firewall-allow"), locales.RemoteFirewallAllow()).
-				Label(locales.RemoteReachableTitle() + ": " + locales.RemoteFirewallAllow()).Disabled(page.busy).Clicked() {
-				failed := false
-				a.remoteDo(func(srv *rex.Client) error {
-					if err := firewallAllow(); err != nil {
-						failed = true
-						return nil
-					}
-					return srv.CheckFirewall()
-				}, func() { page.fwFailed = failed })
-			}
-		})
-		if page.fwFailed {
-			rowHint(c, k, locales.RemoteFirewallNotChanged())
-		}
-	}
-}
-
-// pairingLeft is the time left in the pairing window, as m:ss.
-func pairingLeft(until, now time.Time) string {
-	d := max(until.Sub(now).Round(time.Second), 0)
-	return fmt.Sprintf("%d:%02d", int(d.Minutes()), int(d.Seconds())%60)
-}
-
-// remoteDevices is the Devices group, the clients allowed, then the Add a
-// device group: the pairing window and the requests made in it to approve
-// or reject, and the buttons that pair a new device or show its QR code.
-// While remote access serves no one, only requests still waiting show.
-func (a *App) remoteDevices(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	on := remoteServes(st)
-	if !on && len(st.PendingByAddress) == 0 {
-		return
-	}
-	if on {
-		settingsGroup(c, k, locales.RemoteDevices(), locales.RemoteClientsNote(), "", func() { a.remoteClients(c, k, st) })
-	}
-	settingsGroup(c, k, locales.RemoteAddDevice(), "", locales.RemotePairNote(), func() {
-		if st.Enabled && st.Pairing.Open {
-			groupRow(c, k, nil).Children(func() {
-				tileLine(c, k, "plus", locales.RemotePairTitle(), func() {
-					statusLine(c, k, k.attention, locales.RemotePairWaiting(pairingLeft(st.Pairing.ExpiresAt, c.Now())))
-					c.After(time.Second)
-				}, func() {
-					if ui.Button(c.Key("pair-stop"), locales.RemotePairStop()).Disabled(page.busy).Clicked() {
-						a.remoteDo((*rex.Client).StopPairing, nil)
-					}
-				})
-				if len(st.Pending) == 0 && len(st.PendingByAddress) == 0 {
-					rowHint(c, k, locales.RemotePairNoRequest())
-				}
-			})
-		}
-		for _, p := range st.PendingByAddress {
-			a.pendingByAddress(c, k, p, len(st.PendingByAddress) > 1)
-		}
-		if !on {
-			return
-		}
-		groupRow(c, k, nil).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if !st.Enabled {
-					ui.Text(c, locales.RemotePairTurnOn()).FontSize(fontBody).TextColor(k.textFaint).Grow(1).MinWidth(0)
-				} else {
-					ui.Spacer(c)
-				}
-				// Rex Go pairs by a code of the address, which opens the
-				// window too.
-				if st.Running && ui.Button(c.Key("rexgo-qr"), locales.RemoteRexGoQR()).Disabled(page.busy).Clicked() {
-					a.openRexGoQR(false)
-				}
-				if st.Running && st.ReachableAt != "" && st.ReachableError == "" &&
-					ui.Button(c.Key("direct-qr"), locales.RemoteDirectQR()).Disabled(page.busy).Clicked() {
-					a.openRexGoQR(true)
-				}
-				if st.Enabled && !st.Pairing.Open {
-					if ui.PrimaryButton(c.Key("pair-start"), locales.RemotePairNew()).Disabled(page.busy).Clicked() {
-						a.remoteDo((*rex.Client).StartPairing, nil)
-					}
-				}
-			})
-		})
-	})
-}
-
-// remoteClients is the rows of the clients allowed, each with its name and
-// key, when it was last seen, Copy and Remove.
-func (a *App) remoteClients(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	if len(st.Allowed) == 0 {
-		groupRow(c, k, nil).Children(func() {
-			ui.Text(c, locales.RemoteNoClients()).FontSize(fontBody).TextColor(k.textFaint)
-		})
-	}
-	for _, client := range st.Allowed {
-		row := groupRow(c, k, "client:"+client.PublicKey)
-		if !st.Enabled {
-			dimmed(row, 0.5)
-		}
-		row.Children(func() {
-			tileLine(c, k, "laptop", client.Name, func() {
-				ui.Text(c, shortKey(client.PublicKey)).Font(monoFamily()).FontSize(fontFootnote).TextColor(k.textFaint).SingleLine().
-					Tooltip(client.PublicKey)
-				if !client.LastSeen.IsZero() {
-					when, _ := ago(client.LastSeen, c.Now())
-					ui.Text(c, locales.RemoteLastSeen(when)).FontSize(fontFootnote).TextColor(k.textFaint).SingleLine()
-				}
-			}, func() {
-				if iconButton(c.Key("c"), k, "copy", locales.RemoteCopyKey(), 26, 15).Tooltip(locales.RemoteCopyKeyTip()).Clicked() {
-					copyText(client.PublicKey, client.PublicKey)
-				}
-				if ui.Button(c.Key("r"), locales.RemoteRevoke()).Disabled(page.busy).Clicked() {
-					a.remoteDo(func(srv *rex.Client) error { return srv.RevokeRemote(client.PublicKey) }, nil)
-				}
-			})
-		})
-	}
-}
-
-// pendingByAddress is a request made by address: its code, large, to
-// compare with the one the device shows, its name and where it came from,
-// and Reject and Approve, which is no default button. With several
-// waiting, none can be approved: the server refuses it too.
-func (a *App) pendingByAddress(c *ui.Context, k *colors, p rex.RemoteAddrPending, many bool) {
-	page := &remoteUI
-	groupRow(c, k, "pending-addr:"+p.Code).Gap(8).Children(func() {
-		tileLine(c, k, "laptop", p.Name, func() {
-			ui.Text(c, locales.RemotePairAddrFrom(p.Source)).Font(monoFamily()).FontSize(fontFootnote).TextColor(k.textMuted).SingleLine().Ellipsis("…")
-		}, func() {
-			if ui.Button(c.Key("r"), locales.RemoteReject()).Disabled(page.busy).Clicked() {
-				a.remoteDo(func(srv *rex.Client) error { return srv.RejectPairingCode(p.Code) }, nil)
-			}
-			if ui.Button(c.Key("a"), locales.RemoteApprove()).Disabled(page.busy || many).Clicked() {
-				a.remoteDo(func(srv *rex.Client) error { return srv.ApprovePairingCode(p.Code) }, nil)
-			}
-		})
-		ui.Text(c, p.Code).Font(monoFamily()).FontSize(fontCode).FontWeight(700).TextColor(k.text).Label(p.Code)
-		if many {
-			rowHint(c, k, locales.RemotePairAddrMany())
-		} else {
-			rowHint(c, k, locales.RemotePairAddrCompare())
-		}
-	})
-}
-
-// addByKey is the row that allows a client by its key: its name and key,
-// Add, and Cancel, which hides it.
-func (a *App) addByKey(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	groupRow(c, k, nil).Gap(8).Children(func() {
-		ui.Text(c, locales.RemoteAddByKey()).FontSize(fontBody).FontWeight(500).TextColor(k.text)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.TextInput(c.Key("name"), &page.name).Placeholder(locales.RemoteNamePlaceholder()).Label(locales.RemoteNameLabel()).Width(150).Shrink(0).Changed() {
-				page.addErr = false
-			}
-			if ui.TextInput(c.Key("key"), &page.key).Placeholder("nodekey:…").Label(locales.RemoteKeyLabel()).Grow(1).MinWidth(0).Changed() {
-				page.addErr = false
-			}
-			if ui.Button(c.Key("add-cancel"), locales.RemoteCancel()).Clicked() {
-				page.addingKey, page.addErr = false, false
-			}
-			if ui.Button(c, locales.RemoteAdd()).Disabled(page.busy).Clicked() {
-				if page.addErr = validateNewClient(page.name, page.key, st.Allowed) != ""; !page.addErr {
-					name, pub := strings.TrimSpace(page.name), strings.TrimSpace(page.key)
-					a.remoteDo(func(srv *rex.Client) error { return srv.AllowRemote(name, pub) },
-						func() { page.name, page.key = "", "" })
-				}
-			}
-		})
-		if page.addErr {
-			rowError(c, k, validateNewClient(page.name, page.key, st.Allowed))
-		}
-	})
-}
-
-// remoteDetails is the last group, as Rex's Show Details: opened, Tailscale,
-// Reachable at, the relay, what the clients share, adding a device by its
-// key, this machine's address, while the server listens, and its key, which
-// a device to pair with asks for. Closing it hides the address. Off, it
-// stays: the key and the relay serve the other way, this machine
-// connecting to hosts.
-func (a *App) remoteDetails(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	page := &remoteUI
-	label := locales.RemoteShowDetails()
-	if page.details {
-		label = locales.RemoteHideDetails()
-	}
-	row := groupRow(c, k, "details").Cursor(ui.CursorPointer).Role(ui.RoleDisclosure).Expanded(page.details).Label(label)
-	if row.Clicked() {
-		page.details = !page.details
-		page.reveal, page.confirm, page.st.Address, page.st.ReachableAddress = false, false, "", ""
-		page.revealDirect = false
-	}
-	row.Children(func() {
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, label).FontSize(fontBody).FontWeight(500).TextColor(k.accent)
-			chevron := glyphIcon(c.Key("chevron"), "chevron-down", 11, k.accent).Shrink(0)
-			turn := float32(-90)
-			if page.details {
-				turn = 0
-			}
-			chevron.Rotate(animated(c, chevron, "fold", turn))
-		})
-	})
-	if !page.details {
-		return
-	}
-	if st.Running {
-		a.remoteAddress(c, k, false)
-		if st.ReachableAt != "" && st.ReachableError == "" {
-			a.remoteAddress(c, k, true)
-		}
-	}
-	if st.Enabled {
-		a.remoteHostKey(c, k, st)
-	}
-	if st.Tailnet != nil {
-		tailnet := st.Tailnet.Enabled
-		note := locales.TailnetModeNote()
-		if st.Tailnet.Side == rex.TailnetBuiltin {
-			note = locales.TailnetModeNoteBuiltin()
-		}
-		if remoteSwitch(c, k, "system-tailscale", locales.TailnetMode(), note, &tailnet, page.unreachable || page.busy) {
-			a.remoteDo(func(srv *rex.Client) error { return srv.SetTailnet(tailnet) }, nil)
-		}
-		a.remoteTailnet(c, k, st.Tailnet)
-	}
-	a.remoteControlServer(c, k)
-	if st.Enabled {
-		a.remoteReachable(c, k, st)
-	}
-	a.remoteRelay(c, k)
-	if remoteServes(st) {
-		if page.addingKey {
-			a.addByKey(c, k, st)
-		} else {
-			groupRow(c, k, nil).Children(func() {
-				rowLine(c, k, locales.RemoteAddByKey(), func() {
-					if ui.Button(c.Key("add-key"), locales.RemoteAddByKeyAsk()).Clicked() {
-						page.addingKey = true
-					}
-				})
-			})
-		}
-	}
-	groupRow(c, k, nil).Children(func() {
-		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, locales.RemoteMyKey()).FontSize(fontBody).FontWeight(500).TextColor(k.text)
-				if page.myKey == "" {
-					ui.Text(c, locales.RemoteNoKey()).FontSize(fontFootnote).TextColor(k.textFaint)
-					return
-				}
-				if fp := rex.Fingerprint(page.myKey); fp != "" {
-					ui.Text(c, locales.RemoteFingerprint(fp)).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.textMuted)
-				}
-				ui.Text(c, page.myKey).Font(monoFamily()).FontSize(fontCaption).TextColor(k.textFaint).LineHeight(1.4).Selectable()
-			})
-			ui.Row(c).Gap(8).Shrink(0).Children(func() {
-				// Rex pairs by this machine's QR code; until an address
-				// serves it, the way to set it up is the local network's
-				// listener, in the Local API group above.
-				if tailnet, lan := localRexPairs(); tailnet != "" || lan != "" {
-					if ui.Button(c.Key("local-rex-qr"), locales.HostsRexQR()).Clicked() {
-						a.openLocalPairQR()
-					}
-				} else if ui.Button(c.Key("setup-rex"), locales.HostsSetUpRex()).Clicked() {
-					remoteUI.focusLAN = true
-				}
-				if ui.Button(c.Key("copy-mine"), copyLabel("mine")).Disabled(page.myKey == "").Clicked() {
-					copyText("mine", page.myKey)
-				}
-			})
-		})
-		rowHint(c, k, locales.RemoteMyKeyNote())
-	})
-}
-
-// remoteAddress is the address row, or with direct the second address's,
-// for devices that dial this machine directly: the address, hidden until
-// shown, and the buttons to show, copy and regenerate it (the second one
-// changes with the first, so it has no Regenerate).
-func (a *App) remoteAddress(c *ui.Context, k *colors, direct bool) {
-	page := &remoteUI
-	title, note, addr, copyKey := locales.RemoteAddress(), locales.RemoteAddressNote(), &page.st.Address, "addr"
-	reveal := &page.reveal // each address is shown by its own button
-	if direct {
-		title, note, addr, copyKey = locales.RemoteDirectAddress(), locales.RemoteDirectAddressNote(), &page.st.ReachableAddress, "direct"
-		reveal = &page.revealDirect
-	}
-	asking := page.confirm && !direct // Regenerate asks to be sure
-	groupRow(c, k, copyKey).Gap(8).Children(func() {
-		shown := maskedAddress
-		if *reveal && *addr != "" {
-			shown = *addr
-		}
-		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, title).FontSize(fontBody).FontWeight(500).TextColor(k.text)
-				ui.Text(c, shown).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.4)
-			})
-			if asking {
-				return
-			}
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
-				if *reveal {
-					if ui.Button(c.Key("hide-"+copyKey), locales.RemoteHide()).Clicked() {
-						*reveal, *addr = false, ""
-					}
-				} else if ui.Button(c.Key("show-"+copyKey), locales.RemoteShow()).Clicked() {
-					*reveal = true
-					a.fetchRemote()
-				}
-				if ui.Button(c.Key("copy-"+copyKey), copyLabel(copyKey)).Clicked() {
-					a.copyAddress(direct)
-				}
-				if !direct && ui.Button(c, locales.RemoteRegenerateAsk()).Clicked() {
-					page.confirm = true
-				}
-			})
-		})
-		if !asking {
-			rowHint(c, k, note)
-			return
-		}
-		ui.Text(c, locales.RemoteRegenerateNote()).
-			FontSize(fontSubhead).TextColor(k.text).LineHeight(1.4).MaxWidth(settingsHintW)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, locales.RemoteRegenerate()).Disabled(page.busy).Clicked() {
-				page.confirm, page.reveal, page.st.Address, page.st.ReachableAddress = false, false, "", ""
-				page.revealDirect = false
-				a.remoteDo((*rex.Client).RegenerateRemote, nil)
-			}
-			if ui.Button(c, locales.RemoteCancel()).Clicked() {
-				page.confirm = false
-			}
-		})
-	})
-}
-
-// remoteHostKey is the host key row, beside the address in the details:
-// the node public key of this machine's remote access, which the relay's
-// operator lets it on by (docs/NET-004-public-relay.md). It copies, as
-// This machine's key does.
-func (a *App) remoteHostKey(c *ui.Context, k *colors, st rex.RemoteStatus) {
-	groupRow(c, k, "hostkey").Children(func() {
-		ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, locales.RemoteHostKey()).FontSize(fontBody).FontWeight(500).TextColor(k.text)
-				if st.PublicKey == "" {
-					ui.Text(c, locales.RemoteNoKey()).FontSize(fontFootnote).TextColor(k.textFaint)
-					return
-				}
-				if fp := rex.Fingerprint(st.PublicKey); fp != "" {
-					ui.Text(c, locales.RemoteFingerprint(fp)).Font(monoFamily()).FontSize(fontSubhead).TextColor(k.textMuted)
-				}
-				ui.Text(c, st.PublicKey).Font(monoFamily()).FontSize(fontCaption).TextColor(k.textFaint).LineHeight(1.4).Selectable()
-			})
-			ui.Row(c).Gap(8).Shrink(0).Children(func() {
-				if ui.Button(c.Key("copy-host"), copyLabel("host")).Disabled(st.PublicKey == "").Clicked() {
-					copyText("host", st.PublicKey)
-				}
-			})
-		})
-		rowHint(c, k, locales.RemoteHostKeyNote())
-	})
-}
-
-// remoteRelay is the relay row: the DERP relay the address names,
-// tailcat's unless one of one's own is saved.
-func (a *App) remoteRelay(c *ui.Context, k *colors) {
-	page := &remoteUI
-	groupRow(c, k, nil).Children(func() {
-		rowLine(c, k, locales.RemoteRelay(), func() {
-			if ui.TextInput(c.Key("relay"), &page.relay).Placeholder(locales.RemoteRelayPlaceholder()).
-				Label(locales.RemoteRelay()).Font(monoFamily()).Width(220).Changed() {
-				page.relayEdited, page.relayErr = true, ""
-			}
-			if ui.Button(c.Key("relay-save"), locales.RemoteLanSave()).Disabled(!page.relayEdited || page.busy).Clicked() {
-				relay, err := rex.NormalizeRelay(page.relay)
-				if err != nil {
-					page.relayErr = locales.RemoteRelayInvalid()
-					return
-				}
-				a.saveRelay(relay)
-			}
-		})
-		if page.relayErr != "" {
-			rowError(c, k, page.relayErr)
-		}
-		rowHint(c, k, locales.RemoteRelayNote())
-	})
-}
-
-// saveRelay sets the server's relay, saying under the field what went
-// wrong, as the field keeps what was typed.
-func (a *App) saveRelay(relay string) {
-	page := &remoteUI
-	if page.busy {
-		return
-	}
-	page.busy, page.relayErr = true, ""
-	started := a.remoteAsk(func(srv *rex.Client) func() {
-		err := srv.SetRelay(relay)
-		return func() {
-			page.busy = false
-			if err != nil {
-				page.relayErr = serverMessage(err)
-			} else {
-				page.relay, page.relayEdited = relay, false
-			}
-			a.fetchRemote()
-		}
-	})
-	if !started {
-		page.busy, page.relayErr = false, locales.RemoteNotConnected()
-	}
 }

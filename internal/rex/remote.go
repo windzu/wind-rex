@@ -3,90 +3,24 @@
 package rex
 
 import (
-	"bufio"
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
-	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	"gorex/internal/layout"
-	"gorex/internal/pairaddr"
-
-	"github.com/tailscale/tailcat"
-	"tailscale.com/envknob"
-	"tailscale.com/ipn/ipnstate"
-	"tailscale.com/tailcfg"
-	"tailscale.com/types/key"
-	"tailscale.com/util/dnsname"
 )
-
-// Remote access: the server also listens on a tailcat address (WireGuard
-// over DERP, without a control plane). The address is a secret: it holds
-// the server's key and the WireGuard pre-shared key. Never log it, nor any
-// key. Every peer that knows it may shake hands; the server reads each
-// connection's peer key and serves the clients of its allowlist only.
-// While a pairing window is open, another client may ask to be allowed
-// (remote.pair), and nothing else; the local user approves or rejects.
-
-// RemotePort is the port the server listens on at its tailcat address.
-const RemotePort = 7464
-
-// RexAPIPort is Rex's API port, which the server's tailcat address serves
-// too: its connections go to the Rex API gateway (toGateway).
-const RexAPIPort = 7297
-
-// RemoteConfig is the server's remote access, kept in Dir()/remote.json.
-type RemoteConfig struct {
-	Enabled bool `json:"enabled"`
-	// Tailnet turns on the system Tailscale mode: the GoRex desktops on
-	// this account's tailnet find this one, and may open terminals on it.
-	// Off until the user turns it on. On Windows and macOS a start with
-	// it on never turns the built-in Tailscale node on: only the user
-	// does, as the mode is turned on or with Turn on.
-	Tailnet      bool                 `json:"tailnet,omitempty"`
-	NodeKey      key.NodePrivate      `json:"nodeKey,omitzero"`
-	PresharedKey tailcat.PresharedKey `json:"presharedKey,omitzero"`
-	// Region is the DERP region picked the first time, kept so that the
-	// address stays the same.
-	Region int `json:"region,omitempty"`
-	// Relay is a DERP relay of the user's own, as derp.example.com, in
-	// place of tailcat's: the address then names it, and Region waits for
-	// it to be cleared.
-	Relay   string         `json:"relay,omitempty"`
-	Allowed []RemoteClient `json:"allowed"`
-	// RemoteControl lets remote clients run app actions through this
-	// window; off by default.
-	RemoteControl bool `json:"remoteControl,omitempty"`
-	// ReachableAt is an IP address of this machine where it is its own
-	// relay, and shows a second address (ownrelay.go); "" while off, as
-	// by default.
-	ReachableAt string `json:"reachableAt,omitempty"`
-}
-
-// The pairing window: how long it stays open, and how many requests it
-// keeps.
-const (
-	pairWindow = 5 * time.Minute
-	maxPending = 8
-)
-
-func remotePath() string { return filepath.Join(Dir(), "remote.json") }
 
 // writeJSON writes v to path, readable by the user only, atomically.
 func writeJSON(path string, v any) error {
@@ -124,26 +58,11 @@ func readJSON(path string, v any) error {
 	return nil
 }
 
-// NormalizePublicKey checks a client's public key, "nodekey:" and 64 hex
-// digits, and returns it in its canonical form.
-func NormalizePublicKey(s string) (string, error) {
-	k, err := parsePublicKey(s)
-	if err != nil {
-		return "", err
-	}
-	return k.String(), nil
-}
-
-// secretRun finds what could be a piece of the tailcat address or of a
-// key: a long run of base64 characters.
+// secretRun finds what could be a secret token or key: a long run of base64 characters.
 var secretRun = regexp.MustCompile(`[A-Za-z0-9_+/=-]{32,}`)
 
-// tailnetIP finds a tailcat node's IPv6 address, which holds a part of
-// its key: the prefix and at most the five groups that follow it.
-var tailnetIP = regexp.MustCompile(`(?i)fd7a:115c:a1e0(?::(?::)?[0-9a-f]{1,4}){0,5}`)
-
-// scrub removes from s the tailcat address, and anything that looks like
-// a part of one, so that an error or a log line never holds it.
+// scrub removes remote pairing credentials and long token-like substrings from
+// s so that an error or a log line never exposes them.
 func scrub(s string, addrs ...string) string {
 	for _, a := range addrs {
 		if a != "" {
@@ -157,242 +76,25 @@ func scrub(s string, addrs ...string) string {
 			}
 		}
 	}
-	s = tailnetIP.ReplaceAllString(s, "<redacted>")
 	return secretRun.ReplaceAllString(s, "<redacted>")
 }
 
-// Scrub removes from s the tailcat addresses addrs, and anything that
-// looks like a part of one or of a key, for an error to show or log.
+// Scrub removes secret tokens and remote pairing URLs addrs from s for an error
+// to show or log.
 func Scrub(s string, addrs ...string) string { return scrub(s, addrs...) }
 
-// publicRelayHost is the team's DERP relay of
-// docs/NET-004-public-relay.md, which the name gorex chooses for
-// remote.relay: the name is saved, so an address of before the alias is
-// the same one.
-const publicRelayHost = "derp.gorex.uk"
-
-// NormalizeRelay checks a relay of one's own, a DERP server's host name
-// with its port when not 443, and returns it trimmed; "" is tailcat's own
-// relays, and "gorex" the team's. An IP address is refused: derper
-// --hostname serves a certificate for a name, which TLS to an address
-// would not match.
-func NormalizeRelay(s string) (string, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "", nil
-	}
-	if s == "gorex" {
-		return publicRelayHost, nil
-	}
-	host := s
-	if h, p, err := net.SplitHostPort(s); err == nil {
-		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
-			return "", errBadRelay
-		}
-		host = h
-	}
-	if _, err := netip.ParseAddr(host); err == nil || dnsname.ValidHostname(host) != nil {
-		return "", errBadRelay
-	}
-	return s, nil
-}
-
-var errBadRelay = errors.New("rex: a relay is a host name, as derp.example.com, with :PORT when not 443: no IP address, no https://")
-
-// relayInsecure lets a relay serve a certificate of no authority, for
-// tests' relays on the loopback.
-var relayInsecure = false
-
-// relayRegion is the DERP region of a relay of one's own: the one node,
-// on its DERP port (443 unless given) and STUN's 3478, as derper serves.
-func relayRegion(relay string) *tailcfg.DERPRegion {
-	host, port := relay, 0
-	if h, p, err := net.SplitHostPort(relay); err == nil {
-		host = h
-		port, _ = strconv.Atoi(p)
-	}
-	return &tailcfg.DERPRegion{
-		RegionID: 900, RegionCode: "own",
-		Nodes: []*tailcfg.DERPNode{{Name: "900a", RegionID: 900, HostName: host, DERPPort: port, InsecureForTests: relayInsecure}},
-	}
-}
-
-// ValidRemoteAddress tells whether s reads as a tailcat address or a Direct
-// TLS / Relay pairing URL.
+// ValidRemoteAddress reports whether s is a valid Direct TLS or stateless relay
+// pairing URL.
 func ValidRemoteAddress(s string) bool {
 	s = strings.TrimSpace(s)
-	if IsDirectTarget(s) {
-		_, err := ParseDirectTarget(s)
-		return err == nil
+	if !IsDirectTarget(s) {
+		return false
 	}
-	_, err := tailcat.ParseAddr(tailcat.Addr(s))
-	return s != "" && err == nil
+	_, err := ParseDirectTarget(s)
+	return err == nil
 }
 
-// Fingerprint is a short form of a public key, the first 8 and last 4 of
-// its hex digits, that both sides of a pairing show, to tell that the
-// request is the one made; "" for what is not a key.
-func Fingerprint(publicKey string) string {
-	k, err := parsePublicKey(publicKey)
-	if err != nil {
-		return ""
-	}
-	_, h, _ := strings.Cut(k.String(), ":")
-	return h[:8] + "-" + h[len(h)-4:]
-}
-
-// pairName cleans the name a client asks to pair with, as pairing by
-// address does.
-func pairName(s string) string { return pairaddr.Name(s) }
-
-func parsePublicKey(s string) (key.NodePublic, error) {
-	var k key.NodePublic
-	if err := k.UnmarshalText([]byte(strings.TrimSpace(s))); err != nil || k.IsZero() {
-		return k, errors.New(`rex: a client's public key reads "nodekey:" and 64 hex digits`)
-	}
-	return k, nil
-}
-
-// remote is the server's remote listener and its state.
-type remote struct {
-	mu      sync.Mutex
-	cfg     RemoteConfig
-	tailnet *systemTailnet
-	gen     int                // changes on every stop, to drop starts in flight
-	cancel  context.CancelFunc // non-nil while starting or running
-	ts      *tailcat.Server    // non-nil while running
-	ln      net.Listener
-	api     net.Listener // RexAPIPort, beside ln
-	addr    tailcat.Addr
-	lastErr string
-	conns   map[net.Conn]string // the remote connections, by their peer's key
-	// pairUntil is when the pairing window closes, zero while closed;
-	// pending holds the requests made in it, never saved.
-	pairUntil time.Time
-	pending   []RemotePending
-	// pairGen counts the windows opened: a request by address closes the
-	// window it came in, not one opened after it.
-	pairGen int
-	// byAddr are the pairings by address on their live connections.
-	byAddr []*addrPending
-	// own is the relay of Reachable at and its tailcat server while
-	// running; ownGen and ownCancel are as gen and cancel, for it alone.
-	own       *ownLink
-	ownGen    int
-	ownCancel context.CancelFunc
-	ownErr    string
-	// fw is the last firewallResult of firewallCheck, made at fwAt (Unix
-	// ns); fwMu lets one check run at a time.
-	fwMu sync.Mutex
-	fw   atomic.Int32
-	fwAt atomic.Int64
-}
-
-// liveLocked tells whether ln is one of the running listeners, and its
-// connections' map.
-func (r *remote) liveLocked(ln net.Listener) (map[net.Conn]string, bool) {
-	if r.ln != nil && (r.ln == ln || r.api == ln) {
-		return r.conns, true
-	}
-	if r.own != nil && (r.own.ln == ln || r.own.api == ln) {
-		return r.own.conns, true
-	}
-	return nil, false
-}
-
-// remotePeerKey returns the key of the peer of a connection accepted by
-// ts, "" when tailcat does not know it; tests replace it.
-var remotePeerKey = func(ts *tailcat.Server, c net.Conn) string {
-	for _, kv := range ts.PeerEnv(c.LocalAddr(), c.RemoteAddr()) {
-		if v, ok := strings.CutPrefix(kv, "TAILCAT_PEER_KEY="); ok {
-			return v
-		}
-	}
-	return ""
-}
-
-// allowedLocked tells whether k is in the allowlist.
-func (r *remote) allowedLocked(k string) bool {
-	return k != "" && slices.ContainsFunc(r.cfg.Allowed, func(c RemoteClient) bool { return c.PublicKey == k })
-}
-
-// pairOpenLocked tells whether the pairing window is open, closing it
-// once it has expired.
-func (r *remote) pairOpenLocked() bool {
-	if !r.pairUntil.IsZero() && time.Now().After(r.pairUntil) {
-		r.pairUntil, r.pending = time.Time{}, nil
-	}
-	return !r.pairUntil.IsZero()
-}
-
-// remoteListen starts ts and listens on RemotePort, in ts.Region when set
-// (a relay of one's own), else in region, picking one when region is 0;
-// tests replace it to stay off the network.
-var remoteListen = func(ctx context.Context, ts *tailcat.Server, region int) (net.Listener, tailcat.Addr, int, error) {
-	switch {
-	case ts.Region != nil:
-	case region == 0:
-		ci := tailcat.ConnInfo{RegionID: -1}
-		if err := ci.Expand(ctx, tailcat.ExpandForServer); err != nil {
-			return nil, "", 0, err
-		}
-		ts.Region = ci.Region[0]
-		region = int(ts.Region.RegionID)
-	default:
-		ts.RegionID = tailcfg.DERPRegionID(region)
-	}
-	ln, err := ts.Listen(ctx, "tcp", ":"+strconv.Itoa(RemotePort))
-	if err != nil {
-		return nil, "", 0, err
-	}
-	return ln, ts.TailcatAddr(), region, nil
-}
-
-// remoteAPIListen listens on RexAPIPort of ts, which remoteListen
-// started; tests replace it.
-var remoteAPIListen = func(ts *tailcat.Server) (net.Listener, error) {
-	return ts.Listen(context.Background(), "tcp", ":"+strconv.Itoa(RexAPIPort))
-}
-
-// remoteControlEnabled tells whether remote clients may run app actions.
-func (s *Server) remoteControlEnabled() bool {
-	s.rem.mu.Lock()
-	defer s.rem.mu.Unlock()
-	return s.rem.cfg.RemoteControl
-}
-
-// remoteClientFor is what a connected peer is, for its Hello: its label,
-// key and times.
-func (s *Server) remoteClientFor(peer string) *RemoteClient {
-	r := &s.rem
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if IsTailnetTarget(peer) && r.tailnet != nil {
-		return r.tailnet.clientFor(peer)
-	}
-	for _, c := range r.cfg.Allowed {
-		if c.PublicKey == peer {
-			c := c
-			return &c
-		}
-	}
-	return nil
-}
-
-// remoteSeen notes that an allowed client connected now.
-func (s *Server) remoteSeen(peer string) {
-	r := &s.rem
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for i := range r.cfg.Allowed {
-		if r.cfg.Allowed[i].PublicKey == peer {
-			r.cfg.Allowed[i].LastSeen = time.Now()
-			return // saved with the next configuration change
-		}
-	}
-}
-
-// remoteAllowed tells the ops a remote connection may make; it may also
+// remoteAllowed reports the ops a remote connection may make; it may also
 // attach to sessions. dir.list goes to the clients that may take a file
 // with file.get, which reads any path as the server's user already. Every
 // client the host lets in reads the layout and follows its changes: it is
@@ -407,924 +109,104 @@ func remoteAllowed(op string) bool {
 	return false
 }
 
-// remoteLoad reads the configuration and starts listening when enabled.
-func (s *Server) remoteLoad() {
-	r := &s.rem
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.cfg = RemoteConfig{}
-	if err := readJSON(remotePath(), &r.cfg); err != nil {
-		log.Printf("rex: remote access stays off: %v", err)
-		r.cfg, r.lastErr = RemoteConfig{}, err.Error()
-		return
-	}
-	// Allowlists saved before identities had times get them now.
-	now, changed := time.Now(), false
-	for i := range r.cfg.Allowed {
-		if r.cfg.Allowed[i].Created.IsZero() {
-			r.cfg.Allowed[i].Created = now
-			changed = true
-		}
-	}
-	if changed {
-		if err := writeJSON(remotePath(), r.cfg); err != nil {
-			log.Printf("rex: saving the remote allowlist: %v", err)
-		}
-	}
-	if r.cfg.Enabled {
-		s.remoteStartLocked()
-	}
-	if r.cfg.Tailnet {
-		// The built-in node stays as the user left it: a mode on from
-		// before, as after an upgrade, waits for the user's Turn on.
-		s.tailnetStartLocked()
-	}
-}
+var clientKeyMu sync.Mutex
 
-// remoteEnabled tells whether a remote client may connect: the tailcat
-// listener runs, or one of the system tailnet's links is open. The
-// tailnet broker alone does not count, so that a server with no sessions
-// and no app still exits when idle.
-func (s *Server) remoteEnabled() bool {
-	s.rem.mu.Lock()
-	defer s.rem.mu.Unlock()
-	if s.rem.cancel != nil {
-		return true
-	}
-	if t := s.rem.tailnet; t != nil {
-		return t.linked()
-	}
-	return false
-}
-
-// remoteClose stops listening and drops the remote connections.
-func (s *Server) remoteClose() {
-	s.rem.mu.Lock()
-	s.tailnetStopLocked()
-	done := s.remoteStopLocked()
-	s.rem.mu.Unlock()
-	done()
-}
-
-// remoteStopLocked stops the listener; the function it returns closes it
-// and its connections, to call without the lock.
-func (s *Server) remoteStopLocked() func() {
-	r := &s.rem
-	r.gen++
-	if r.cancel != nil {
-		r.cancel()
-		r.cancel = nil
-	}
-	ts, ln, api, conns := r.ts, r.ln, r.api, r.conns
-	r.ts, r.ln, r.api, r.addr, r.conns = nil, nil, nil, "", nil
-	r.pairUntil, r.pending = time.Time{}, nil
-	ownDone := s.ownStopLocked()
-	return func() {
-		ownDone()
-		if ln != nil {
-			ln.Close()
-			api.Close()
-		}
-		for c := range conns {
-			c.Close()
-		}
-		if ts != nil {
-			ts.Close()
-		}
-	}
-}
-
-// remoteStartLocked starts listening in the background, retrying while
-// it fails.
-func (s *Server) remoteStartLocked() {
-	tuneKeepalive()
-	r := &s.rem
-	ctx, cancel := context.WithCancel(context.Background())
-	r.gen++
-	gen, cfg := r.gen, r.cfg
-	r.cancel, r.lastErr = cancel, ""
-	s.ownStartLocked()
-	go func() {
-		for {
-			// No AllowedClients: every peer that knows the address may
-			// shake hands, and remoteAccept checks its key, so that one not
-			// allowed yet may ask to pair.
-			ts := &tailcat.Server{
-				Key: cfg.NodeKey, PresharedKey: cfg.PresharedKey,
-				Logf: func(string, ...any) {}, // it logs keys
-			}
-			if cfg.Relay != "" {
-				ts.Region = relayRegion(cfg.Relay)
-			}
-			ln, addr, region, err := remoteListen(ctx, ts, cfg.Region)
-			var api net.Listener
-			if err == nil {
-				if api, err = remoteAPIListen(ts); err != nil {
-					ln.Close()
-					ln = nil
-				}
-			}
-			r.mu.Lock()
-			if r.gen != gen {
-				r.mu.Unlock()
-				if ln != nil {
-					ln.Close()
-					api.Close()
-				}
-				ts.Close()
-				return
-			}
-			if err == nil {
-				r.ts, r.ln, r.api, r.addr, r.lastErr = ts, ln, api, addr, ""
-				r.conns = map[net.Conn]string{}
-				if r.cfg.Region == 0 && region != 0 {
-					r.cfg.Region = region
-					if err := writeJSON(remotePath(), r.cfg); err != nil {
-						log.Printf("rex: saving the remote region: %v", err)
-					}
-				}
-				r.mu.Unlock()
-				log.Printf("rex: remote access on")
-				// Either listener failing starts both again.
-				errs := make(chan error, 2)
-				go func() { errs <- s.remoteAccept(ts, api) }()
-				go func() { errs <- s.remoteAccept(ts, ln) }()
-				aerr := <-errs
-				// Accepting failed, not stopped: say so, and start again as
-				// after any failure, so that nothing claims to listen
-				// while nothing accepts.
-				r.mu.Lock()
-				if r.gen != gen {
-					r.mu.Unlock()
-					return
-				}
-				msg := scrub(aerr.Error())
-				r.lastErr = msg
-				done := func() {}
-				if r.ln == ln {
-					ts, ln, conns := r.ts, r.ln, r.conns
-					r.ts, r.ln, r.api, r.addr, r.conns = nil, nil, nil, "", nil
-					done = func() {
-						ln.Close()
-						api.Close()
-						for c := range conns {
-							c.Close()
-						}
-						ts.Close()
-					}
-				}
-				r.mu.Unlock()
-				done()
-				log.Printf("rex: remote access stopped accepting: %s", msg)
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(remoteRetry):
-				}
-				continue
-			}
-			r.lastErr = scrub(err.Error())
-			r.mu.Unlock()
-			ts.Close()
-			log.Printf("rex: starting remote access: %s", scrub(err.Error()))
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(remoteRetry):
-			}
-		}
-	}()
-}
-
-// The TCP keepalive of the remote connections: probes after
-// netstackIdle of silence, every netstackInterval, nine of them unanswered
-// before the connection drops, in about two minutes. Netstack's defaults,
-// two hours and 75 seconds, kept the connections of a client whose
-// network dropped, and the sessions they attached, for over two hours.
-// It works whatever the client, an older one included, whose own netstack
-// answers the probes while it runs, and resets the connections it forgot.
-const (
-	netstackIdle     = "30s"
-	netstackInterval = "10s"
-)
-
-var tuneOnce sync.Once
-
-// tuneKeepalive sets the TCP keepalive of the connections tailcat
-// accepts, unless the environment set it; out of the environment the
-// sessions get.
-func tuneKeepalive() {
-	tuneOnce.Do(func() {
-		for k, v := range map[string]string{
-			"TS_NETSTACK_KEEPALIVE_IDLE":     netstackIdle,
-			"TS_NETSTACK_KEEPALIVE_INTERVAL": netstackInterval,
-		} {
-			if _, set := os.LookupEnv(k); !set {
-				envknob.Setenv(k, v)
-				os.Unsetenv(k)
-			}
-		}
-	})
-}
-
-// remoteRetry is how long a failed listener waits before it starts again.
-var remoteRetry = 30 * time.Second
-
-var errRemoteStopped = errors.New("rex: remote access stopped")
-
-// remoteAccept serves the remote connections of ln, RemotePort's or
-// RexAPIPort's, until accepting fails: it returns that error, or
-// errRemoteStopped when the listener was replaced. A connection of an
-// allowed client is served marked remote, or goes to the gateway on
-// RexAPIPort; one of another client may only ask to pair, on RemotePort
-// while the window is open; any other is closed, unlogged.
-func (s *Server) remoteAccept(ts *tailcat.Server, ln net.Listener) error {
-	r := &s.rem
-	for {
-		c, err := ln.Accept()
-		if err != nil {
-			return err
-		}
-		r.mu.Lock()
-		_, live := r.liveLocked(ln)
-		r.mu.Unlock()
-		if !live {
-			c.Close()
-			return errRemoteStopped
-		}
-		go func() {
-			k := remotePeerKey(ts, c)
-			// Checked and kept under the lock, so that a revoke drops it.
-			r.mu.Lock()
-			allowed := r.allowedLocked(k)
-			conns, live := r.liveLocked(ln)
-			api := live && (ln == r.api || r.own != nil && ln == r.own.api)
-			// Stopped, or for the gateway and not allowed: no answer.
-			if !live || api && !allowed {
-				r.mu.Unlock()
-				c.Close()
-				return
-			}
-			if k == "" || !allowed && !r.pairOpenLocked() {
-				r.mu.Unlock()
-				refuseRemote(c)
-				return
-			}
-			conns[c] = k
-			r.mu.Unlock()
-			switch {
-			case api:
-				s.remoteSeen(k)
-				s.toGateway(c, k)
-			case allowed:
-				s.remoteSeen(k)
-				s.handle(c, k)
-			default:
-				s.pairConn(c, k)
-			}
-			c.Close()
-			r.mu.Lock()
-			// Not the map of a stopped listener: its closer reads it unlocked.
-			if conns, live := r.liveLocked(ln); live {
-				delete(conns, c)
-			}
-			r.mu.Unlock()
-		}()
-	}
-}
-
-// toGateway hands c, a connection of the allowed client k to RexAPIPort,
-// to the Rex API gateway on its socket: a line that names the client, then
-// the bytes both ways. With no gateway there, c closes, and its client
-// dials again.
-func (s *Server) toGateway(c net.Conn, k string) {
-	g, err := net.DialTimeout("unix", GatewaySocketPath(), 5*time.Second)
-	if err != nil {
-		return
-	}
-	peer := RemoteClient{PublicKey: k}
-	if rc := s.remoteClientFor(k); rc != nil {
-		peer.Name = rc.Name
-	}
-	b, _ := json.Marshal(peer)
-	if _, err := g.Write(append(b, '\n')); err != nil {
-		g.Close()
-		return
-	}
-	splice(g, g, c)
-}
-
-// refuseRemote tells a client it does not allow so, unprompted, and closes
-// the connection once the client has read it: the client tells a refusal
-// from a connection lost on the way.
-func refuseRemote(c net.Conn) {
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(5 * time.Second))
-	b, _ := json.Marshal(Response{Error: refusedMessage})
-	if _, err := c.Write(append(b, '\n')); err != nil {
-		return
-	}
-	// Closing with what the client sent unread could reset the connection
-	// before the answer reaches it: half close, and read until it closes.
-	if cw, ok := c.(interface{ CloseWrite() error }); ok {
-		cw.CloseWrite()
-	}
-	io.Copy(io.Discard, io.LimitReader(c, 64<<10))
-}
-
-// pairConn serves the connection of a client not allowed: one
-// remote.pair, and nothing else.
-func (s *Server) pairConn(c net.Conn, k string) {
-	c.SetDeadline(time.Now().Add(30 * time.Second))
-	line, err := readLine(bufio.NewReaderSize(c, 4096))
-	if err != nil {
-		refuseLine(c, err)
-		return
-	}
-	var req Request
-	res := Response{}
-	switch {
-	case json.Unmarshal(line, &req) != nil:
-		res.Error = "rex: not a request"
-	case req.Op != "remote.pair":
-		res.ID, res.Error = req.ID, fmt.Sprintf("%s is not allowed before pairing", req.Op)
-		// A client whose request waits is told so: one that hears not, made
-		// none, or was rejected.
-		r := &s.rem
-		r.mu.Lock()
-		if r.pairOpenLocked() && slices.ContainsFunc(r.pending, func(p RemotePending) bool { return p.PublicKey == k }) {
-			res.Error += ": " + pendingMessage
-		}
-		r.mu.Unlock()
-	default:
-		res.ID = req.ID
-		name := ""
-		if req.Remote != nil {
-			name = req.Remote.Name
-		}
-		if fp, err := s.remotePair(k, name); err != nil {
-			res.Error = err.Error()
-		} else {
-			res.Data, _ = json.Marshal(PairResult{Fingerprint: fp})
-		}
-	}
-	b, _ := json.Marshal(res)
-	c.Write(append(b, '\n'))
-}
-
-// remotePair records the request of the client of key k to pair, while
-// the window is open, and returns the key's fingerprint.
-func (s *Server) remotePair(k, name string) (string, error) {
-	name = pairName(name)
-	if name == "" {
-		return "", errors.New("rex: name this machine to pair it")
-	}
-	r := &s.rem
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.pairOpenLocked() {
-		return "", errors.New("rex: the server is not pairing")
-	}
-	if slices.ContainsFunc(r.byAddr, func(p *addrPending) bool { return p.key == k }) {
-		return "", errors.New("rex: this machine's request waits there already")
-	}
-	if !slices.ContainsFunc(r.pending, func(p RemotePending) bool { return p.PublicKey == k }) {
-		if len(r.pending) >= maxPending {
-			return "", errors.New("rex: too many pairing requests; try again later")
-		}
-		r.pending = append(r.pending, RemotePending{Name: name, PublicKey: k, RequestedAt: time.Now()})
-		log.Print("rex: a pairing request")
-	}
-	return Fingerprint(k), nil
-}
-
-func (s *Server) remoteStatusLocked(tailnet *TailnetStatus) RemoteStatus {
-	r := &s.rem
-	st := RemoteStatus{
-		Enabled: r.cfg.Enabled, Running: r.ts != nil, Address: string(r.addr), Relay: r.cfg.Relay,
-		Allowed: slices.Clone(r.cfg.Allowed), LastError: r.lastErr,
-		ShareLayout: true, RemoteControl: r.cfg.RemoteControl,
-		ReachableAt: r.cfg.ReachableAt, ReachableError: r.ownErr,
-	}
-	if !r.cfg.NodeKey.IsZero() {
-		st.PublicKey = r.cfg.NodeKey.Public().String()
-	}
-	if r.own != nil {
-		st.ReachableAddress = string(r.own.addr)
-		switch firewallResult(r.fw.Load()) {
-		case firewallBlocked:
-			st.ReachableFirewall = "blocked"
-		case firewallBlockRule:
-			st.ReachableFirewall = "blockRule"
-		}
-		if time.Since(time.Unix(0, r.fwAt.Load())) > firewallRecheck {
-			go s.firewallCheck(false)
-		}
-	}
-	if r.pairOpenLocked() {
-		st.Pairing = RemotePairing{Open: true, ExpiresAt: r.pairUntil}
-		st.Pending = slices.Clone(r.pending)
-		for _, p := range r.waitingLocked() {
-			st.PendingByAddress = append(st.PendingByAddress, p.RemoteAddrPending)
-		}
-	}
-	st.Tailnet = tailnet
-	return st
-}
-
-// remoteDo and its remote.* operation handlers live in remote_ops.go.
-
-// remoteClientKey returns this machine's identity as a remote client,
-// made the first time, kept in Dir()/remote-client.json.
-func remoteClientKey() (key.NodePrivate, error) {
-	// Two creators end with the same key: one at a time in this process,
-	// and the file is linked in place, which fails when another process
-	// made it first; then that one is read.
+// machinePublicKey returns this machine's stable X25519 public key identity
+// ("nodekey:<64 hex>"), kept in Dir()/remote-client.json as "privkey:<64 hex>".
+// Preserving this format keeps MachineID stable across upgrades from earlier
+// WindRex / GoRex builds without any external Tailscale dependency.
+func machinePublicKey() (string, error) {
 	clientKeyMu.Lock()
 	defer clientKeyMu.Unlock()
 	type identity struct {
-		NodeKey key.NodePrivate `json:"nodeKey,omitzero"`
+		NodeKey string `json:"nodeKey,omitempty"`
 	}
+	parsePriv := func(s string) (*ecdh.PrivateKey, error) {
+		rawHex, ok := strings.CutPrefix(strings.TrimSpace(s), "privkey:")
+		if !ok {
+			return nil, errors.New("rex: invalid machine key format")
+		}
+		b, err := hex.DecodeString(rawHex)
+		if err != nil || len(b) != 32 {
+			return nil, errors.New("rex: invalid machine key length")
+		}
+		return ecdh.X25519().NewPrivateKey(b)
+	}
+	formatPub := func(k *ecdh.PrivateKey) string {
+		return "nodekey:" + hex.EncodeToString(k.PublicKey().Bytes())
+	}
+
 	var id identity
 	path := filepath.Join(Dir(), "remote-client.json")
 	if err := readJSON(path, &id); err != nil {
-		return key.NodePrivate{}, err
+		return "", err
 	}
-	if !id.NodeKey.IsZero() {
-		return id.NodeKey, nil
+	if id.NodeKey != "" {
+		k, err := parsePriv(id.NodeKey)
+		if err != nil {
+			return "", err
+		}
+		return formatPub(k), nil
 	}
-	id.NodeKey = key.NewNode()
+	k, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	id.NodeKey = "privkey:" + hex.EncodeToString(k.Bytes())
 	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
 	if err := writeJSON(tmp, id); err != nil {
-		return key.NodePrivate{}, err
+		return "", err
 	}
 	defer os.Remove(tmp)
 	if err := os.Link(tmp, path); err != nil {
 		if _, serr := os.Stat(path); serr != nil {
 			// No hard links here: write the file as it is.
-			return id.NodeKey, writeJSON(path, id)
+			return formatPub(k), writeJSON(path, id)
 		}
 		var other identity
-		if err := readJSON(path, &other); err != nil || other.NodeKey.IsZero() {
-			return key.NodePrivate{}, errors.New("rex: reading the remote client key")
+		if err := readJSON(path, &other); err != nil || other.NodeKey == "" {
+			return "", errors.New("rex: reading the machine key")
 		}
-		return other.NodeKey, nil
+		okKey, err := parsePriv(other.NodeKey)
+		if err != nil {
+			return "", err
+		}
+		return formatPub(okKey), nil
 	}
-	return id.NodeKey, nil
-}
-
-var clientKeyMu sync.Mutex
-
-// ClientPublicKey returns this machine's public key as a remote client,
-// for the allowlist of a server; "" when it cannot be read nor made.
-func ClientPublicKey() string {
-	k, err := remoteClientKey()
-	if err != nil {
-		log.Printf("rex: the remote client key: %v", err)
-		return ""
-	}
-	return k.Public().String()
+	return formatPub(k), nil
 }
 
 // MachineID names this machine for good, whichever way an app reaches
-// it: a hash of its key as a remote client (ClientPublicKey), which the
+// it: a hash of its persistent key in remote-client.json, which the
 // machine keeps from the first time and no one renames. The hash tells
 // nothing of the key. "" when the key cannot be read nor made.
 func MachineID() string {
-	k := ClientPublicKey()
-	if k == "" {
+	k, err := machinePublicKey()
+	if err != nil || k == "" {
+		if err != nil {
+			log.Printf("rex: the machine key: %v", err)
+		}
 		return ""
 	}
 	sum := sha256.Sum256([]byte("gorex machine\x00" + k))
 	return hex.EncodeToString(sum[:16])
 }
 
-// ConnectRemote connects to the server at a tailcat address, as the
-// client of ClientPublicKey, through the local server: one tailcat client
-// per machine, as two of one key take each other's packets (#212). It
-// starts the local server when none runs, as Connect does; it dials itself
-// only when that fails, or the server does not relay yet.
+// ConnectRemote connects to a remote WindRex host over Direct TLS or a
+// stateless windrex-relay pairing URL (https://...).
 func ConnectRemote(ctx context.Context, addr string) (*Client, error) {
 	addr = strings.TrimSpace(addr)
-	if IsTailnetTarget(addr) {
-		return connectTailnet(ctx, addr)
-	}
-	if IsDirectTarget(addr) {
-		return ConnectDirect(ctx, addr)
-	}
-	a := tailcat.Addr(addr)
-	if a == "" {
+	if addr == "" {
 		return nil, errors.New("rex: no remote address")
 	}
-	if _, err := tailcat.ParseAddr(a); err != nil {
-		// Not the parser's error: it could quote the address.
-		return nil, errors.New("rex: not a tailcat address")
+	if !IsDirectTarget(addr) {
+		// Never quote addr in errors: legacy addresses may hold secrets.
+		return nil, errors.New("rex: remote address must be an https:// Direct TLS or Relay URL")
 	}
-	conn, err := dialRemote(ctx, addr)
-	if err != nil {
-		return nil, err
-	}
-	c := newClient(conn, func() (net.Conn, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), tailcatRedial)
-		defer cancel()
-		return dialRemote(ctx, addr)
-	})
-	c.keepalive = true
-	return c, nil
+	return ConnectDirect(ctx, addr)
 }
 
-// tailcatRelayed is what the local server answers remote.tailcatDial once
-// it connected; then the connection is the remote server's.
-const tailcatRelayed = "gorex-tailcat/1 ok\n"
-
-// tailcatRedial bounds a stream's dial again: longer than tailcatDial,
-// so that the local server answers first.
-const tailcatRedial = 20 * time.Second
-
-// dialRemote connects to RemotePort at addr through the local server, or
-// itself when there is none or it does not know remote.tailcatDial.
-func dialRemote(ctx context.Context, addr string) (net.Conn, error) {
-	c, err := relayDial(ctx, addr)
-	if errors.Is(err, errNoRelay) {
-		c, err = dialTailcat(ctx, addr)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("rex: connecting to the remote server: %s", scrub(err.Error(), addr))
-	}
-	return c, nil
-}
-
-var errNoRelay = errors.New("no relay")
-
-// spawnServer starts the local server; tests replace it.
-var spawnServer = Spawn
-
-// relayDial asks the local server to connect to addr, starting it when
-// none runs. It is errNoRelay when that server cannot be reached or does
-// not relay; another error is the relay's, which dialing again here would
-// not mend.
-func relayDial(ctx context.Context, addr string) (net.Conn, error) {
-	c, err := dialSocket()
-	if err != nil {
-		if spawnServer() != nil {
-			return nil, errNoRelay
-		}
-		if c, err = dialUntil(time.Now().Add(5 * time.Second)); err != nil {
-			return nil, errNoRelay
-		}
-	}
-	stop := context.AfterFunc(ctx, func() { c.Close() })
-	b, _ := json.Marshal(Request{Op: "remote.tailcatDial", TailcatAddress: addr})
-	var line []byte
-	if _, err = c.Write(append(b, '\n')); err == nil {
-		// A byte at a time: what follows the line is the remote server's.
-		line, err = readByteLine(c)
-	}
-	if !stop() {
-		err = ctx.Err()
-	}
-	if err == nil && string(line) == tailcatRelayed {
-		return c, nil
-	}
-	c.Close()
-	if err != nil {
-		return nil, err
-	}
-	var resp Response
-	if json.Unmarshal(line, &resp) != nil || resp.Error == "" {
-		return nil, errors.New("the local server answered something else")
-	}
-	if strings.HasPrefix(resp.Error, "unknown op") {
-		return nil, errNoRelay
-	}
-	return nil, errors.New(resp.Error)
-}
-
-func readByteLine(c net.Conn) ([]byte, error) {
-	var line []byte
-	b := make([]byte, 1)
-	for len(line) < maxLine {
-		if _, err := io.ReadFull(c, b); err != nil {
-			return nil, err
-		}
-		line = append(line, b[0])
-		if b[0] == '\n' {
-			return line, nil
-		}
-	}
-	return nil, errLineTooLong
-}
-
-// relayTailcat is reached through the local socket, after a local client
-// names a tailcat address: the connection goes on to its server, through
-// the tailcat client of this process.
-func (s *Server) relayTailcat(local net.Conn, input *bufio.Reader, addr string) {
-	// A remote session through it keeps the server, as a control
-	// connection does. An upgrade drops it: its client dials again.
-	s.mu.Lock()
-	s.controls++
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.controls--
-		s.idleFrom = time.Now()
-		s.mu.Unlock()
-	}()
-	defer local.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), tailcatDial)
-	defer cancel()
-	// The client says nothing before the answer: what it reads is its
-	// close, then the dial is no longer wanted.
-	asked := make(chan struct{})
-	go func() {
-		if _, err := input.Peek(1); err != nil {
-			cancel()
-		}
-		close(asked)
-	}()
-	var c net.Conn
-	var err error
-	if _, perr := tailcat.ParseAddr(tailcat.Addr(addr)); perr != nil {
-		err = errors.New("not a tailcat address")
-	} else {
-		c, err = dialTailcat(ctx, addr)
-	}
-	if err != nil {
-		b, _ := json.Marshal(Response{Error: scrub(err.Error(), addr)})
-		local.Write(append(b, '\n'))
-		return
-	}
-	defer c.Close()
-	if _, err := io.WriteString(local, tailcatRelayed); err != nil {
-		return
-	}
-	splice(local, waitReader{asked, input}, c)
-}
-
-// waitReader reads r once wait is closed.
-type waitReader struct {
-	wait <-chan struct{}
-	r    io.Reader
-}
-
-func (w waitReader) Read(b []byte) (int, error) {
-	<-w.wait
-	return w.r.Read(b)
-}
-
-// The tailcat clients of this process, one per address: a client's
-// connections share it, and it closes once it had none for tailcatIdle.
-var (
-	tailcatMu      sync.Mutex
-	tailcatClients = map[string]*pooledTailcat{}
-	tailcatIdle    = 3 * time.Minute
-)
-
-// tailcatDial bounds a dial; tailcatTry an attempt of a client that
-// connected before, which fails when its server restarted. tailcatPing
-// bounds a status's ping.
-var (
-	tailcatDial = 15 * time.Second
-	tailcatTry  = 3 * time.Second
-	tailcatPing = 8 * time.Second
-)
-
-// discoPing pings the server of a tailcat client and reports how the
-// pong came back; tests replace it.
-var discoPing = func(ctx context.Context, tc *tailcat.Client) (*ipnstate.PingResult, error) {
-	return tc.DiscoPing(ctx)
-}
-
-// tailcatTries counts the tries of kept clients (a test reads it).
-var tailcatTries atomic.Int64
-
-type pooledTailcat struct {
-	tc    *tailcat.Client
-	conns int  // open, or being dialed
-	used  bool // it connected once
-	dead  bool // out of the pool and closed (retire, drop)
-	idle  *time.Timer
-}
-
-// dialTailcat connects to RemotePort at addr with the tailcat client of
-// addr. A client that connected before and fails now may have a server
-// that restarted and forgot it, so a new client replaces it (retire), as
-// in ios/tailnet/tailcat.go. (A Ping to register again does not help: it
-// returns at once for a client that was registered, so the try after it
-// only waited tailcatTry more.) A dial its caller gave up (canceled)
-// closes no client.
-func dialTailcat(ctx context.Context, addr string) (net.Conn, error) {
-	k, err := remoteClientKey()
-	if err != nil {
-		return nil, err
-	}
-	tailcatMu.Lock()
-	p := tailcatClients[addr]
-	if p == nil {
-		p = newPooledTailcat(addr, k)
-	}
-	if p.idle != nil {
-		p.idle.Stop()
-		p.idle = nil
-	}
-	p.conns++
-	used := p.used
-	tailcatMu.Unlock()
-
-	var c net.Conn
-	if used {
-		t0 := time.Now()
-		var timedOut bool
-		c, timedOut, err = p.try(ctx)
-		var fresh *pooledTailcat
-		if err != nil && ctx.Err() == nil {
-			fresh = p.retire(addr, timedOut)
-		}
-		if fresh != nil {
-			tried := time.Since(t0)
-			p.release(addr)
-			p = fresh
-			c, err = p.tc.DialTCPPort(ctx, RemotePort)
-			// Only on this path, so a slow reconnect explains itself.
-			log.Printf("rex: the kept tailcat client's try failed after %v; a new client %s after %v more",
-				tried.Round(time.Millisecond), map[bool]string{true: "connected", false: "failed"}[err == nil],
-				(time.Since(t0) - tried).Round(time.Millisecond))
-		}
-	} else {
-		c, err = p.tc.DialTCPPort(ctx, RemotePort)
-	}
-	if err != nil {
-		if !errors.Is(ctx.Err(), context.Canceled) && p.drop(addr) {
-			p.tc.Close()
-		}
-		p.release(addr)
-		return nil, err
-	}
-	tailcatMu.Lock()
-	p.used = true
-	tailcatMu.Unlock()
-	return &tailcatConn{Conn: c, p: p, addr: addr}, nil
-}
-
-// retire is for a try of p that failed while its dial goes on. p goes
-// from the pool and closes when its server seems to have forgotten it:
-// the try ran out of time, or no other connection uses p. Its other
-// connections then go too: their server forgot them, and two clients of
-// one key take each other's packets (#212). It returns the client of addr
-// to dial with now, counted, or nil when p stays, as after a port that
-// refused while others use p. A dial whose try failed because another
-// retired p takes that new client too, and so does each dial after: none
-// waits for the others to end. A new client has p's key.
-func (p *pooledTailcat) retire(addr string, timedOut bool) *pooledTailcat {
-	tailcatMu.Lock()
-	defer tailcatMu.Unlock()
-	if !p.dead {
-		if tailcatClients[addr] != p || !timedOut && p.conns != 1 {
-			return nil
-		}
-		p.dead = true
-		delete(tailcatClients, addr)
-		go p.tc.Close()
-	}
-	n := tailcatClients[addr]
-	if n == nil {
-		n = newPooledTailcat(addr, p.tc.Key)
-	}
-	if n.idle != nil {
-		n.idle.Stop()
-		n.idle = nil
-	}
-	n.conns++
-	return n
-}
-
-// drop takes p out of the pool when the dial under way is its only
-// connection, and reports whether it did.
-func (p *pooledTailcat) drop(addr string) bool {
-	tailcatMu.Lock()
-	defer tailcatMu.Unlock()
-	if p.conns != 1 || tailcatClients[addr] != p {
-		return false
-	}
-	p.dead = true
-	delete(tailcatClients, addr)
-	return true
-}
-
-// newPooledTailcat makes the client of addr. tailcatMu must be held.
-func newPooledTailcat(addr string, k key.NodePrivate) *pooledTailcat {
-	p := &pooledTailcat{tc: &tailcat.Client{Server: tailcat.Addr(addr), Key: k, Logf: func(string, ...any) {}}}
-	tailcatClients[addr] = p
-	return p
-}
-
-// try dials within tailcatTry, and tells whether that time ran out.
-func (p *pooledTailcat) try(ctx context.Context) (net.Conn, bool, error) {
-	tailcatTries.Add(1)
-	ctx, cancel := context.WithTimeout(ctx, tailcatTry)
-	defer cancel()
-	c, err := p.tc.DialTCPPort(ctx, RemotePort)
-	return c, err != nil && ctx.Err() != nil, err
-}
-
-// release counts a connection of p closed, and closes p after a while
-// without one.
-func (p *pooledTailcat) release(addr string) {
-	tailcatMu.Lock()
-	defer tailcatMu.Unlock()
-	p.conns--
-	if p.conns > 0 || tailcatClients[addr] != p {
-		return
-	}
-	var t *time.Timer
-	t = time.AfterFunc(tailcatIdle, func() {
-		tailcatMu.Lock()
-		idle := p.idle == t && p.conns == 0 && tailcatClients[addr] == p
-		if idle {
-			delete(tailcatClients, addr)
-		}
-		tailcatMu.Unlock()
-		if idle {
-			p.tc.Close()
-		}
-	})
-	p.idle = t
-}
-
-type tailcatConn struct {
-	net.Conn
-	p    *pooledTailcat
-	addr string
-	once sync.Once
-}
-
-func (c *tailcatConn) Close() error {
-	err := c.Conn.Close()
-	c.once.Do(func() { c.p.release(c.addr) })
-	return err
-}
-
-// tailcatStatus answers remote.tailcatStatus (TailcatStatus): it pings
-// addr's server through the tailcat client of it, making one as a dial
-// would, which warms the pool for the connections that follow. The ping
-// goes on while no dial does: a client it drops is only ever its own.
-func tailcatStatus(addr string) (TailcatStatus, error) {
-	var st TailcatStatus
-	ci, err := tailcat.ParseAddr(tailcat.Addr(addr))
-	if err != nil {
-		return st, errors.New("rex: not a tailcat address")
-	}
-	k, err := remoteClientKey()
-	if err != nil {
-		return st, err
-	}
-	tailcatMu.Lock()
-	p := tailcatClients[addr]
-	if p == nil {
-		p = newPooledTailcat(addr, k)
-	}
-	if p.idle != nil {
-		p.idle.Stop()
-		p.idle = nil
-	}
-	p.conns++
-	tailcatMu.Unlock()
-	defer p.release(addr)
-
-	ctx, cancel := context.WithTimeout(context.Background(), tailcatPing)
-	defer cancel()
-	res, err := discoPing(ctx, p.tc)
-	if err != nil {
-		if p.drop(addr) {
-			p.tc.Close()
-		}
-		return st, errors.New(scrub(err.Error(), addr))
-	}
-	tailcatMu.Lock()
-	p.used = true
-	tailcatMu.Unlock()
-
-	st.Direct = res.Endpoint != ""
-	st.Endpoint = res.Endpoint
-	st.LatencySeconds = res.LatencySeconds
-	if !st.Direct {
-		// The address of a relay of one's own embeds the region, whose
-		// node names the relay's host; a region of tailcat's fleet names
-		// only its code, which the pong carries.
-		switch {
-		case len(ci.Region) > 0 && len(ci.Region[0].Nodes) > 0 && ci.Region[0].Nodes[0].HostName != "":
-			st.Relay = ci.Region[0].Nodes[0].HostName
-		case res.DERPRegionCode != "":
-			st.Relay = res.DERPRegionCode
-		case res.DERPRegionID != 0:
-			st.Relay = fmt.Sprintf("region %d", res.DERPRegionID)
-		}
-		st.RegionID = int(res.DERPRegionID)
-	}
-	return st, nil
-}
-
-// remoteCommand tells whether a remote client may ask for the layout
+// remoteCommand reports whether a remote client may ask for the layout
 // command c. A client the host lets in arranges the host's tabs as its
 // own window does (docs/MOD-002-projects.md, "The desktop window"): tab.set and
 // layout.apply, of the host's own panes only. What names this machine's
@@ -1346,7 +228,7 @@ func remoteCommand(c LayoutCommand) bool {
 	return true
 }
 
-// hostPanesOnly tells that every pane of t is of this host: none names
+// hostPanesOnly reports that every pane of t is of this host: none names
 // another host, nor is a place a filtered layout kept for a pane the
 // client could not see.
 func hostPanesOnly(t layout.Tab) bool {

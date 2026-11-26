@@ -2,8 +2,7 @@
 // the build's asset manifest (build.mjs, Manifest), by name, and the
 // page's code chunks. The page loads a file when it needs it, not before:
 // the CJK font's chunks as the terminal draws their characters, the themes
-// when Settings shows them, the Tailscale engine when the user turns it on,
-// the Settings dialog's code when it first opens.
+// when Settings shows them, and the Settings dialog's code when it first opens.
 //
 // - configure names the manifest and the entries the page needs as it
 //   starts (main.ts, from the build's defines), which load before the

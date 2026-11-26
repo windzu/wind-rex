@@ -202,11 +202,6 @@ type store struct {
 	agents []rex.AgentInfo
 	errMsg func(locales.Messages) string
 	hosts  []*hostConn
-	// tailnetHosts are the GoRex hosts the tailnet showed, as its last
-	// status read them: the windows' sheet that adds a host offers each,
-	// and none of them is a host until the user adds it
-	// (reconcileTailnet, addFoundHost).
-	tailnetHosts []rex.TailnetHost
 	// hostsUp tells that the hosts were read and are connected to;
 	// hostsLost that hosts.json would not read.
 	hostsUp, hostsLost bool

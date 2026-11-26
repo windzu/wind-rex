@@ -3,7 +3,7 @@ name: WEB-003
 description: "The web client keeps connections to several hosts at once. Use when you change hosts, connections or the lifecycle of the web client."
 metadata:
   created: "2026-11-13"
-  updated: "2026-11-20"
+  updated: "2026-11-26"
 ---
 
 # WEB-003: Web client: several hosts at once
@@ -257,8 +257,7 @@ When a host comes back:
 
 - **Number of hosts.** The page sets no hard cap. Above 8 connected hosts, the host list shows a note that many connections cost battery and startup time (Decisions, 5). Here "connected" counts every host that the page keeps a `HostConn` for, connected or retrying. A host that retries costs its attempts and diagnoses too. Only the hosts that the user disconnected do not count.
 - **Browser WebSocket limits.** Browsers cap the open WebSockets for each profile. The `network.websocket.max-connections` of Firefox is 200 by default. The cap of Chrome is near 255. Browsers also open only one WebSocket handshake at a time to one address (RFC 6455, 4.1). So the panes of a host connect one after another, as today. The page stays far below the caps, with one control for each host and one stream for each pane of the four live windows. This repository does not check these caps. PRs 3 and 4 measure the real count in DevTools.
-- **Built-in Tailscale.** `web/tailnet/conn.go` (`jsSocket`, `dialTLS`) dials a new TLS connection for each socket, through the netstack of the one node. Nothing in the engine limits how many connections it dials. Many hosts at once work. The cost is the TLS handshakes in WebAssembly on the thread of the page, which the stagger above spreads. The cost also includes the DERP bandwidth that all hosts share. Tailnet sockets are not browser WebSockets, so the browser caps do not apply to them.
-- **Hidden tabs.** Browsers slow the timers of hidden tabs. Chrome runs them at most once a second, and once a minute after 5 minutes hidden. The retry waits get longer. This is acceptable, and the `visibilitychange` poke makes up for it. WebSocket messages still arrive. Nobody knows whether the tailnet engine answers the keepalive of the gateway while the tab is hidden for a long time. The gateway sends it every 120 s and waits 60 s for the answer (Risks, 4).
+- **Hidden tabs.** Browsers slow the timers of hidden tabs. Chrome runs them at most once a second, and once a minute after 5 minutes hidden. The retry waits get longer. This is acceptable, and the `visibilitychange` poke makes up for it. WebSocket messages still arrive.
 
 ### The sidebar: what it needs
 
@@ -338,7 +337,7 @@ All reads and writes keep today's `try`/`catch`. Without storage, the page works
 
 When the page starts, it connects the hosts above. It shows the place from `gorex.place` as soon as the first `session.list` of that host has that window. Sometimes the host does not connect, or the window is gone. Then the stage waits on the notice of that host until the user chooses something else. The page does not jump to another window after the user chose one.
 
-**#474.** Today the tailnet node is ephemeral. After a reload, no tailnet host is found until the user signs in again. With this design, the tailnet hosts in `gorex.tailnetOpened` and a tailnet host in `gorex.place` still show, as hosts that wait for Tailscale. They connect on their own once the user signs in. When #474 adds a persistent node (**Stay signed in**), they connect at once on reload, with no other change here. The "restore the work position" of #474 reads `gorex.place`. It may add the focused block to it. Two tabs or PWA windows share `localStorage`. Each writes its own place, and the last one wins, which is acceptable. The Tailscale tab lock (docs/WEB-002-tailscale.md, State) belongs to #474.
+**Built-in Tailscale removal.** Built-in Tailscale and `gorex.tailnetOpened` were later removed in [`NET-009`](NET-009-remove-tailscale.md); the web client now connects only to saved direct and WebTransport hosts. Two tabs share `localStorage`; each writes its own place, and the last one wins.
 
 ### Risks
 

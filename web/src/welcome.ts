@@ -1,12 +1,10 @@
 // The first screen, while no host is chosen (docs/REF-007-web-client.md, Hosts):
-// what the page is, and two ways to reach a GoRex computer. Sign in with
-// Tailscale opens the guide (guide.ts); Connect by address shows the host
-// form (hosts.ts) in place of the choices. How a host trusts the page is
-// not said here: the page says it when a host refuses it (diagnose).
+// what the page is, and connecting to a WindRex computer by address.
+// How a host trusts the page is not said here: the page says it when a host
+// refuses it (diagnose).
 import type { HostList } from "./hosts";
 import { icon } from "./hosts";
 import { localize, PlainKey, t } from "./i18n";
-import type { Tailnet } from "./tailnet";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -21,20 +19,12 @@ function said<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, key: P
 
 export interface WelcomeApp {
   hosts: HostList;
-  tailnet: Tailnet;
-  /** Opens the Tailscale sign-in guide. */
-  guide(): void;
 }
 
-/**
- * The welcome: the app's icon, what it is, and a card for each way in.
- * update() follows Tailscale's state without leaving the form.
- */
+/** The welcome: the app's icon, what it is, and Connect by address. */
 export class Welcome {
   readonly el = el("section", "welcome");
   private choices = el("div", "welcome-choices");
-  private tsTitle = el("span", "welcome-choice-title");
-  private tsLine = el("span", "welcome-choice-line");
   private home = el("div", "welcome-home");
 
   constructor(private app: WelcomeApp) {
@@ -45,36 +35,24 @@ export class Welcome {
     const title = said("h1", "welcome-title", "welcomeTitle");
     title.id = "welcome-title";
     this.el.setAttribute("aria-labelledby", title.id);
-    const ts = this.choice("tailscale", this.tsTitle, this.tsLine, () => app.guide(), true);
     const address = this.choice(
       "monitor",
       said("span", "welcome-choice-title", "welcomeAddressTitle"),
       said("span", "welcome-choice-line", "welcomeAddressLine"),
       () => this.form(),
+      true,
     );
     address.dataset.choice = "address";
-    ts.dataset.choice = "tailscale";
-    this.choices.append(ts, address);
+    this.choices.append(address);
     this.home.append(logo, title, said("p", "welcome-text", "welcomeText"), this.choices, this.needs());
     this.el.append(this.home);
-    localize(this.tsTitle, () => this.update());
-  }
-
-  /** Says the Tailscale card for its state: sign in, finish signing in, or choose a computer found. */
-  update() {
-    const s = this.app.tailnet.status();
-    this.tsTitle.replaceChildren(
-      t(s === "running" ? "welcomeTsChoose" : s === "off" ? "noticeSignInTailscale" : "noticeContinueTailscale"),
-    );
-    if (s === "off") this.tsTitle.append(" ", said("span", "welcome-badge", "welcomeRecommended"));
-    this.tsLine.textContent = t(s === "running" ? "welcomeTsLineRunning" : s === "off" ? "welcomeTsLine" : "welcomeTsLineContinue");
   }
 
   /** A way in: a large button with an icon, a title and a line, Enter and Space as a click. */
   private choice(glyph: string, title: HTMLElement, line: HTMLElement, run: () => void, primary = false): HTMLButtonElement {
     const b = el("button", primary ? "welcome-choice primary" : "welcome-choice");
     b.type = "button";
-    const mark = el("span", glyph === "tailscale" ? "welcome-choice-icon ts-tile" : "welcome-choice-icon");
+    const mark = el("span", "welcome-choice-icon");
     mark.append(icon(glyph));
     const text = el("span", "welcome-choice-text");
     text.append(title, line);

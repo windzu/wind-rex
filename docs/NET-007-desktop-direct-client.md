@@ -8,7 +8,7 @@ metadata:
 
 # NET-007: Desktop Direct TLS and relay client
 
-Status: built (#44).
+Status: built (#44). Built-in Tailscale and tailcat were subsequently removed in [`NET-009`](NET-009-remove-tailscale.md), leaving Direct TLS and self-hosted `windrex-relay` as the sole remote desktop transport.
 
 This doc adds Direct TLS and self-hosted relay client support to the desktop app and CLI. It extends [`NET-005`](NET-005-direct-relay.md) so a desktop machine connects to remote macOS or Linux hosts without built-in Tailscale or tailcat.
 

@@ -18,16 +18,9 @@ import (
 type Host struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Alias is the name the user gave the host here, "" for none: the
-	// tailnet sets Name, never this.
+	// Alias is the name the user gave the host here, "" for none.
 	Alias   string `json:"alias,omitempty"`
 	Address string `json:"address"`
-	// TailnetOpened tells that the host is the user's, not the tailnet's
-	// discovery: the user added it from the add sheet, or, in a file of
-	// before, opened one discovery had saved. The app leaves out, as it
-	// loads the file, a host of a tailnet address with none of this, no
-	// alias and no icon (keptHosts), and offers the machine again.
-	TailnetOpened bool `json:"tailnetOpened,omitempty"`
 	// Machine is the machine the host is (rex.Hello.Machine), as it said
 	// when it last connected: the Rex API names the host's panes by it,
 	// for a phone that connects to that machine too.
@@ -57,11 +50,27 @@ var ErrInvalid = errors.New("hosts.json is not valid")
 // Path is the hosts file of the data directory dir.
 func Path(dir string) string { return filepath.Join(dir, "hosts.json") }
 
-// Load reads the hosts of dir; none when the file does not exist. A host
-// a coordinator network brought ("net:" and its key) went with the
-// networks, and no machine admits it as a member any more: it, and a host
-// no ID or address, is left out. The file is only read; a caller that
-// finds ErrInvalid decides whether to move it aside.
+// isLegacy reports whether h is a pre-NET-009 host record that can no longer
+// connect: coordinator network ("net:"), built-in/system Tailscale
+// ("tailscale:"), or tailcat ("tc..." / "tcat://...") addresses, or a record
+// missing its ID or address.
+func isLegacy(h Host) bool {
+	if h.ID == "" || h.Address == "" {
+		return true
+	}
+	if strings.HasPrefix(h.ID, "net:") || strings.HasPrefix(h.ID, "tailscale:") {
+		return true
+	}
+	addr := strings.TrimSpace(h.Address)
+	return strings.HasPrefix(addr, "tailscale:") || strings.HasPrefix(addr, "tc")
+}
+
+// Load reads the hosts of dir; none when the file does not exist. Legacy
+// coordinator-network ("net:"), Tailscale ("tailscale:"), and tailcat
+// ("tc...") records, as well as hosts with no ID or address, are filtered out
+// while Direct TLS and stateless relay ("https://...") hosts are preserved.
+// The file is only read; a caller that finds ErrInvalid decides whether to
+// move it aside.
 func Load(dir string) ([]Host, error) {
 	b, err := os.ReadFile(Path(dir))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -74,9 +83,7 @@ func Load(dir string) ([]Host, error) {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, ErrInvalid
 	}
-	return slices.DeleteFunc(f.Hosts, func(h Host) bool {
-		return h.ID == "" || h.Address == "" || strings.HasPrefix(h.ID, "net:")
-	}), nil
+	return slices.DeleteFunc(f.Hosts, isLegacy), nil
 }
 
 // Save writes hosts to dir, readable by the user only, atomically. It does

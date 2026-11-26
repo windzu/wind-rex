@@ -135,15 +135,6 @@ func (s *Server) doHello(_ Request, peer string, kept *keptConn) (any, error) {
 		h.Host = s.host
 	case <-time.After(helloHostWait):
 	}
-	// The pairing address is for a remote peer's QR code. A local
-	// client never shows it, and asking the gateway for it would wait
-	// on the gateway's own requests when the gateway says hello.
-	if peer != "" {
-		h.Client = s.remoteClientFor(peer)
-		if RexPairURL != nil {
-			h.RexPairURL = RexPairURL()
-		}
-	}
 	if kept != nil {
 		h.Keepalive, h.Conn = keepaliveTimeout.get(), kept.id
 	}
@@ -205,11 +196,6 @@ func (s *Server) doClients(_ Request, _ string, _ *keptConn) (any, error) {
 		ss.mu.Unlock()
 		for _, a := range attached {
 			ci := ClientInfo{SessionID: ss.id, Peer: a.peer, Remote: a.remote, Seq: a.seq, Via: a.via != nil, Since: a.since}
-			if a.remote {
-				if c := s.remoteClientFor(a.peer); c != nil {
-					ci.Principal = c.Name
-				}
-			}
 			ci.Age = int64(time.Since(a.since).Seconds())
 			out = append(out, ci)
 		}
@@ -411,9 +397,6 @@ func doSizeOp(_ *Server, ss *session, req Request, peer string, kept *keptConn) 
 }
 
 func (s *Server) do(req Request, peer string, kept *keptConn) (any, error) {
-	if strings.HasPrefix(req.Op, "remote.") {
-		return s.remoteDo(req)
-	}
 	if fn := serverOp(req.Op); fn != nil {
 		return fn(s, req, peer, kept)
 	}

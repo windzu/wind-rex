@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/netip"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -16,27 +14,22 @@ import (
 )
 
 // The Remote Hosts page of the settings window: the hosts this machine
-// connects to, their state, and the sheet that adds one, pairing this
-// machine with it when the host does not allow it yet.
+// connects to over Direct TLS or Relay, their state, and the sheet that adds one.
 
 // hostsUI is the page's state; the main thread owns it.
 var hostsUI struct {
 	adding bool // the sheet shows
-	// The sheet's fields. The address is a secret: its field hides it,
-	// and it is forgotten once the host is saved or the sheet closes.
-	address, name, autoName, pairAs string
-	formErr                         func() string // what is wrong, said when drawn
-	note                            func() string // why the host is not reached while it is asked to approve
-	stage                           addStage
-	fingerprint                     string             // this machine's, while the host is asked to approve it
-	code                            string             // the pairing code of an IP address, to compare with the host's
-	codeAnswer                      func(match bool)   // the user's word on the code, while it shows
-	cancel                          context.CancelFunc // stops the attempt under way
-	removing                        string             // the id of the host Remove asks about
-	renaming                        string             // the id of the host whose alias is edited
-	alias                           string             // the alias as it is typed
-	aliasFocus                      bool               // the alias field had the focus
-	aliasTaken                      string             // the alias refused, another host's
+	// The sheet's fields. The address carries a Bearer token: its field hides
+	// it, and it is forgotten once the host is saved or the sheet closes.
+	address, name, autoName string
+	formErr                 func() string // what is wrong, said when drawn
+	stage                   addStage
+	cancel                  context.CancelFunc // stops the attempt under way
+	removing                string             // the id of the host Remove asks about
+	renaming                string             // the id of the host whose alias is edited
+	alias                   string             // the alias as it is typed
+	aliasFocus              bool               // the alias field had the focus
+	aliasTaken              string             // the alias refused, another host's
 }
 
 type addStage int
@@ -44,52 +37,7 @@ type addStage int
 const (
 	addForm       addStage = iota // the fields
 	addConnecting                 // trying the address
-	addWaiting                    // the host's user is asked to approve
-	addCode                       // pairing by IP address: the code to compare
-	addApproving                  // pairing by IP address: the codes match, the host's user approves
 )
-
-// addrPairing is a pairing by IP address under way, as rex.AddressPairing.
-type addrPairing interface {
-	Confirm(ctx context.Context) ([]string, error)
-	Mismatch() error
-	Close() error
-}
-
-// pairByAddress starts pairing with the machine at an IP address, and
-// returns the code both sides show; tests replace it.
-var pairByAddress = func(ctx context.Context, addr, name string) (string, addrPairing, error) {
-	p, err := rex.PairByAddress(ctx, addr, name)
-	if err != nil {
-		return "", nil, err
-	}
-	return p.Code, p, nil
-}
-
-// isIPAddress is that s is an IP address, with a port or not: a host to
-// pair with by its code, in place of a pasted tailcat address.
-func isIPAddress(s string) bool {
-	s = strings.TrimSpace(s)
-	if _, err := netip.ParseAddr(s); err == nil {
-		return true
-	}
-	_, err := netip.ParseAddrPort(s)
-	return err == nil
-}
-
-// pairPoll is how often the sheet tries again while the host is asked to
-// approve this machine.
-var pairPoll = 3 * time.Second
-
-// localName names this machine for the hosts it pairs with: its name, as
-// the server tells it.
-func (a *App) localName() string {
-	if n := a.hello.Host.Name; n != "" {
-		return n
-	}
-	n, _ := os.Hostname()
-	return strings.TrimSuffix(n, ".local")
-}
 
 // openSettingsAt opens the settings window at a section.
 func (a *App) openSettingsAt(id string) {
@@ -100,31 +48,12 @@ func (a *App) openSettingsAt(id string) {
 	}
 }
 
-// openAddHost opens the sheet that adds a host, its fields empty, and the
-// hosts the tailnet shows.
+// openAddHost opens the sheet that adds a host, its fields empty.
 func (a *App) openAddHost() {
 	cancelAddHost()
 	page := &hostsUI
-	page.adding, page.address, page.name, page.autoName, page.pairAs = true, "", "", "", a.localName()
-	page.formErr, page.fingerprint = nil, ""
-	a.refreshTailnetFound()
-}
-
-// refreshTailnetFound reads the hosts the tailnet shows now, as the sheet
-// opens, rather than as the window's poll of the server comes around.
-func (a *App) refreshTailnetFound() {
-	c := a.client
-	if c == nil {
-		return
-	}
-	update := a.settingsUpdate()
-	go func() {
-		s, err := c.RemoteStatus()
-		if err != nil || s.Tailnet == nil {
-			return
-		}
-		update(func() { a.reconcileTailnet(s.Tailnet) })
-	}()
+	page.adding, page.address, page.name, page.autoName = true, "", "", ""
+	page.formErr = nil
 }
 
 // cancelAddHost stops an attempt under way and goes back to the fields.
@@ -134,8 +63,7 @@ func cancelAddHost() {
 		page.cancel()
 		page.cancel = nil
 	}
-	page.stage, page.fingerprint, page.note = addForm, "", nil
-	page.code, page.codeAnswer = "", nil
+	page.stage = addForm
 }
 
 // closeAddHost closes the sheet, forgetting the address.
@@ -157,7 +85,7 @@ func sameDirectHost(a, b string) bool {
 }
 
 // validateHost returns what is wrong with a host to add, "" if nothing.
-func validateHost(address, name, pairAs string, hosts []*hostConn) string {
+func validateHost(address, name string, hosts []*hostConn) string {
 	address, name = strings.TrimSpace(address), strings.TrimSpace(name)
 	direct := rex.IsDirectTarget(address)
 	if direct {
@@ -173,14 +101,12 @@ func validateHost(address, name, pairAs string, hosts []*hostConn) string {
 		}
 	}
 	switch {
-	case name == "":
-		return locales.HostsEnterName()
 	case address == "":
 		return locales.HostsEnterAddress()
-	case !direct && !validAddress(address) && !isIPAddress(address):
-		return locales.HostsBadAddress()
-	case !direct && strings.TrimSpace(pairAs) == "":
-		return locales.HostsEnterPairName()
+	case !direct && !validAddress(address):
+		return locales.HostsBadDirectAddress()
+	case name == "":
+		return locales.HostsEnterName()
 	}
 	for _, h := range hosts {
 		if h.Address == address || sameDirectHost(h.Address, address) {
@@ -202,29 +128,28 @@ func nameTaken(name string, h *hostConn, hosts []*hostConn) bool {
 }
 
 // submitHost checks the sheet's fields, and tries the host: it is saved
-// once it answers, after this machine is paired with it if need be.
+// once it answers.
 func (a *App) submitHost() {
 	page := &hostsUI
 	if page.stage != addForm {
 		return
 	}
-	address, name, pairAs, hosts := strings.TrimSpace(page.address), strings.TrimSpace(page.name), page.pairAs, a.hosts
+	address, name, hosts := strings.TrimSpace(page.address), strings.TrimSpace(page.name), a.hosts
 	if name == "" && rex.IsDirectTarget(address) {
 		if t, err := rex.ParseDirectTarget(address); err == nil {
 			name = t.DefaultName()
 			page.name = name
 		}
 	}
-	if validateHost(address, name, pairAs, hosts) != "" {
-		page.formErr = func() string { return validateHost(address, name, pairAs, hosts) }
+	if validateHost(address, name, hosts) != "" {
+		page.formErr = func() string { return validateHost(address, name, hosts) }
 		return
 	}
 	s := savedHost{ID: newHostID(), Name: name, Address: address}
 	ctx, cancel := context.WithCancel(context.Background())
-	page.stage, page.cancel, page.formErr, page.note = addConnecting, cancel, nil, nil
-	// The pairing is the settings window's: it goes on, and saves the host,
-	// though the terminal window closes. Its reports apply while it is the
-	// attempt under way.
+	page.stage, page.cancel, page.formErr = addConnecting, cancel, nil
+	// The connection test is the settings window's: it goes on, and saves the
+	// host, though the terminal window closes.
 	update := a.settingsUpdate()
 	report := func(fn func()) {
 		update(func() {
@@ -233,75 +158,11 @@ func (a *App) submitHost() {
 			}
 		})
 	}
-	if isIPAddress(address) {
-		go a.pairHostByAddress(ctx, cancel, s, strings.TrimSpace(pairAs), update)
-		return
-	}
-	go pairHost(ctx, s, strings.TrimSpace(pairAs), report, func() {
+	go pairHost(ctx, s, report, func() {
 		page.cancel = nil
 		cancel()
 		closeAddHost()
 		a.addHost(s)
-	})
-}
-
-// pairHostByAddress pairs with the machine at an IP address: it shows the
-// code, then, once the user says the codes match, waits for the machine's
-// user to approve, and saves the host by the first address it returns. A
-// "they differ", or any error, saves nothing and shows the message, which
-// warns that the machine may have let in an unknown device. Canceling
-// closes the request. update runs a change on the main thread.
-func (a *App) pairHostByAddress(ctx context.Context, cancel context.CancelFunc, s savedHost, pairAs string, update func(func())) {
-	page := &hostsUI
-	// fail goes back to the fields with msg; on the main thread.
-	fail := func(msg string) {
-		if ctx.Err() != nil {
-			return
-		}
-		cancel()
-		page.stage, page.formErr, page.cancel, page.code, page.codeAnswer = addForm, func() string { return msg }, nil, "", nil
-	}
-	code, p, err := pairByAddress(ctx, s.Address, pairAs)
-	if err != nil {
-		update(func() { fail(serverMessage(err)) })
-		return
-	}
-	context.AfterFunc(ctx, func() { p.Close() })
-	update(func() {
-		if ctx.Err() != nil {
-			return
-		}
-		page.stage, page.code = addCode, code
-		page.codeAnswer = func(match bool) {
-			if !match {
-				fail(serverMessage(p.Mismatch()))
-				return
-			}
-			page.stage, page.codeAnswer = addApproving, nil
-			go func() {
-				addrs, err := p.Confirm(ctx)
-				update(func() {
-					if err == nil && len(addrs) == 0 {
-						err = errors.New("rex: the machine sent no address")
-					}
-					switch {
-					case ctx.Err() != nil:
-					case err != nil:
-						fail(serverMessage(err))
-					case slices.ContainsFunc(a.hosts, func(h *hostConn) bool { return h.Address == addrs[0] }):
-						fail(locales.HostsAlreadySaved())
-					default:
-						// shortcut: a host holds one address; the others wait for
-						// hosts that hold several.
-						s.Address = addrs[0]
-						page.cancel = nil
-						cancel()
-						closeAddHost()
-						a.addHost(s)
-					}
-				})
-			}()
-		}
 	})
 }
 
@@ -324,86 +185,22 @@ func (a *App) settingsUpdate() func(func()) {
 	}
 }
 
-// pairHost connects to a host to add: when it allows this machine, done
-// runs; else it asks to pair, shows the fingerprint, and tries again while
-// the request waits, until the host's user approves (done runs), rejects
-// it or lets the window close (the sheet says so), or the attempt is
-// canceled. A host not reached meanwhile is tried less often, and the
-// sheet says why. report runs a change on the main thread.
-func pairHost(ctx context.Context, s savedHost, pairAs string, report func(func()), done func()) {
+// pairHost tests connecting to a host to add: when it answers, done runs;
+// otherwise the sheet returns to the form with the error message.
+func pairHost(ctx context.Context, s savedHost, report func(func()), done func()) {
 	var logged failureLog
-	fail := func(msg func() string) {
-		logged.log(s.Name, msg)
-		report(func() {
-			hostsUI.stage, hostsUI.formErr, hostsUI.cancel, hostsUI.note = addForm, msg, nil, nil
-		})
-	}
-	c, _, why, failed := connectHost(ctx, s.Address)
+	c, _, why, _ := connectHost(ctx, s.Address)
 	switch {
 	case c != nil:
 		c.Close()
 		report(done)
-		return
 	case ctx.Err() != nil:
 		return
-	case rex.IsDirectTarget(s.Address):
-		// Direct TLS and relay hosts authenticate with their Bearer token and
-		// never fall back to tailcat pairing.
-		fail(why)
-		return
-	case failed != failRefused && failed != failPending:
-		// Only a host that refuses this machine is asked to pair.
-		fail(why)
-		return
-	}
-	c, err := dialHost(ctx, s.Address)
-	if err != nil {
-		fail(locales.HostsUnreachable)
-		return
-	}
-	fp, err := c.RequestPairing(pairAs)
-	c.Close()
-	if err != nil {
-		if strings.Contains(err.Error(), "not pairing") {
-			name := s.Name
-			fail(func() string { return locales.HostsNotPairing(name) })
-			return
-		}
-		msg := serverMessage(errors.New(rex.Scrub(err.Error(), s.Address)))
-		fail(func() string { return msg })
-		return
-	}
-	report(func() { hostsUI.stage, hostsUI.fingerprint = addWaiting, fp })
-	wait := pairPoll
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-		c, _, why, failed := connectHost(ctx, s.Address)
-		switch {
-		case c != nil:
-			c.Close()
-			report(done)
-			return
-		case ctx.Err() != nil:
-			return
-		case failed == failPending:
-			wait = pairPoll
-			logged.log(s.Name, nil)
-			report(func() { hostsUI.note = nil })
-		case failed == failRefused:
-			// Rejected, or the window closed: a new request is the user's
-			// to make.
-			name := s.Name
-			fail(func() string { return locales.HostsPairRejected(name) })
-			return
-		default:
-			wait = min(wait*2, 30*time.Second)
-			logged.log(s.Name, why)
-			report(func() { hostsUI.note = why })
-		}
+	default:
+		logged.log(s.Name, why)
+		report(func() {
+			hostsUI.stage, hostsUI.formErr, hostsUI.cancel = addForm, why, nil
+		})
 	}
 }
 
@@ -455,10 +252,6 @@ func (a *App) hostRow(c *ui.Context, k *colors, h *hostConn) {
 				})
 			})
 			ui.Text(c, locales.HostsSessions(sessions)).FontSize(fontFootnote).TextColor(k.textFaint).Shrink(0)
-			tailnet := rex.IsTailnetTarget(h.Address)
-			if tailnet && up && ui.Button(c.Key("rex-qr"), locales.HostsRexQR()).Clicked() {
-				openHostPairQR(h)
-			}
 			if !up && ui.Button(c.Key("retry"), locales.HostsRetry()).Clicked() {
 				h.poke()
 			}
@@ -501,30 +294,19 @@ func (a *App) hostRow(c *ui.Context, k *colors, h *hostConn) {
 }
 
 // hostDiag draws how the link to a connected host runs: the transport
-// as a tag, then the path it took and the link's numbers, each once
+// as a tag, then the host address and the link's numbers, each once
 // measured. Asking starts here, off the UI thread, while the row shows.
 // Call it on the main thread.
 func (a *App) hostDiag(c *ui.Context, k *colors, h *hostConn) {
 	a.refreshHostPath(h)
-	tag := locales.HostsDiagTagTailcat()
+	tag := locales.HostsDiagTagDirect()
 	var segs []string
-	switch {
-	case rex.IsTailnetTarget(h.Address):
-		tag = locales.HostsDiagTagTailnet()
-	case rex.IsDirectTarget(h.Address):
+	if rex.IsDirectTarget(h.Address) {
 		if t, err := rex.ParseDirectTarget(h.Address); err == nil {
 			if t.IsRelay {
 				tag = locales.HostsDiagTagRelay()
-			} else {
-				tag = locales.HostsDiagTagDirect()
 			}
 			segs = append(segs, t.Host)
-		} else {
-			tag = locales.HostsDiagTagDirect()
-		}
-	case h.path != nil:
-		if s := hostPathLine(h.path); s != "" {
-			segs = append(segs, s)
 		}
 	}
 	if h.connectMs > 0 {
@@ -543,64 +325,32 @@ func (a *App) hostDiag(c *ui.Context, k *colors, h *hostConn) {
 	})
 }
 
-// hostPathLine is the row's line of a measured link: the direct
-// endpoint, or the relay the link goes through. A pong that names
-// neither says nothing.
-func hostPathLine(st *rex.TailcatStatus) string {
-	switch {
-	case st.Direct:
-		return locales.HostsPathDirect(st.Endpoint)
-	case st.Relay != "":
-		return locales.HostsPathRelay(st.Relay)
-	}
-	return ""
-}
-
-// hostPathFresh is how long a host's measured link keeps; an older one,
+// hostPathFresh is how long a host's measured ping keeps; an older one,
 // or none, is asked again while the row shows.
 var hostPathFresh = 30 * time.Second
 
-// hostDiagTimeout bounds a measure's asks, as tailcatStatus's own does.
+// hostDiagTimeout bounds a ping measurement.
 const hostDiagTimeout = 8 * time.Second
-
-// tailcatStatus asks the local server how the link to a host's address
-// runs; tests replace it.
-var tailcatStatus = func(srv *rex.Client, addr string) (rex.TailcatStatus, error) {
-	return srv.TailcatStatus(addr)
-}
 
 // hostPing measures the control round trip to the host; tests replace it.
 var hostPing = func(c *rex.Client, timeout time.Duration) (time.Duration, error) {
 	return c.Ping(timeout)
 }
 
-// refreshHostPath asks the server how the link to h runs and pings its
-// control connection, not while the last measure is fresh nor while an
-// ask is under way; the answers land on the main thread. Call it on the
-// main thread.
+// refreshHostPath pings h's control connection, not while the last measure
+// is fresh nor while an ask is under way; the answer lands on the main
+// thread. Call it on the main thread.
 func (a *App) refreshHostPath(h *hostConn) {
-	addr := h.Address
-	tailnet := rex.IsTailnetTarget(addr)
-	direct := rex.IsDirectTarget(addr)
-	srv := a.client
 	cl := h.current()
-	if (srv == nil && !direct) || (direct && cl == nil) || h.pathAsking || time.Since(h.pathAt) < hostPathFresh {
+	if cl == nil || h.pathAsking || time.Since(h.pathAt) < hostPathFresh {
 		return
 	}
 	h.pathAsking = true
 	update := a.settingsUpdate()
 	go func() {
-		var st *rex.TailcatStatus
-		if !tailnet && !direct && srv != nil {
-			if s, err := tailcatStatus(srv, addr); err == nil {
-				st = &s
-			}
-		}
 		ping := -1
-		if cl != nil {
-			if d, err := hostPing(cl, hostDiagTimeout); err == nil {
-				ping = int(d.Milliseconds())
-			}
+		if d, err := hostPing(cl, hostDiagTimeout); err == nil {
+			ping = int(d.Milliseconds())
 		}
 		update(func() {
 			h.pathAsking = false
@@ -608,9 +358,6 @@ func (a *App) refreshHostPath(h *hostConn) {
 			h.pathAt = time.Now()
 			if h.current() != cl {
 				return // the answer is of a connection gone since
-			}
-			if st != nil {
-				h.path = st
 			}
 			if ping >= 0 {
 				h.pingMs = ping
@@ -688,44 +435,8 @@ func hostDot(k *colors, h *hostConn) ui.Color {
 	return k.attention
 }
 
-// foundHostRows lists the GoRex hosts the tailnet showed, each with the
-// button that adds it. One saved here already, by its target, says so, and
-// one whose name another host goes by: adding it would name two alike.
-func (a *App) foundHostRows(c *ui.Context, k *colors) {
-	found := a.tailnetFound()
-	if len(found) == 0 {
-		return
-	}
-	ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, locales.HostsFound()).FontSize(fontSubhead).FontWeight(600).TextColor(k.textMuted)
-		for _, peer := range slices.Clone(found) {
-			saved := slices.ContainsFunc(a.hosts, func(h *hostConn) bool { return h.Address == peer.Target })
-			taken := !saved && nameTaken(peer.Name, nil, a.hosts)
-			ui.Row(c.Key("found-" + peer.Target)).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(16, 16).Shrink(0).Children(func() { glyphIcon(c, "server", 16, k.textMuted) })
-				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-					ui.Text(c, peer.Name).FontSize(fontCallout).FontWeight(500).TextColor(k.text).SingleLine().Ellipsis("…")
-					switch {
-					case saved:
-						ui.Text(c, locales.HostsAlreadySaved()).FontSize(fontFootnote).TextColor(k.textMuted)
-					case taken:
-						ui.Text(c, locales.HostsNameTaken()).FontSize(fontFootnote).TextColor(k.textMuted)
-					}
-				})
-				if saved || taken {
-					return
-				}
-				if ui.Button(c.Key("found-add"), locales.HostsAddFound()).Clicked() {
-					a.addFoundHost(peer)
-					closeAddHost()
-				}
-			})
-		}
-	})
-}
-
-// addHostSheet is the sheet that adds a host: its fields, then the
-// connection's progress and the fingerprint to approve.
+// addHostSheet is the sheet that adds a remote host by its Direct TLS or
+// Self-Hosted Relay pairing URL.
 func (a *App) addHostSheet(c *ui.Context, k *colors) {
 	page := &hostsUI
 	was := page.adding
@@ -740,38 +451,8 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 				ui.Box(c).Size(7, 7).Radius(capsule(7)).Background(k.attention)
 				ui.Text(c, locales.HostsConnectingTo(strings.TrimSpace(page.name))).FontSize(fontBody).TextColor(k.textMuted)
 			})
-		case addCode, addApproving:
-			host := strings.TrimSpace(page.name)
-			ui.Text(c, locales.HostsCodeIntro(host)).FontSize(fontBody).TextColor(k.text).LineHeight(1.35)
-			ui.Column(c).Gap(4).Padding(12).Radius(radiusM).Background(k.hover).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, locales.HostsCode()).FontSize(fontFootnote).FontWeight(600).TextColor(k.textMuted)
-				ui.Text(c, page.code).Font(monoFamily()).FontSize(fontCode).FontWeight(700).TextColor(k.text).Label(page.code)
-			})
-			if page.stage == addApproving {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Box(c).Size(7, 7).Radius(capsule(7)).Background(k.attention)
-					ui.Text(c, locales.HostsWaiting()).FontSize(fontCallout).FontWeight(500).TextColor(k.textMuted)
-				})
-				ui.Text(c, locales.HostsCodeApprove(host)).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
-			}
-		case addWaiting:
-			ui.Text(c, locales.HostsApprove(strings.TrimSpace(page.name))).FontSize(fontBody).TextColor(k.text).LineHeight(1.35)
-			ui.Column(c).Gap(4).Padding(12).Radius(radiusM).Background(k.hover).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, locales.HostsFingerprint()).FontSize(fontFootnote).FontWeight(600).TextColor(k.textMuted)
-				ui.Text(c, page.fingerprint).Font(monoFamily()).FontSize(fontCodeSmall).FontWeight(700).TextColor(k.text).
-					Label(locales.RemoteFingerprint(page.fingerprint))
-			})
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(7, 7).Radius(capsule(7)).Background(k.attention)
-				ui.Text(c, locales.HostsWaiting()).FontSize(fontCallout).FontWeight(500).TextColor(k.textMuted)
-			})
-			ui.Text(c, locales.HostsApproveWhere()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
-			if page.note != nil {
-				ui.Text(c, page.note()).FontSize(fontSubhead).TextColor(k.danger).LineHeight(1.3)
-			}
 		default:
 			ui.Text(c, locales.HostsAddNote()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
-			a.foundHostRows(c, k)
 			field := func(label string, input func() ui.Element) bool {
 				changed := false
 				ui.Column(c).Gap(4).Children(func() {
@@ -793,8 +474,7 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 					}
 				}
 			}
-			direct := rex.IsDirectTarget(page.address)
-			if direct {
+			if rex.IsDirectTarget(page.address) {
 				if t, err := rex.ParseDirectTarget(page.address); err == nil {
 					hint := locales.HostsDirectDetected(t.DisplayAddress())
 					if t.IsRelay {
@@ -808,12 +488,6 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 			}) {
 				page.autoName = ""
 			}
-			if !direct {
-				field(locales.HostsPairAs(), func() ui.Element {
-					return ui.TextInput(c.Key("pair-as"), &page.pairAs).Label(locales.HostsPairAs())
-				})
-				ui.Text(c, locales.HostsPairAsHint()).FontSize(fontSubhead).TextColor(k.textMuted).Margin(-6, 0, 0, 0)
-			}
 			if page.formErr != nil {
 				ui.Text(c, page.formErr()).FontSize(fontSubhead).TextColor(k.danger).LineHeight(1.3)
 			}
@@ -824,13 +498,6 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 			}
 			if page.stage == addForm && ui.Button(c.Key("add"), locales.RemoteAdd()).Clicked() {
 				a.submitHost()
-			}
-			// Neither is the default: the user says what the screens show.
-			if page.stage == addCode && ui.Button(c.Key("differ"), locales.HostsCodeDiffer()).Clicked() {
-				page.codeAnswer(false)
-			}
-			if page.stage == addCode && ui.Button(c.Key("match"), locales.HostsCodeMatch()).Clicked() {
-				page.codeAnswer(true)
 			}
 		})
 	})

@@ -1,7 +1,7 @@
 // gorex.host moves into gorex.place (src/place.ts).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closeTailnet, loadHostsOff, migrate, offKey, openedKey, oldHostKey, placeKey, saveHostsOff, startPlace, Store, tailnetOpened } from "../src/place";
+import { loadHostsOff, migrate, offKey, oldHostKey, placeKey, saveHostsOff, startPlace, Store } from "../src/place";
 
 /** A store in memory, as localStorage. */
 function memory(init: Record<string, string> = {}): Store & { data: Map<string, string> } {
@@ -32,14 +32,6 @@ test("a direct host moves into the place", () => {
   assert.deepEqual(startPlace(hosts, s), { host: "b2" });
   assert.deepEqual(JSON.parse(s.data.get(placeKey)!), { host: "b2" });
   assert.equal(s.data.has(oldHostKey), false);
-  assert.equal(s.data.has(openedKey), false);
-});
-
-test("a tailnet host moves into the place and counts as connected once", () => {
-  const s = memory({ [oldHostKey]: "ts:nABC", [openedKey]: JSON.stringify(["ts:nX"]) });
-  assert.deepEqual(startPlace(hosts, s), { host: "ts:nABC" });
-  assert.deepEqual(JSON.parse(s.data.get(openedKey)!), ["ts:nX", "ts:nABC"]);
-  assert.equal(s.data.has(oldHostKey), false);
 });
 
 test("a host no longer in the list gives no place", () => {
@@ -50,17 +42,17 @@ test("a host no longer in the list gives no place", () => {
 });
 
 test("an empty old key gives no place", () => {
-  assert.deepEqual(migrate({ host: "", place: null, opened: null }, hosts), { place: undefined, opened: [] });
+  assert.deepEqual(migrate({ host: "", place: null }, hosts), { place: undefined });
 });
 
 test("a place kept already wins over the old key", () => {
-  const r = migrate({ host: "a1", place: JSON.stringify({ host: "b2", session: "s", window: "w" }), opened: null }, hosts);
+  const r = migrate({ host: "a1", place: JSON.stringify({ host: "b2", session: "s", window: "w" }) }, hosts);
   assert.deepEqual(r.place, { host: "b2", session: "s", window: "w" });
 });
 
 test("broken JSON reads as none", () => {
-  const r = migrate({ host: null, place: "{", opened: "nope" }, hosts);
-  assert.deepEqual(r, { place: undefined, opened: [] });
+  const r = migrate({ host: null, place: "{" }, hosts);
+  assert.deepEqual(r, { place: undefined });
 });
 
 test("storage that throws: no place, no error", () => {
@@ -117,12 +109,4 @@ test("disconnected hosts: a bad value reads as none, and storage that throws is 
   };
   assert.deepEqual([...loadHostsOff(broken)], []);
   assert.doesNotThrow(() => saveHostsOff(["a1"], broken));
-});
-
-test("a tailnet host disconnected is no longer connected once", () => {
-  const s = memory({ [openedKey]: JSON.stringify(["ts:a", "ts:b"]) });
-  closeTailnet("ts:a", s);
-  assert.deepEqual([...tailnetOpened(s)], ["ts:b"]);
-  closeTailnet("ts:x", s);
-  assert.deepEqual([...tailnetOpened(s)], ["ts:b"]);
 });

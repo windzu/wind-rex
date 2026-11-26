@@ -138,10 +138,6 @@
   "@progressTerminal": {
     "description": "Screen reader label of the startup progress bar."
   },
-  "progressTailscale": "Loading Tailscale",
-  "@progressTailscale": {
-    "description": "Screen reader label of the Tailscale engine's progress bar, in the Tailscale guide."
-  },
   "progressConnecting": "Connecting",
   "@progressConnecting": {
     "description": "Screen reader value of a progress bar before any byte arrived."
@@ -500,18 +496,6 @@
   "@errorNoFiles": {
     "description": "Opening a file failed: error not_supported, an older host."
   },
-  "noticeSignInTailscale": "Sign in with Tailscale",
-  "@noticeSignInTailscale": {
-    "description": "Sign in with Tailscale: the first screen's Tailscale card, the Tailscale guide's button."
-  },
-  "noticeContinueTailscale": "Continue with Tailscale",
-  "@noticeContinueTailscale": {
-    "description": "The first screen's Tailscale card when built-in Tailscale is on but not signed in yet."
-  },
-  "noticeTailscaleSettings": "Tailscale Settings",
-  "@noticeTailscaleSettings": {
-    "description": "Button of the card shown when a host found by Tailscale can't be reached: opens Settings › Tailscale."
-  },
   "sidebarSettings": "Settings",
   "@sidebarSettings": {
     "description": "The button at the bottom of the sidebar that opens Settings, and its tooltip."
@@ -794,54 +778,6 @@
   "@hostUrlPath": {
     "description": "Host form error: the URL has a path, query or fragment."
   },
-  "hostTailcatName": "tailcat host",
-  "@hostTailcatName": {
-    "description": "The name a host added by its tailcat address gets when the link carried none."
-  },
-  "hostTailcatInvalid": "That is not a tailcat address. Paste the rexgo://tailcat link or the tc… address the host's QR dialog shows.",
-  "@hostTailcatInvalid": {
-    "description": "Host form error: the address starts as a tailcat address or link but does not read as one."
-  },
-  "hostTailnetOnline": "Online",
-  "@hostTailnetOnline": {
-    "description": "A host found by Tailscale: it is online and lets this page in."
-  },
-  "hostTailnetOffline": "Offline",
-  "@hostTailnetOffline": {
-    "description": "A host found by Tailscale: it is offline."
-  },
-  "hostTailnetRefused": "Refuses this browser",
-  "@hostTailnetRefused": {
-    "description": "A host found by Tailscale: it is online but refuses this page."
-  },
-  "hostTailnetLine": "{state} · {address}",
-  "@hostTailnetLine": {
-    "description": "The host list's line under a Tailscale host that is not online: its state, then its DNS name.",
-    "placeholders": {
-      "state": {
-        "type": "String",
-        "example": "Offline"
-      },
-      "address": {
-        "type": "String",
-        "example": "studio-gorex.tail1234.ts.net"
-      }
-    }
-  },
-  "hostProblemTip": "{title}. {text}",
-  "@hostProblemTip": {
-    "description": "Tooltip of a Tailscale host that refuses this page: what is wrong, then what to do.",
-    "placeholders": {
-      "title": {
-        "type": "String",
-        "example": "The host doesn't trust this page"
-      },
-      "text": {
-        "type": "String",
-        "example": "On the host, run:"
-      }
-    }
-  },
   "hostList": "Hosts",
   "@hostList": {
     "description": "Title of the host list panel under the host button, and its screen reader label."
@@ -924,22 +860,6 @@
   "@hostNone": {
     "description": "The host list when no host was added."
   },
-  "hostTsAdd": "Add Hosts from Tailscale",
-  "@hostTsAdd": {
-    "description": "Host list row that opens the Tailscale guide, while Tailscale is off; the guide's title."
-  },
-  "hostTsSignIn": "Sign in to Tailscale",
-  "@hostTsSignIn": {
-    "description": "Host list row that opens the Tailscale guide, while Tailscale is on but not signed in."
-  },
-  "hostSearching": "Looking for GoRex hosts…",
-  "@hostSearching": {
-    "description": "While Tailscale probes the tailnet's devices for GoRex hosts: host list, Tailscale guide."
-  },
-  "hostNoneFound": "No GoRex hosts found. How to set one up",
-  "@hostNoneFound": {
-    "description": "Host list row when Tailscale found no host; it opens the guide, which tells how to set one up."
-  },
   "formAddress": "Address",
   "@formAddress": {
     "description": "Host form field: the gateway's URL. Settings › Host's row of it."
@@ -982,7 +902,7 @@
   "@problemMixedTitle": {
     "description": "Card title: an https page cannot open http:// and ws:// connections."
   },
-  "problemMixedText": "This page was opened over https, and browsers block its connections to http:// and ws:// addresses (mixed content). Use the host's tailnet address (https://<machine>-gorex.<tailnet>.ts.net, from built-in Tailscale), or open the web client from the local dev server (npm run dev in web/, http://127.0.0.1) to reach a local network gateway.",
+  "problemMixedText": "This page was opened over https, and browsers block its connections to http:// and ws:// addresses (mixed content). Use an https:// Direct TLS / Relay address, or open the web client from the local dev server (npm run dev in web/, http://127.0.0.1) to reach a local network gateway.",
   "@problemMixedText": {
     "description": "Card text under problemMixedTitle."
   },
@@ -1012,7 +932,7 @@
   "@problemUnreachableTitle": {
     "description": "Card title: nothing answered at the host's address."
   },
-  "problemUnreachableText": "Nothing answered at {url}. Check that the address is right, that GoRex's gateway runs there (the local network listener or built-in Tailscale is on), and that this device can reach it. A browser may also ask before a page reaches the local network; allow it.",
+  "problemUnreachableText": "Nothing answered at {url}. Check that the address is right, that WindRex's gateway runs there (Direct TLS / Relay or the local network listener is on), and that this device can reach it. A browser may also ask before a page reaches the local network; allow it.",
   "@problemUnreachableText": {
     "description": "Card text under problemUnreachableTitle.",
     "placeholders": {
@@ -1078,7 +998,7 @@
   "@problemWebTransportUnsupportedTitle": {
     "description": "Card title: the browser has no WebTransport, which a QR-paired host needs."
   },
-  "problemWebTransportUnsupportedText": "This page reaches a QR-paired host over WebTransport, which this browser does not support. Use Safari 26.4 or later, Chrome, Edge or Firefox, or add the host over Tailscale instead.",
+  "problemWebTransportUnsupportedText": "This page reaches a QR-paired host over WebTransport, which this browser does not support. Use Safari 26.4 or later, Chrome, Edge or Firefox, or connect to an https:// Direct TLS / Relay address instead.",
   "@problemWebTransportUnsupportedText": {
     "description": "Card text under problemWebTransportUnsupportedTitle: the browsers that work."
   },
@@ -1454,486 +1374,6 @@
   "@settingsNoHostsHint": {
     "description": "Under settingsNoHosts."
   },
-  "tcIsOff": "The tailcat engine is off.",
-  "@tcIsOff": {
-    "description": "The error a tailcat host's connection or request raises while the engine does not run."
-  },
-  "tcOtherTabTitle": "This device is in use in another tab",
-  "@tcOtherTabTitle": {
-    "description": "A tailcat host's problem, title: another tab or window holds this browser's device key."
-  },
-  "tcOtherTabText": "Only one tab can hold the device key at a time. Connect there, or take it over in Settings › Hosts › Pairing.",
-  "@tcOtherTabText": {
-    "description": "A tailcat host's problem, under tcOtherTabTitle: what to do."
-  },
-  "tcNotPairing": "{host} is not open for pairing. Start pairing on it, then try again.",
-  "@tcNotPairing": {
-    "description": "A tailcat host's problem: it refused the pairing request because it is not asking to pair (its pairing window is closed).",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "alice-laptop"
-      }
-    }
-  },
-  "tcApproveTitle": "{host} waits for approval",
-  "@tcApproveTitle": {
-    "description": "A tailcat host's problem, title: the pairing request is sent and the host asks its user to approve this browser.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "alice-laptop"
-      }
-    }
-  },
-  "tcApproveText": "Compare {fingerprint} with what {host} shows for {name}, and approve it there.",
-  "@tcApproveText": {
-    "description": "A tailcat host's problem, under tcApproveTitle: the fingerprint to compare on the host before approving.",
-    "placeholders": {
-      "fingerprint": {
-        "type": "String",
-        "example": "a1b2 c3d4 e5f6 7890"
-      },
-      "host": {
-        "type": "String",
-        "example": "alice-laptop"
-      },
-      "name": {
-        "type": "String",
-        "example": "web-rex-kqzt"
-      }
-    }
-  },
-  "tcOwnRelayTitle": "A browser cannot reach this relay",
-  "@tcOwnRelayTitle": {
-    "description": "A tailcat host's problem, title: its address is homed on the machine's own relay, whose certificate a browser cannot pin."
-  },
-  "tcOwnRelayText": "This address is the machine as its own relay. Use the host's DERP-homed address instead, from its QR dialog.",
-  "@tcOwnRelayText": {
-    "description": "A tailcat host's problem, under tcOwnRelayTitle: which address to use instead."
-  },
-  "tcPairingTitle": "Asking {host} to pair",
-  "@tcPairingTitle": {
-    "description": "A tailcat host's problem, title: the pairing request is on its way or its answer is waited for.",
-    "placeholders": {
-      "host": {
-        "type": "String",
-        "example": "alice-laptop"
-      }
-    }
-  },
-  "tcPairingText": "This device asks to pair as {name}.",
-  "@tcPairingText": {
-    "description": "A tailcat host's problem, under tcPairingTitle: the device name the request is sent with.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "web-rex-kqzt"
-      }
-    }
-  },
-  "tcUnreachableText": "This device is paired, but the host did not answer over the tailcat link. Check that it is on and that remote access stays enabled there.",
-  "@tcUnreachableText": {
-    "description": "A tailcat host's problem, under problemUnreachableTitle: the device paired earlier, and the tunnel still does not answer."
-  },
-  "tcPair": "Pair",
-  "@tcPair": {
-    "description": "Button of a tailcat host's problem: asks the host to pair again."
-  },
-  "tcPairingCard": "Pairing",
-  "@tcPairingCard": {
-    "description": "Settings › Hosts: the card of this browser's tailcat device, shown once a tailcat host exists."
-  },
-  "tcPairingCardNote": "This browser pairs with a host as a device of its own, as Rex Go does.",
-  "@tcPairingCardNote": {
-    "description": "Under tcPairingCard."
-  },
-  "tcDeviceKey": "Device key",
-  "@tcDeviceKey": {
-    "description": "Settings › Hosts › Pairing: this browser's tailcat public key."
-  },
-  "tcDeviceKeyHint": "The public key a host lists for this browser. Compare it there to be sure.",
-  "@tcDeviceKeyHint": {
-    "description": "Under tcDeviceKey."
-  },
-  "tcKeyPending": "Made when the first host pairs.",
-  "@tcKeyPending": {
-    "description": "Settings › Hosts › Pairing, in place of the key: the engine has not run yet, so no key exists."
-  },
-  "tcKeepKey": "Keep this device",
-  "@tcKeepKey": {
-    "description": "Settings › Hosts › Pairing: keeps the tailcat device key across reloads, or makes each tab a new device."
-  },
-  "tcKeepKeyHint": "Kept, the key survives reloads. Off, each tab is a new device and pairs again.",
-  "@tcKeepKeyHint": {
-    "description": "Under tcKeepKey."
-  },
-  "tsBuiltIn": "Built-in Tailscale",
-  "@tsBuiltIn": {
-    "description": "Settings › Tailscale: the title and switch of the page's own Tailscale node."
-  },
-  "tsOffNote": "Reach your GoRex computers through Tailscale. Nothing to install on this device.",
-  "@tsOffNote": {
-    "description": "Settings › Tailscale, under the title, while it is off."
-  },
-  "tsThisDevice": "This device: {name}",
-  "@tsThisDevice": {
-    "description": "Settings › Tailscale, under the title, while connected: this browser's device name.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "tsStatus": "Status",
-  "@tsStatus": {
-    "description": "Settings › Tailscale: the row of Tailscale's state."
-  },
-  "tsAccount": "Account",
-  "@tsAccount": {
-    "description": "Settings › Tailscale: the signed-in Tailscale account."
-  },
-  "tsUnknown": "Unknown",
-  "@tsUnknown": {
-    "description": "Settings › Tailscale: the account when Tailscale did not name it."
-  },
-  "tsTailnet": "Tailscale network",
-  "@tsTailnet": {
-    "description": "Settings › Tailscale: the row of the tailnet's name."
-  },
-  "tsHosts": "GoRex hosts",
-  "@tsHosts": {
-    "description": "Settings › Tailscale: the row with how many hosts were found; the Tailscale guide's heading of the hosts."
-  },
-  "tsFound": "{n, plural, one {# found} other {# found}}",
-  "@tsFound": {
-    "description": "Settings › Tailscale: how many GoRex hosts were found.",
-    "placeholders": {
-      "n": {
-        "type": "int",
-        "example": "2"
-      }
-    }
-  },
-  "tsLooking": "Looking…",
-  "@tsLooking": {
-    "description": "Settings › Tailscale: while hosts are being looked for."
-  },
-  "tsNoneFound": "None found",
-  "@tsNoneFound": {
-    "description": "Settings › Tailscale: no host was found."
-  },
-  "tsDownload": "Download",
-  "@tsDownload": {
-    "description": "Settings › Tailscale: the row of the engine's download progress; the Tailscale guide's second step."
-  },
-  "tsSignOut": "Sign Out",
-  "@tsSignOut": {
-    "description": "Button that signs this browser out of Tailscale."
-  },
-  "tsShowHosts": "Show Hosts",
-  "@tsShowHosts": {
-    "description": "Settings › Tailscale: button that opens the guide at the hosts found."
-  },
-  "tsSignIn": "Sign In",
-  "@tsSignIn": {
-    "description": "Settings › Tailscale: button that opens the guide to sign in."
-  },
-  "tsDeviceName": "Device name",
-  "@tsDeviceName": {
-    "description": "Settings › Tailscale: this browser's name on the tailnet."
-  },
-  "tsDeviceFoot": "How this browser shows up in Tailscale. Use letters, digits and hyphens, up to 63 characters.",
-  "@tsDeviceFoot": {
-    "description": "Note under Device name."
-  },
-  "tsDeviceInvalid": "Use letters, digits and hyphens, not at the start or end, up to 63.",
-  "@tsDeviceInvalid": {
-    "description": "Error under Device name when the name is not valid."
-  },
-  "tsRenameFailed": "Could not rename: {error}",
-  "@tsRenameFailed": {
-    "description": "Error under Device name when Tailscale did not take the name.",
-    "placeholders": {
-      "error": {
-        "type": "String",
-        "example": "not running"
-      }
-    }
-  },
-  "tsNote": "Turn it on and sign in to Tailscale, and this browser finds your GoRex computers by itself.",
-  "@tsNote": {
-    "description": "Settings › Tailscale: the short note on how built-in Tailscale works."
-  },
-  "tsStaySignedIn": "Stay signed in",
-  "@tsStaySignedIn": {
-    "description": "Settings › Tailscale: toggle to keep the Tailscale sign-in across reloads."
-  },
-  "tsStaySignedInHint": "Keep your Tailscale sign-in across reloads and closing the tab. Turn off on shared or temporary devices.",
-  "@tsStaySignedInHint": {
-    "description": "Settings › Tailscale: hint under Stay signed in."
-  },
-  "tsStateOtherTab": "In another tab",
-  "@tsStateOtherTab": {
-    "description": "Tailscale's state chip when another tab holds the node lock."
-  },
-  "tsStatusOtherTab": "Tailscale is in use in another tab",
-  "@tsStatusOtherTab": {
-    "description": "Tailscale's status text when another tab holds the node lock."
-  },
-  "tsHintOtherTab": "Only one tab can run your Tailscale device at a time. Use it here to disconnect the other tab.",
-  "@tsHintOtherTab": {
-    "description": "Settings › Tailscale: hint when another tab holds the node lock."
-  },
-  "tsTakeOver": "Use in this tab",
-  "@tsTakeOver": {
-    "description": "Button to take over Tailscale from another tab."
-  },
-  "tsMoreFind": "Turning it on downloads about 6 MB of Tailscale's code. This tab then joins your Tailscale network as a device of its own. It looks for your own devices that are named like <machine>-gorex and answer as GoRex, and connects to them over Tailscale's encrypted connections.",
-  "@tsMoreFind": {
-    "description": "Settings › Tailscale, in Learn more: what turning it on does and how hosts are found. <machine>-gorex is a literal name pattern."
-  },
-  "tsMoreTab": "With Stay signed in on, this browser keeps its device key in this browser so reloads reconnect without signing in again. Turn Stay signed in off for a temporary session that ends when this tab closes.",
-  "@tsMoreTab": {
-    "description": "Settings › Tailscale, in Learn more: how long the sign-in lasts."
-  },
-  "tsTrustNote": "If GoRex on a computer says it doesn't allow this page yet, run this once in a terminal on that computer:",
-  "@tsTrustNote": {
-    "description": "Settings › Tailscale, in the closed trust row, above the command."
-  },
-  "tsTrustAsk": "If a computer doesn't allow this page",
-  "@tsTrustAsk": {
-    "description": "Settings › Tailscale: the closed row that opens to the command that makes a host trust this page."
-  },
-  "tsYou": "you",
-  "@tsYou": {
-    "description": "Who is signed in, when Tailscale did not name the account: “Connected as you”."
-  },
-  "tsYourAccount": "your account",
-  "@tsYourAccount": {
-    "description": "The account, when Tailscale did not name it, in the guide's empty list text."
-  },
-  "tsAnotherAccount": "another account",
-  "@tsAnotherAccount": {
-    "description": "The account, when Tailscale did not name it, in the text of a host that lets in only its owner."
-  },
-  "tsStateOff": "Off",
-  "@tsStateOff": {
-    "description": "Built-in Tailscale's state: off."
-  },
-  "tsStateLoading": "Loading",
-  "@tsStateLoading": {
-    "description": "Settings › Tailscale state chip: the engine loads."
-  },
-  "tsStateLoadFailed": "Didn't load",
-  "@tsStateLoadFailed": {
-    "description": "Settings › Tailscale state chip: the engine failed to load; the guide's progress title then."
-  },
-  "tsStateStarting": "Starting",
-  "@tsStateStarting": {
-    "description": "Settings › Tailscale state chip: the node starts."
-  },
-  "tsStateNeedsLogin": "Not signed in",
-  "@tsStateNeedsLogin": {
-    "description": "Tailscale's state: not signed in. State chip and status text."
-  },
-  "tsStateSigningIn": "Signing in",
-  "@tsStateSigningIn": {
-    "description": "Settings › Tailscale state chip: a sign-in is on its way."
-  },
-  "tsStateApproval": "Waiting for approval",
-  "@tsStateApproval": {
-    "description": "Tailscale's state: an admin must approve this device. State chip, status text, guide title."
-  },
-  "tsStateExpired": "Expired",
-  "@tsStateExpired": {
-    "description": "Settings › Tailscale state chip: the sign-in expired."
-  },
-  "tsStateLocked": "Tailnet Lock",
-  "@tsStateLocked": {
-    "description": "Settings › Tailscale state chip: the tailnet uses Tailnet Lock (a Tailscale feature's name)."
-  },
-  "tsStateError": "Error",
-  "@tsStateError": {
-    "description": "Tailscale's state: an error. State chip and status text."
-  },
-  "tsStatusLoading": "Loading Tailscale…",
-  "@tsStatusLoading": {
-    "description": "Tailscale's status text while its engine loads: host list, Settings."
-  },
-  "tsStatusLoadFailed": "Couldn't load Tailscale",
-  "@tsStatusLoadFailed": {
-    "description": "Tailscale's status text when its engine failed to load."
-  },
-  "tsStatusSigningIn": "Signing in…",
-  "@tsStatusSigningIn": {
-    "description": "Tailscale's status text while a sign-in is on its way."
-  },
-  "tsStatusRunning": "Connected as {account}",
-  "@tsStatusRunning": {
-    "description": "Tailscale's status text when signed in.",
-    "placeholders": {
-      "account": {
-        "type": "String",
-        "example": "alice@example.com"
-      }
-    }
-  },
-  "tsStatusRunningOn": "Connected as {account} on {tailnet}",
-  "@tsStatusRunningOn": {
-    "description": "Tailscale's status text when signed in, with the tailnet's name.",
-    "placeholders": {
-      "account": {
-        "type": "String",
-        "example": "alice@example.com"
-      },
-      "tailnet": {
-        "type": "String",
-        "example": "example.com"
-      }
-    }
-  },
-  "tsStatusExpired": "Sign-in expired",
-  "@tsStatusExpired": {
-    "description": "Tailscale's status text when the sign-in expired."
-  },
-  "tsStatusLocked": "Tailnet Lock not supported",
-  "@tsStatusLocked": {
-    "description": "Tailscale's status text when the tailnet uses Tailnet Lock."
-  },
-  "tsHintApproval": "Ask an admin of your Tailscale account to approve {name} in the Tailscale admin console.",
-  "@tsHintApproval": {
-    "description": "Settings › Tailscale, under the status, while waiting for approval.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "tsHintExpired": "Sign in again to find your GoRex computers.",
-  "@tsHintExpired": {
-    "description": "Settings › Tailscale, under the status, when the sign-in expired."
-  },
-  "tsHintLocked": "Your Tailscale network uses Tailnet Lock, which this page can't join. Use the Tailscale app on this device instead.",
-  "@tsHintLocked": {
-    "description": "Settings › Tailscale, under the status, with Tailnet Lock."
-  },
-  "tsHintNeedsLogin": "Sign in to find your GoRex computers.",
-  "@tsHintNeedsLogin": {
-    "description": "Settings › Tailscale, under the status, when not signed in."
-  },
-  "tsNoEngine": "This copy of the page doesn't include Tailscale.",
-  "@tsNoEngine": {
-    "description": "Why Tailscale did not load: the page has no engine."
-  },
-  "tsDeviceOffline": "This device is offline.",
-  "@tsDeviceOffline": {
-    "description": "Why Tailscale did not load: no network."
-  },
-  "tsStopped": "Tailscale stopped ({error}). Reload the page to try again.",
-  "@tsStopped": {
-    "description": "Why Tailscale failed: its engine stopped.",
-    "placeholders": {
-      "error": {
-        "type": "String",
-        "example": "exit 2"
-      }
-    }
-  },
-  "tsControlTimeout": "Tailscale's control server (controlplane.tailscale.com) did not answer. Check the connection, or whether a firewall or VPN blocks it, and try again.",
-  "@tsControlTimeout": {
-    "description": "Why the sign-in did not start: no answer from Tailscale."
-  },
-  "tsOfflineConnect": "This device is offline. Connect to the internet and try again.",
-  "@tsOfflineConnect": {
-    "description": "Why the sign-in did not start: no network."
-  },
-  "tsUntrustedText": "GoRex on that computer only lets in web pages you allow. On that computer, run this command once in a terminal. This page connects by itself a few seconds later.",
-  "@tsUntrustedText": {
-    "description": "A Tailscale host that does not trust this page, under problemUntrustedTitle, above the command."
-  },
-  "tsOwnerTitle": "The host lets in only the account that signed it in",
-  "@tsOwnerTitle": {
-    "description": "A Tailscale host that lets in only its own account."
-  },
-  "tsOwnerText": "This browser is signed in as {account}. Sign in here with the account that signed in the host, or let your tailnet's members in (the tailnet's access rules then decide). On the host, run:",
-  "@tsOwnerText": {
-    "description": "Under tsOwnerTitle, above a command.",
-    "placeholders": {
-      "account": {
-        "type": "String",
-        "example": "bob@example.com"
-      }
-    }
-  },
-  "tsHostOffTitle": "The host's built-in Tailscale is off",
-  "@tsHostOffTitle": {
-    "description": "A Tailscale host whose built-in Tailscale is off."
-  },
-  "tsRunOnHost": "On the host, run:",
-  "@tsRunOnHost": {
-    "description": "Above a command to run on a host."
-  },
-  "tsRefusedText": "Its gateway's access rule refused this device.",
-  "@tsRefusedText": {
-    "description": "A Tailscale host that refused this device, with no reason given."
-  },
-  "tsNotConnectedTitle": "Tailscale is not connected",
-  "@tsNotConnectedTitle": {
-    "description": "Card title when a Tailscale host is chosen but Tailscale is not signed in."
-  },
-  "tsNotConnectedText": "Sign in to Tailscale ({status}) to reach {host}.",
-  "@tsNotConnectedText": {
-    "description": "Under tsNotConnectedTitle; status is Tailscale's status text.",
-    "placeholders": {
-      "status": {
-        "type": "String",
-        "example": "Not signed in"
-      },
-      "host": {
-        "type": "String",
-        "example": "studio-gorex"
-      }
-    }
-  },
-  "tsFailedText": "Its gateway answered over the tailnet. Reconnecting…",
-  "@tsFailedText": {
-    "description": "Under problemFailedTitle, for a Tailscale host."
-  },
-  "tsUnreachableTitle": "The host can't be reached over Tailscale",
-  "@tsUnreachableTitle": {
-    "description": "Card title when a Tailscale host did not answer."
-  },
-  "tsUnreachableText": "{address} did not answer on port 443 ({why}). Check that GoRex runs there with built-in Tailscale on (gorex rexapi tailscale status shows https: available), and that it is online.",
-  "@tsUnreachableText": {
-    "description": "Under tsUnreachableTitle.",
-    "placeholders": {
-      "address": {
-        "type": "String",
-        "example": "studio-gorex.tail1234.ts.net"
-      },
-      "why": {
-        "type": "String",
-        "example": "timeout"
-      }
-    }
-  },
-  "tsAnswered": "answered {status}",
-  "@tsAnswered": {
-    "description": "Why a Tailscale host did not count as GoRex: the HTTP status it answered.",
-    "placeholders": {
-      "status": {
-        "type": "String",
-        "example": "404"
-      }
-    }
-  },
-  "tsProbeStopped": "Tailscale stopped",
-  "@tsProbeStopped": {
-    "description": "Why a Tailscale host was not asked: Tailscale stopped."
-  },
   "aboutVersion": "Version {version}",
   "@aboutVersion": {
     "description": "Settings › About: the client's version (a commit).",
@@ -1981,292 +1421,6 @@
   "aboutResetAllAsk": "Reset all settings? This forgets the settings, the hosts and the chosen host in this browser, and reloads the page.",
   "@aboutResetAllAsk": {
     "description": "Confirmation before Reset All Settings."
-  },
-  "guideSteps": "Steps",
-  "@guideSteps": {
-    "description": "Screen reader label of the Tailscale guide's list of steps."
-  },
-  "guideStepAbout": "About",
-  "@guideStepAbout": {
-    "description": "The Tailscale guide's first step: what it does."
-  },
-  "guideStepSignIn": "Sign in",
-  "@guideStepSignIn": {
-    "description": "The Tailscale guide's third step."
-  },
-  "guideStepHosts": "Hosts",
-  "@guideStepHosts": {
-    "description": "The Tailscale guide's fourth step."
-  },
-  "guideExplainTitle": "Reach your GoRex hosts through Tailscale",
-  "@guideExplainTitle": {
-    "description": "The Tailscale guide's first step: title."
-  },
-  "guideExplainText": "No Tailscale app and no VPN on this device: this page signs in to Tailscale itself.",
-  "@guideExplainText": {
-    "description": "The Tailscale guide's first step: under the title."
-  },
-  "guideExplainDevice": "This tab joins your tailnet as a device of its own, named {name}. It reaches your GoRex hosts through Tailscale's encrypted relays.",
-  "@guideExplainDevice": {
-    "description": "The Tailscale guide's first step: a point.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "guideExplainSignIn": "You sign in on Tailscale's own page, in a new tab, with your tailnet's account. This page never sees your password.",
-  "@guideExplainSignIn": {
-    "description": "The Tailscale guide's first step: a point."
-  },
-  "guideExplainDownload": "The page first downloads Tailscale's engine, about 6 MB, from where it is hosted.",
-  "@guideExplainDownload": {
-    "description": "The Tailscale guide's first step: a point."
-  },
-  "guideExplainTab": "For this tab only: reloading or closing it signs this browser out, and Tailscale removes the device soon after.",
-  "@guideExplainTab": {
-    "description": "The Tailscale guide's first step: a point."
-  },
-  "guideNotNow": "Not Now",
-  "@guideNotNow": {
-    "description": "The Tailscale guide's first step: button that closes it."
-  },
-  "guideContinue": "Continue",
-  "@guideContinue": {
-    "description": "The Tailscale guide's first step: button that turns Tailscale on."
-  },
-  "guideNoEngineTitle": "Tailscale isn't available here",
-  "@guideNoEngineTitle": {
-    "description": "The Tailscale guide when the page has no engine."
-  },
-  "guideLoadFailedTitle": "Tailscale's engine didn't load",
-  "@guideLoadFailedTitle": {
-    "description": "The Tailscale guide when the engine failed to download."
-  },
-  "guideNoEngineHint": "Build the page with Go installed (npm run build in web/), which adds the engine, or use a copy of the page that has it.",
-  "@guideNoEngineHint": {
-    "description": "The Tailscale guide, under guideNoEngineTitle."
-  },
-  "guideLoadFailedHint": "Check this device's connection and try again. A content blocker may also stop the download.",
-  "@guideLoadFailedHint": {
-    "description": "The Tailscale guide, under guideLoadFailedTitle."
-  },
-  "guideStarting": "Starting Tailscale…",
-  "@guideStarting": {
-    "description": "The Tailscale guide while the engine starts."
-  },
-  "guideDownloading": "Downloading Tailscale…",
-  "@guideDownloading": {
-    "description": "The Tailscale guide while the engine downloads."
-  },
-  "guideOncePerVersion": "Once per version: your browser keeps the engine for the next visit.",
-  "@guideOncePerVersion": {
-    "description": "The Tailscale guide, under the download's title."
-  },
-  "guideProgressDownload": "Downloading",
-  "@guideProgressDownload": {
-    "description": "The Tailscale guide's progress bar title while downloading."
-  },
-  "guideProgressStart": "Unpacking and starting…",
-  "@guideProgressStart": {
-    "description": "The Tailscale guide's progress bar title once downloaded."
-  },
-  "guideOpening": "Opening Tailscale's sign-in page…",
-  "@guideOpening": {
-    "description": "The Tailscale guide while the sign-in page's address comes; the text of the new tab until it loads."
-  },
-  "guideApprovalText": "Your tailnet approves new devices by hand. An admin must approve {name} in the admin console's Machines page; this page goes on by itself once it is.",
-  "@guideApprovalText": {
-    "description": "The Tailscale guide while waiting for approval; Machines is the admin console's page name.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "guideOpenAdmin": "Open the Admin Console",
-  "@guideOpenAdmin": {
-    "description": "The Tailscale guide: link to Tailscale's admin console."
-  },
-  "guideOpenSignInTitle": "Open the sign-in page",
-  "@guideOpenSignInTitle": {
-    "description": "The Tailscale guide when the browser did not open the sign-in tab."
-  },
-  "guideBlockedText": "Your browser didn't open a new tab, or it was closed. Open the page with the button below, then come back to this tab.",
-  "@guideBlockedText": {
-    "description": "Under guideOpenSignInTitle."
-  },
-  "guideWaitingTitle": "Waiting for you to sign in…",
-  "@guideWaitingTitle": {
-    "description": "The Tailscale guide while the user signs in in the other tab."
-  },
-  "guideWaitingText": "Finish signing in on the Tailscale tab, then come back here. This page notices by itself.",
-  "@guideWaitingText": {
-    "description": "Under guideWaitingTitle."
-  },
-  "guideOpenSignIn": "Open the Sign-in Page",
-  "@guideOpenSignIn": {
-    "description": "The Tailscale guide: button that opens the sign-in page, when the tab did not open."
-  },
-  "guideOpenAgain": "Open It Again",
-  "@guideOpenAgain": {
-    "description": "The Tailscale guide: button that opens the sign-in page again."
-  },
-  "guideCopyLink": "Or copy the link into a browser where you are signed in:",
-  "@guideCopyLink": {
-    "description": "The Tailscale guide, above the sign-in link."
-  },
-  "guideCantReach": "Can't reach Tailscale",
-  "@guideCantReach": {
-    "description": "The Tailscale guide when the sign-in failed to start."
-  },
-  "guideExpiredTitle": "Your sign-in expired",
-  "@guideExpiredTitle": {
-    "description": "The Tailscale guide when the sign-in expired."
-  },
-  "guideExpiredText": "Sign in again to reach your hosts. {name} keeps its name.",
-  "@guideExpiredText": {
-    "description": "Under guideExpiredTitle.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "guideSignInAgain": "Sign in Again",
-  "@guideSignInAgain": {
-    "description": "The Tailscale guide: button to sign in after the sign-in expired."
-  },
-  "guideSignInTitle": "Sign in to your tailnet",
-  "@guideSignInTitle": {
-    "description": "The Tailscale guide's sign-in step: title."
-  },
-  "guideSignInText": "A new tab opens at login.tailscale.com. Sign in with the account your GoRex hosts use, then come back to this tab.",
-  "@guideSignInText": {
-    "description": "The Tailscale guide's sign-in step: under the title."
-  },
-  "guideEphemeral": "This browser joins as {name}, an ephemeral device: Tailscale removes it once this tab closes.",
-  "@guideEphemeral": {
-    "description": "The Tailscale guide's sign-in step: a point.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "guideLockedTitle": "Tailnet Lock isn't supported",
-  "@guideLockedTitle": {
-    "description": "The Tailscale guide when the tailnet uses Tailnet Lock."
-  },
-  "guideLockedText": "Your tailnet uses Tailnet Lock, and this version of the page can't join a locked tailnet: {name} is not signed by a trusted node. Sign out here, and use the Tailscale app on this device instead.",
-  "@guideLockedText": {
-    "description": "Under guideLockedTitle.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "guideSignedInAs": "Signed in as {account}",
-  "@guideSignedInAs": {
-    "description": "The Tailscale guide's hosts step: who is signed in.",
-    "placeholders": {
-      "account": {
-        "type": "String",
-        "example": "alice@example.com"
-      }
-    }
-  },
-  "guideOnTailnet": "on {tailnet}",
-  "@guideOnTailnet": {
-    "description": "The Tailscale guide's hosts step: the tailnet, under Signed in as.",
-    "placeholders": {
-      "tailnet": {
-        "type": "String",
-        "example": "example.com"
-      }
-    }
-  },
-  "guideThisDevice": "this device is {name}",
-  "@guideThisDevice": {
-    "description": "The Tailscale guide's hosts step: this browser's device name.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      }
-    }
-  },
-  "guideThisDeviceAt": "this device is {name} ({address})",
-  "@guideThisDeviceAt": {
-    "description": "The Tailscale guide's hosts step: this browser's device name and tailnet address.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "gorex-web-kqzt"
-      },
-      "address": {
-        "type": "String",
-        "example": "100.101.102.103"
-      }
-    }
-  },
-  "guideSearchAgain": "Search Again",
-  "@guideSearchAgain": {
-    "description": "The Tailscale guide's hosts step: button that looks for hosts again."
-  },
-  "guideConnect": "Connect",
-  "@guideConnect": {
-    "description": "The Tailscale guide: button that connects to a host found."
-  },
-  "guideEmptyTitle": "No GoRex hosts found",
-  "@guideEmptyTitle": {
-    "description": "The Tailscale guide when no host was found."
-  },
-  "guideEmptyText": "The page lists the devices of {account} that run GoRex with built-in Tailscale. To add one:",
-  "@guideEmptyText": {
-    "description": "Under guideEmptyTitle.",
-    "placeholders": {
-      "account": {
-        "type": "String",
-        "example": "alice@example.com"
-      }
-    }
-  },
-  "guideEmptyStep1": "On the host, open GoRex, then turn on built-in Tailscale and sign it in with this same account:",
-  "@guideEmptyStep1": {
-    "description": "The Tailscale guide's how-to, step 1, above a command."
-  },
-  "guideEmptyStep2": "Wait until its status shows https: available. MagicDNS and HTTPS must be on in the tailnet's admin console (DNS page).",
-  "@guideEmptyStep2": {
-    "description": "The Tailscale guide's how-to, step 2, above a command; https: available is the command's literal output."
-  },
-  "guideEmptyStep3": "Let the host trust this page:",
-  "@guideEmptyStep3": {
-    "description": "The Tailscale guide's how-to, step 3, above a command."
-  },
-  "guideUnanswered": "Found but not answering as GoRex on port 443: {names}. Check the steps above on {n, plural, one {it} other {them}}.",
-  "@guideUnanswered": {
-    "description": "The Tailscale guide: devices named like GoRex hosts that did not answer.",
-    "placeholders": {
-      "names": {
-        "type": "String",
-        "example": "studio-gorex, mini-gorex"
-      },
-      "n": {
-        "type": "int",
-        "example": "2"
-      }
-    }
-  },
-  "guideNote": "The page finds hosts named <machine>-gorex, built-in Tailscale's default name. A host renamed otherwise isn't found in this version.",
-  "@guideNote": {
-    "description": "The Tailscale guide: note under the how-to."
   },
   "viewerImage": "Image",
   "@viewerImage": {
@@ -2348,7 +1502,7 @@
       }
     }
   },
-  "fileTooLargeTailnet": "Too large: over Tailscale the page downloads files up to {size}",
+  "fileTooLargeTailnet": "Too large: this transport downloads files up to {size}",
   "@fileTooLargeTailnet": {
     "description": "Why a Tailscale host's file did not download.",
     "placeholders": {
@@ -2358,7 +1512,7 @@
       }
     }
   },
-  "fileGrewTailnet": "The file grew too large: over Tailscale the page downloads files up to {size}",
+  "fileGrewTailnet": "The file grew too large: this transport downloads files up to {size}",
   "@fileGrewTailnet": {
     "description": "Why a Tailscale host's file stopped downloading.",
     "placeholders": {
@@ -2482,10 +1636,6 @@
   "@chunkSettings": {
     "description": "The name in chunkLoading and chunkFailed for the Settings dialog."
   },
-  "chunkGuide": "the Tailscale guide",
-  "@chunkGuide": {
-    "description": "The name in chunkLoading and chunkFailed for the Tailscale sign-in guide; mid-sentence."
-  },
   "chunkViewer": "the image viewer",
   "@chunkViewer": {
     "description": "The name in chunkLoading and chunkFailed for the image viewer; mid-sentence."
@@ -2493,18 +1643,6 @@
   "chunkWelcome": "the welcome screen",
   "@chunkWelcome": {
     "description": "The name in chunkLoading and chunkFailed for the first visit's welcome screen; mid-sentence."
-  },
-  "tsNotEngine": "The downloaded file is not Tailscale",
-  "@tsNotEngine": {
-    "description": "Why Tailscale's engine did not load: the file is something else."
-  },
-  "tsEngineNotStarted": "Tailscale did not start",
-  "@tsEngineNotStarted": {
-    "description": "Why Tailscale's engine failed after it loaded."
-  },
-  "tsIsOff": "Tailscale is off",
-  "@tsIsOff": {
-    "description": "Why a connection to a Tailscale host failed: Tailscale was turned off."
   },
   "problemLearnMore": "Learn more",
   "@problemLearnMore": {
@@ -2532,35 +1670,15 @@
   "@welcomeText": {
     "description": "Subtitle of the first screen, under welcomeTitle."
   },
-  "welcomeRecommended": "Recommended",
-  "@welcomeRecommended": {
-    "description": "Badge next to the Sign in with Tailscale card's title on the first screen."
-  },
   "cornerLanguage": "Language",
   "@cornerLanguage": {
     "description": "Tooltip and accessible name of the language button in the first screen's top-right corner; it opens a menu of languages."
-  },
-  "welcomeTsChoose": "Choose a Computer on Tailscale",
-  "@welcomeTsChoose": {
-    "description": "First screen, the Tailscale card's title when Tailscale is signed in: opens the list of hosts found."
-  },
-  "welcomeTsLine": "Finds your GoRex computers by itself. Nothing to install.",
-  "@welcomeTsLine": {
-    "description": "First screen, the line under Sign in with Tailscale."
-  },
-  "welcomeTsLineContinue": "Finish signing in to find your GoRex computers.",
-  "@welcomeTsLineContinue": {
-    "description": "First screen, the line under Continue with Tailscale: sign-in started but not finished."
-  },
-  "welcomeTsLineRunning": "You're signed in. Pick one of your GoRex computers.",
-  "@welcomeTsLineRunning": {
-    "description": "First screen, the line under welcomeTsChoose."
   },
   "welcomeAddressTitle": "Connect by Address",
   "@welcomeAddressTitle": {
     "description": "First screen, the second card's title: opens the form to add a host by its address; the form's heading then."
   },
-  "welcomeAddressLine": "For a GoRex computer on the same network as this device, or its tailcat address.",
+  "welcomeAddressLine": "For a WindRex computer on the same network, or its Direct TLS / Relay address.",
   "@welcomeAddressLine": {
     "description": "First screen, the line under Connect by Address."
   },
@@ -2572,7 +1690,7 @@
   "@welcomeNeeds1": {
     "description": "First screen, What do I need?, item 1."
   },
-  "welcomeNeeds2": "For Tailscale: built-in Tailscale turned on in GoRex on that computer.",
+  "welcomeNeeds2": "Direct TLS / Self-Hosted Relay or the local network listener enabled on that computer.",
   "@welcomeNeeds2": {
     "description": "First screen, What do I need?, item 2."
   },
@@ -2700,26 +1818,6 @@
       }
     }
   },
-  "placeTailnetSearchingText": "The tab shown last is on a host of your tailnet. Tailscale is still looking for it.",
-  "@placeTailnetSearchingText": {
-    "description": "Under placeTailnetTitle, after a reload, while built-in Tailscale runs and still probes the tailnet for GoRex hosts."
-  },
-  "placeTailnetGoneTitle": "Host not found on your tailnet",
-  "@placeTailnetGoneTitle": {
-    "description": "Notice over the stage after a reload, when the window shown last is on a tailnet host that built-in Tailscale, running, does not find."
-  },
-  "placeTailnetGoneText": "The tab shown last is on a host Tailscale does not find on your tailnet now. It may be off, or no longer trust this page. Choose another tab, or check its Tailscale settings.",
-  "@placeTailnetGoneText": {
-    "description": "Under placeTailnetGoneTitle; a Tailscale Settings button follows."
-  },
-  "placeTailnetTitle": "Waiting for Tailscale",
-  "@placeTailnetTitle": {
-    "description": "Notice over the stage after a reload, when the window shown last is on a tailnet host that built-in Tailscale has not found yet."
-  },
-  "placeTailnetText": "The tab shown last is on a host of your tailnet. Turn on Tailscale and sign in to reach it, or choose another tab.",
-  "@placeTailnetText": {
-    "description": "Under placeTailnetTitle; a Tailscale Settings button follows."
-  },
   "uploadFile": "Upload File…",
   "@uploadFile": {
     "description": "Pane context menu item to pick and upload files to the remote host."
@@ -2747,66 +1845,121 @@
     "description": "Status message when the user drops only a folder onto a pane."
   },
   "cmdFind": "Find…",
-  "@cmdFind": { "description": "Command: open terminal scrollback find bar." },
+  "@cmdFind": {
+    "description": "Command: open terminal scrollback find bar."
+  },
   "findNext": "Find Next",
-  "@findNext": { "description": "Command and button: jump to next search match." },
+  "@findNext": {
+    "description": "Command and button: jump to next search match."
+  },
   "findPrevious": "Find Previous",
-  "@findPrevious": { "description": "Command and button: jump to previous search match." },
+  "@findPrevious": {
+    "description": "Command and button: jump to previous search match."
+  },
   "findClose": "Close Find",
-  "@findClose": { "description": "Button: close terminal find bar." },
+  "@findClose": {
+    "description": "Button: close terminal find bar."
+  },
   "findPlaceholder": "Search scrollback",
-  "@findPlaceholder": { "description": "Placeholder for terminal find input." },
+  "@findPlaceholder": {
+    "description": "Placeholder for terminal find input."
+  },
   "findCount": "{selected} of {total}",
   "@findCount": {
     "description": "Match counter in terminal find bar.",
     "placeholders": {
-      "selected": { "type": "int", "example": "1" },
-      "total": { "type": "int", "example": "5" }
+      "selected": {
+        "type": "int",
+        "example": "1"
+      },
+      "total": {
+        "type": "int",
+        "example": "5"
+      }
     }
   },
   "cmdCommandPalette": "Command Palette…",
-  "@cmdCommandPalette": { "description": "Command: open the command palette." },
+  "@cmdCommandPalette": {
+    "description": "Command: open the command palette."
+  },
   "palettePlaceholder": "Type a command, or the name of a tab…",
-  "@palettePlaceholder": { "description": "Placeholder for command palette input." },
+  "@palettePlaceholder": {
+    "description": "Placeholder for command palette input."
+  },
   "paletteNoMatches": "No matches",
-  "@paletteNoMatches": { "description": "Empty state for search and command palette." },
+  "@paletteNoMatches": {
+    "description": "Empty state for search and command palette."
+  },
   "cmdFocusLeft": "Focus Left Pane",
-  "@cmdFocusLeft": { "description": "Command: focus left pane." },
+  "@cmdFocusLeft": {
+    "description": "Command: focus left pane."
+  },
   "cmdFocusRight": "Focus Right Pane",
-  "@cmdFocusRight": { "description": "Command: focus right pane." },
+  "@cmdFocusRight": {
+    "description": "Command: focus right pane."
+  },
   "cmdFocusUp": "Focus Upper Pane",
-  "@cmdFocusUp": { "description": "Command: focus upper pane." },
+  "@cmdFocusUp": {
+    "description": "Command: focus upper pane."
+  },
   "cmdFocusDown": "Focus Lower Pane",
-  "@cmdFocusDown": { "description": "Command: focus lower pane." },
+  "@cmdFocusDown": {
+    "description": "Command: focus lower pane."
+  },
   "cmdResizeLeft": "Move Divider Left",
-  "@cmdResizeLeft": { "description": "Command: move split divider left." },
+  "@cmdResizeLeft": {
+    "description": "Command: move split divider left."
+  },
   "cmdResizeRight": "Move Divider Right",
-  "@cmdResizeRight": { "description": "Command: move split divider right." },
+  "@cmdResizeRight": {
+    "description": "Command: move split divider right."
+  },
   "cmdResizeUp": "Move Divider Up",
-  "@cmdResizeUp": { "description": "Command: move split divider up." },
+  "@cmdResizeUp": {
+    "description": "Command: move split divider up."
+  },
   "cmdResizeDown": "Move Divider Down",
-  "@cmdResizeDown": { "description": "Command: move split divider down." },
+  "@cmdResizeDown": {
+    "description": "Command: move split divider down."
+  },
   "shortcutRecording": "Press keys…",
-  "@shortcutRecording": { "description": "Button label while recording a keyboard shortcut." },
+  "@shortcutRecording": {
+    "description": "Button label while recording a keyboard shortcut."
+  },
   "shortcutNeedModifier": "Use a modifier, or an F-key",
-  "@shortcutNeedModifier": { "description": "Error when recording a shortcut without modifier or F-key." },
+  "@shortcutNeedModifier": {
+    "description": "Error when recording a shortcut without modifier or F-key."
+  },
   "shortcutBrowserReserved": "Browser reserves this shortcut",
-  "@shortcutBrowserReserved": { "description": "Error when recording a shortcut reserved by the browser." },
+  "@shortcutBrowserReserved": {
+    "description": "Error when recording a shortcut reserved by the browser."
+  },
   "shortcutConflict": "Already bound to {command}",
   "@shortcutConflict": {
     "description": "Error when recording a shortcut already bound to another command.",
     "placeholders": {
-      "command": { "type": "String", "example": "Find…" }
+      "command": {
+        "type": "String",
+        "example": "Find…"
+      }
     }
   },
   "shortcutReset": "Reset",
-  "@shortcutReset": { "description": "Button to reset a single customized shortcut." },
+  "@shortcutReset": {
+    "description": "Button to reset a single customized shortcut."
+  },
   "shortcutResetAll": "Reset All",
-  "@shortcutResetAll": { "description": "Button to reset all customized shortcuts." },
+  "@shortcutResetAll": {
+    "description": "Button to reset all customized shortcuts."
+  },
   "paneFloatMinimize": "Minimize Floating Pane",
-  "@paneFloatMinimize": { "description": "Pane menu and palette item: minimize a floating pane." },
+  "@paneFloatMinimize": {
+    "description": "Pane menu and palette item: minimize a floating pane."
+  },
   "paneFloatRestore": "Restore Floating Pane",
-  "@paneFloatRestore": { "description": "Dock button and palette item: restore a minimized floating pane." },
+  "@paneFloatRestore": {
+    "description": "Dock button and palette item: restore a minimized floating pane."
+  },
   "projectNewTitle": "New Project",
   "@projectNewTitle": {
     "description": "Title of the New Project sheet."

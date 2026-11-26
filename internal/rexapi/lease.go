@@ -42,9 +42,6 @@ func (g *Gateway) closeAllResources() {
 		streams = append(streams, s)
 	}
 	g.mu.Unlock()
-	if g.tailnet != nil {
-		g.tailnet.close()
-	}
 	if g.lan != nil {
 		g.lan.close()
 	}

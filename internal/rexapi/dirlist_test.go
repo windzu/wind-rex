@@ -133,8 +133,8 @@ func TestDirListCallers(t *testing.T) {
 	if r := callChecked(t, c, "gorex.dir.list", nil); r["path"] != home {
 		t.Errorf("gorex.dir.list over the local network: %v", r)
 	}
-	if e := failure(t, c.request("ts", "server.tailscale.enable", map[string]any{"allow_tailnet_members": false})); e["status"] != float64(403) {
-		t.Errorf("server.tailscale.enable over the local network: %v, want 403", e)
+	if e := failure(t, c.request("stop-deny", "server.stop", nil)); e["status"] != float64(403) {
+		t.Errorf("server.stop over the local network: %v, want 403", e)
 	}
 
 	g.stopping.Store(true)

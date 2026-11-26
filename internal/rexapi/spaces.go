@@ -13,7 +13,7 @@ import (
 )
 
 // Spaces across hosts: a GoRex space may hold panes of this machine and
-// of other hosts, which the app reaches over tailcat or Tailscale. A Rex
+// of other hosts, which the app reaches over Direct TLS or Relay. A Rex
 // session shows this machine's panes only (filterNode), and a client
 // reaches each host's own gateway apart. GET /api/spaces tells such a
 // client which panes of other hosts each space holds, named as those

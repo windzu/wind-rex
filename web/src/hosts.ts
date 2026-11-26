@@ -1,33 +1,20 @@
 // The hosts this page connects to, as the iOS app keeps them (ios/GoRex/Rex/Host.swift):
 // a name, the gateway's URL and an icon, kept in this browser. The page is
 // hosted on its own (docs/REF-007-web-client.md), so it has no host of its own: the
-// user adds each one, and each one must trust this page's origin. Hosts
-// found on the tailnet by built-in Tailscale (tailnet.ts) are listed in a
-// group of their own, and not kept.
+// user adds each one, and each one must trust this page's origin.
 import { localize, PlainKey, t } from "./i18n";
 import type { LinkState } from "./settings";
 import { joinHostURL, SharedGroup, withToken } from "./share";
-import type { Tailnet, TailnetHost } from "./tailnet";
 
-/** A host as the user added it, as built-in Tailscale found it (kind "tailnet"), or shared by Rex Go (kind "share"). */
+/** A host as the user added it, or shared over a gateway path (kind "share"). */
 export interface Host {
   id: string;
   name: string;
-  /**
-   * The gateway, as http(s)://host[:port] or http://host[:port]/h/<id>
-   * when shared. A tailcat host's is only a label ("tailcat"): its real
-   * address is a secret in `address`.
-   */
+  /** The gateway, as http(s)://host[:port] or http://host[:port]/h/<id>. */
   url: string;
   /** One of icons' names. */
   icon: string;
-  kind?: "direct" | "tailnet" | "tailcat" | "share";
-  /**
-   * A tailcat host's address, "tc…" (docs/WEB-006-tailcat.md): the
-   * pre-shared key of the host, a secret. The page keeps it, sends it to
-   * the tailcat engine only, and never shows it.
-   */
-  address?: string;
+  kind?: "direct" | "share";
   /** Base64url SHA-256 of the host's self-signed ECDSA cert for WebTransport. */
   certHash?: string;
   /** The LAN gateway's pairing token (base64url), sent as ?k= on each connection. Kept in this browser's storage like the rest. */
@@ -47,16 +34,22 @@ const listKey = "gorex.hosts";
 /** A host's ID: random enough for one browser's list (crypto.randomUUID needs a secure context, which a dev server on a LAN address is not). */
 const newID = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
-/** The hosts kept in this browser; none without storage. */
+/** The hosts kept in this browser; none without storage. Legacy tailcat/tailnet entries are dropped. */
 export function loadHosts(): Host[] {
   try {
     const list = JSON.parse(localStorage.getItem(listKey) ?? "[]");
     return Array.isArray(list)
-      ? list.filter((h) => typeof h?.id === "string" && typeof h.url === "string" && typeof h.name === "string").map((h) => {
-          const host = { icon: "laptop", ...h };
-          if (host.kind === "tailcat" && typeof host.address !== "string") delete host.kind;
-          return host;
-        })
+      ? list
+          .filter(
+            (h) =>
+              typeof h?.id === "string" &&
+              typeof h.url === "string" &&
+              typeof h.name === "string" &&
+              h.kind !== "tailcat" &&
+              h.kind !== "tailnet" &&
+              h.url !== "tailcat",
+          )
+          .map((h) => ({ icon: "laptop", ...h }))
       : [];
   } catch {
     return [];
@@ -109,29 +102,6 @@ export function parsePairingLink(search: string, hash: string): { url: string; c
   const k = f.get("k") || undefined;
   return { url: r.url, certHash: wt, ...(k ? { token: k } : {}) };
 }
-/**
- * A tailcat address, as the host's QR dialog shows it: the rexgo link
- * (`rexgo://tailcat?a=tc…&n=name`) or the bare "tc…" string
- * (docs/WEB-006-tailcat.md). Returns the address and the name the link
- * carries, or undefined when it is not one (a gateway URL then).
- */
-export function parseTailcatAddress(typed: string): { address: string; name?: string } | undefined {
-  const s = typed.trim();
-  if (/^tc[0-9A-Za-z_-]{8,}$/.test(s)) return { address: s };
-  let u: URL;
-  try {
-    u = new URL(s);
-  } catch {
-    return undefined;
-  }
-  if (u.protocol !== "rexgo:" || u.hostname !== "tailcat") return undefined;
-  const a = u.searchParams.get("a") ?? "";
-  if (!/^tc[0-9A-Za-z_-]{8,}$/.test(a)) return undefined;
-  const n = u.searchParams.get("n") ?? undefined;
-  return { address: a, ...(n ? { name: n } : {}) };
-}
-
-
 
 /** A host's name until the user gives one: the first label of a DNS name, else the whole host (an IP address). */
 export function defaultName(url: string): string {
@@ -246,37 +216,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 }
 
-/** A lucide icon of the repo, drawn in the text's colour; "tailscale" is Tailscale's own mark. */
+/** A lucide icon of the repo, drawn in the text's colour. */
 export function icon(name: string): HTMLElement {
-  if (name === "tailscale") return tailscaleMark();
   const i = el("i", "pane-icon");
   i.style.setProperty("--icon", `url(icons/${name}.svg)`);
-  return i;
-}
-
-/**
- * Tailscale's mark, from its media kit (tailscale.com/press,
- * Tailscale_icon_*_rgb.svg): nine dots, the T solid and the rest at 40%,
- * in the text's colour. Inline, as one colour at two opacities is not a mask.
- */
-function tailscaleMark(): HTMLElement {
-  const i = el("i", "pane-icon ts-mark");
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 169 169");
-  svg.setAttribute("aria-hidden", "true");
-  const solid = new Set(["0,1", "1,1", "2,1", "1,2"]);
-  for (let col = 0; col < 3; col++)
-    for (let row = 0; row < 3; row++) {
-      const c = document.createElementNS(ns, "circle");
-      c.setAttribute("cx", String(30.5 + 54 * col));
-      c.setAttribute("cy", String(30.5 + 54 * row));
-      c.setAttribute("r", "18");
-      c.setAttribute("fill", "currentColor");
-      if (!solid.has(`${col},${row}`)) c.setAttribute("fill-opacity", "0.4");
-      svg.append(c);
-    }
-  i.append(svg);
   return i;
 }
 
@@ -332,7 +275,7 @@ export interface HostsApp {
   choose(h: Host | undefined): void;
   /** A host's connection now. */
   link(h: Host): HostLink;
-  /** Connects a host the user disconnected, or a tailnet host never connected; the stage stays. */
+  /** Connects a host the user disconnected; the stage stays. */
   connect(h: Host): void;
   /** Disconnects a host until the user connects it again, across reloads (gorex.hostsOff). */
   disconnect(h: Host): void;
@@ -344,20 +287,9 @@ export interface HostsApp {
   close(): void;
   /** The list changed: a host added, edited or removed. */
   changed(): void;
-  /** Built-in Tailscale, whose hosts the list shows in their group. */
-  tailnet: Tailnet;
-  /** Opens the Tailscale sign-in guide. */
-  guide(): void;
-  /** Hosts shared by Rex Go over Personal Hotspot, when served by the phone. */
+  /** Hosts shared over a gateway path, when served by a host share. */
   share?(): SharedGroup | undefined;
 }
-
-/** A tailnet host's state, as its dot and words. */
-export const tailnetStates: Record<TailnetHost["state"], [dot: string, text: PlainKey]> = {
-  online: ["connected", "hostTailnetOnline"],
-  offline: ["none", "hostTailnetOffline"],
-  refused: ["unreachable", "hostTailnetRefused"],
-};
 
 /**
  * The host list: a button at the top of the sidebar with the chosen host,
@@ -436,13 +368,12 @@ export class HostList {
 
   /**
    * The chosen host, as a button that opens the list. With no host at all
-   * (none added, none found on Tailscale) the sidebar shows the app's name
-   * in its place: the welcome over the stage offers the ways to add one.
+   * the sidebar shows the app's name in its place: the welcome over the stage
+   * offers the way to add one.
    */
   private drawButton() {
     const h = this.chosen;
-    const ts = this.app.tailnet;
-    const none = !h && !this.hosts.length && !(ts.status() === "running" && ts.hosts.length);
+    const none = !h && !this.hosts.length;
     this.button.hidden = none;
     this.brand.hidden = !none;
     if (none) return;
@@ -506,7 +437,6 @@ export class HostList {
     }
     if (!this.hosts.length && !this.app.share?.()?.hosts.length) rows.append(el("div", "theme-empty", t("hostNone")));
     rows.append(...this.shareGroup());
-    rows.append(...this.tailnetGroup());
     const add = el("button", "host-add", t("hostAdd"));
     add.type = "button";
     // Its key keeps the focus on it as the list redraws (refresh).
@@ -595,61 +525,6 @@ export class HostList {
     return out;
   }
 
-  /**
-   * The Tailscale group: the hosts built-in Tailscale found, each with its
-   * state's dot, or the row that starts its sign-in guide, or what it is
-   * doing while it finds none.
-   */
-  private tailnetGroup(): HTMLElement[] {
-    const ts = this.app.tailnet;
-    const status = ts.status();
-    const head = el("div", "host-group");
-    // Tailscale is a product's name, not translated.
-    head.append(icon("tailscale"), el("span", "host-group-name", "Tailscale"));
-    if (status !== "off") head.append(el("span", "host-group-state", ts.statusText()));
-    const out: HTMLElement[] = [head];
-    const guide = (label: string, glyph: string, key: string) => {
-      const b = el("button", "theme-row host-guide");
-      b.type = "button";
-      b.dataset.key = key;
-      b.append(icon(glyph), el("span", "theme-name", label));
-      b.onclick = () => {
-        this.hide(false);
-        this.app.guide();
-      };
-      return b;
-    };
-    if (status !== "running") {
-      out.push(guide(status === "off" ? t("hostTsAdd") : t("hostTsSignIn"), "log-in", "ts-guide"));
-      return out;
-    }
-    for (const h of ts.hosts) {
-      const pick = el("button", "theme-row");
-      pick.type = "button";
-      pick.dataset.key = h.id;
-      const text = el("span", "host-text");
-      const [dot, words] = tailnetStates[h.state];
-      const line = el("span", "host-url host-state");
-      // One dot a row: the connection's while the page keeps one, else Tailscale's word of the peer, in its line.
-      const kept = this.app.link(h).state !== "none";
-      if (!kept) line.append(el("i", `state-dot ${dot}`));
-      line.append(el("span", "", h.state === "online" ? h.dns : t("hostTailnetLine", { state: t(words), address: h.dns })));
-      text.append(el("span", "theme-name", h.name), line);
-      pick.append(icon(h.icon), text, kept ? this.dot(h) : el("span", "theme-check"));
-      this.pickHost(pick, h);
-      pick.title = h.problem
-        ? t("hostProblemTip", { title: h.problem.title, text: h.problem.text }) + (h.problem.command ? " " + h.problem.command : "")
-        : h.url;
-      const row = el("div", "host-row");
-      row.append(pick, this.plug(h));
-      out.push(row);
-    }
-    if (!ts.hosts.length) {
-      out.push(ts.searching ? el("div", "theme-empty host-searching", t("hostSearching")) : guide(t("hostNoneFound"), "circle-alert", "ts-empty"));
-    }
-    return out;
-  }
-
   /** The form in the panel: a saved host closes it, else the list shows again. */
   private formIn(h: Host | undefined) {
     this.listing = false;
@@ -673,12 +548,10 @@ export class HostList {
       return l;
     };
     const url = el("input", "theme-search");
-    // An example address, as GoRex shows its local network one; not translated.
+    // An example address, as WindRex shows its local network one; not translated.
     url.placeholder = "192.168.1.20:7297";
-    // A tailcat host's address is a secret: the form does not show it
-    // back. Left empty, the edit keeps it.
-    url.value = h?.kind === "tailcat" ? "" : h?.url ?? "";
-    url.required = h?.kind !== "tailcat";
+    url.value = h?.url ?? "";
+    url.required = true;
     url.autocomplete = "off";
     url.spellcheck = false;
     const name = el("input", "theme-search");
@@ -729,44 +602,16 @@ export class HostList {
     buttons.append(cancel, save);
     form.onsubmit = (e) => {
       e.preventDefault();
-      // A tailcat address first: a "tc…" string or the rexgo link; else
-      // a gateway URL. One that looks like a tailcat address but is not
-      // parses as neither: say so, rather than take it as a DNS name.
-      const typed = url.value.trim();
-      const tc = parseTailcatAddress(typed);
-      const looksTailcat = /^tc/i.test(typed) || /^rexgo:/i.test(typed);
-      if (!tc && looksTailcat) {
-        error.textContent = t("hostTailcatInvalid");
+      const r = hostURL(url.value.trim());
+      if ("error" in r) {
+        error.textContent = r.error;
         url.focus();
         return;
       }
-      let hurl: string;
-      let secret: string | undefined;
-      let label: string;
-      let kind: Host["kind"];
-      if (tc) {
-        hurl = "tailcat";
-        secret = tc.address;
-        label = name.value.trim() || tc.name || t("hostTailcatName");
-        kind = "tailcat";
-      } else if (h?.kind === "tailcat" && !typed) {
-        // The edit left the secret's field empty: the address stays.
-        hurl = h.url;
-        secret = h.address;
-        label = name.value.trim() || h.name;
-        kind = "tailcat";
-      } else {
-        const r = hostURL(typed);
-        if ("error" in r) {
-          error.textContent = r.error;
-          url.focus();
-          return;
-        }
-        hurl = r.url;
-        label = name.value.trim() || defaultName(r.url);
-      }
-      const changed = !h || h.url !== hurl || h.address !== secret || h.kind !== kind;
-      const next: Host = { id: h?.id ?? newID(), name: label, url: hurl, icon: chosenIcon, ...(kind ? { kind } : {}), ...(secret ? { address: secret } : {}) };
+      const hurl = r.url;
+      const label = name.value.trim() || defaultName(r.url);
+      const changed = !h || h.url !== hurl;
+      const next: Host = { id: h?.id ?? newID(), name: label, url: hurl, icon: chosenIcon };
       this.hosts = h ? this.hosts.map((x) => (x.id === h.id ? next : x)) : [...this.hosts, next];
       saveHosts(this.hosts);
       done("save");

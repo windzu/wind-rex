@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
-	"tailscale.com/types/key"
 )
 
 // sessionOf returns the server's session sid.
@@ -131,7 +130,7 @@ func (v *viewer) waitScreen(t *testing.T, what string, ss *session) {
 // session's screen. A client is sent the screen again, on its stream,
 // rather than disconnected for falling behind.
 func TestLaggingClientResyncs(t *testing.T) {
-	for name, peer := range map[string]string{"local": "", "remote": key.NewNode().Public().String()} {
+	for name, peer := range map[string]string{"local": "", "remote": "peer-resync-1"} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := testServer(t)
 			c := pipe(s, "")
@@ -159,7 +158,7 @@ func TestLaggingClientResyncs(t *testing.T) {
 // the write timeout, or is closed: it is dropped, as before.
 func TestDeadClientDropped(t *testing.T) {
 	defer SetTimeoutsForTest(300*time.Millisecond, 2*time.Second)()
-	for name, peer := range map[string]string{"stalled remote": key.NewNode().Public().String(), "closed local": ""} {
+	for name, peer := range map[string]string{"stalled remote": "peer-dead-1", "closed local": ""} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := testServer(t)
 			c := pipe(s, "")
@@ -411,7 +410,7 @@ func (r *streamReader) afterReset() (string, int) {
 // at another size than the session's, or for the stream of another
 // peer, is refused.
 func TestResyncClientInBand(t *testing.T) {
-	for name, peer := range map[string]string{"local": "", "remote": key.NewNode().Public().String()} {
+	for name, peer := range map[string]string{"local": "", "remote": "peer-resync-1"} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := testServer(t)
 			c := pipe(s, "")
@@ -436,7 +435,7 @@ func TestResyncClientInBand(t *testing.T) {
 			if err := w.Resync(info.ID, "w1", 81, 24); err == nil || err.Error() != ErrResyncSize.Error() {
 				t.Fatalf("a resync at another size: %v, want %v", err, ErrResyncSize)
 			}
-			other := pipe(s, key.NewNode().Public().String())
+			other := pipe(s, "peer-other-2")
 			defer other.Close()
 			if err := other.Resync(info.ID, "w1", 80, 24); err == nil {
 				t.Fatal("another peer resynced the stream")

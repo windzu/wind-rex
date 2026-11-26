@@ -12,8 +12,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"tailscale.com/envknob"
 )
 
 // blackholeProxy forwards the connections of a socket of its own to a
@@ -411,25 +409,6 @@ func TestBigChunkQueues(t *testing.T) {
 	a.send(make([]byte, maxQueuedBytes+1))
 	if a.behind || len(a.pending) != 1 {
 		t.Fatalf("behind %v, %d pending, want the chunk queued", a.behind, len(a.pending))
-	}
-}
-
-// TestNetstackKeepalive checks that the server shortens the TCP keepalive
-// of the connections tailcat accepts, which tailscale's netstack reads
-// from its knobs, for clients that do not ping, and keeps the knobs out
-// of the sessions' environment.
-func TestNetstackKeepalive(t *testing.T) {
-	tuneKeepalive()
-	for k, want := range map[string]time.Duration{
-		"TS_NETSTACK_KEEPALIVE_IDLE":     30 * time.Second,
-		"TS_NETSTACK_KEEPALIVE_INTERVAL": 10 * time.Second,
-	} {
-		if got := envknob.RegisterDuration(k)(); got != want {
-			t.Errorf("%s = %v, want %v", k, got, want)
-		}
-		if v, set := os.LookupEnv(k); set {
-			t.Errorf("%s=%s is in the environment", k, v)
-		}
 	}
 }
 

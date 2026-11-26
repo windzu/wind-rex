@@ -13,9 +13,7 @@ go run ./tools/verify -audit
 
 It runs `deadcode` for linux, windows and darwin together, and reports only
 what no target can reach in any of them. A function unused on one system is
-not reported while another reaches it. `ios/**` and `web/tailnet/**` are
-not reported: gomobile and the wasm build call them from Swift and
-JavaScript, which the Go analysis cannot see.
+not reported while another reaches it.
 
 Delete the function with its tests and the comment that names it, in the
 same pull request. Dead code left behind a feature is not "for later": it
@@ -40,9 +38,9 @@ rg -n 'https?://' --glob '*.go' --glob '*.ts' --glob '*.swift' -g '!*_test.go' -
   together.
 - `os/exec` arguments never come from a remote message whole.
 - A TLS skip is paired with a check that replaces the chain, or it is on
-  loopback. `internal/pairaddr` skips the chain because the pairing code
-  proves the machine; the websocket ones skip the Origin check that
-  `Handler` already made.
+  loopback. Direct TLS pinning checks the leaf certificate's SHA-256
+  digest in `VerifyPeerCertificate`; the websocket ones skip the Origin
+  check that `Handler` already made.
 - A URL in the code is the user's own server, or a doc example. The repo
   has no telemetry and no third-party endpoint.
 

@@ -7,9 +7,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"gorex/internal/rex"
 	"gorex/internal/rexapi"
-	"gorex/internal/testrex"
 	"gorex/locales"
 )
 
@@ -22,19 +20,13 @@ func TestLocalPairQRWebTab(t *testing.T) {
 	rexapi.WebOrigin = "https://web.example.com"
 	t.Cleanup(func() { rexapi.WebOrigin = previousOrigin })
 	registerFonts()
-	dir := rexapi.TailnetDir()
+	dir := rexapi.StateDir()
 	section, remote, qr := settingsUI.section, remoteUI, remoteUI.pairQR
 	t.Cleanup(func() { settingsUI.section, remoteUI, remoteUI.pairQR = section, remote, qr })
-	gw := testrex.NewStalled(t)
-	t.Setenv("GOREX_REXAPI_SOCKET", gw.Path)
-	t.Cleanup(func() {
-		waitForThat(t, func() bool { _, open := gw.Counts(); return open == 0 }, "the look to give up")
-	})
 
 	const token, hash = "token-for-the-test", "hash-for-the-test"
 	a := &App{}
 	settingsUI.section = "server"
-	remoteUI.loaded, remoteUI.st = true, rex.RemoteStatus{}
 	remoteUI.lan = rexapi.LANConfig{Enabled: true, Listen: "192.168.1.20:7297", Allow: []string{"192.168.1.0/24"}, Token: token}
 	remoteUI.lanStatus = rexapi.LANStatus{
 		Running: true, Listening: "192.168.1.20:7297",

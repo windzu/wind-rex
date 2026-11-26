@@ -124,8 +124,6 @@ func (s *Server) upgrade(exe string) error {
 	ul.SetDeadline(time.Unix(1, 0))
 	// The listener of a failed upgrade may be another (Windows).
 	defer func() { s.ln.(*net.UnixListener).SetDeadline(time.Time{}) }()
-	s.remoteClose()
-	defer s.remoteLoad()
 	s.mu.Lock()
 	all := make([]*session, 0, len(s.order))
 	for _, id := range s.order {

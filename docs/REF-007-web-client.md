@@ -1,6 +1,6 @@
 ---
 name: REF-007
-description: "The standalone web client in `web/`: hosts, trust of a page, Tailscale, hosting and the app shell. Use when you change the web client."
+description: "The standalone web client in `web/`: hosts, trust of a page, hosting and the app shell. Use when you change the web client."
 metadata:
   created: "2026-11-12"
   updated: "2026-11-26"
@@ -232,62 +232,14 @@ preflight of any other page.
 Trust only pages you control. A trusted page can do anything the API can,
 as anyone who opens it in a browser that the access rule lets in.
 
-## Built-in Tailscale
-
-The page can join your tailnet itself, with no Tailscale app and no VPN
-on the device (docs/WEB-002-tailscale.md). It then lists the GoRex hosts on
-the tailnet and connects to them through Tailscale.
-
-1. Open the host list and choose **Add Hosts from Tailscale**, or
-   Settings, Tailscale, and turn **Built-in Tailscale** on. A guide opens.
-2. **About**: what happens. The tab joins the tailnet as a device of its
-   own, `gorex-web-` and four letters (Settings, Tailscale, Device name
-   changes it). **Continue**.
-3. **Download**: the page downloads Tailscale's engine, about 6 MB
-   gzipped, with a progress bar. A failure shows the reason and **Try
-   Again**.
-4. **Sign in**: **Sign in with Tailscale** opens a new tab, and the page
-   sends it to `https://login.tailscale.com/a/…` when control answers.
-   Sign in there with the account of your GoRex hosts. The page notices
-   by itself when you are done. When the browser blocked the tab, the
-   guide shows the link to open, and a box to copy it. **Cancel** closes
-   the tab and stops waiting. A tailnet that approves devices by hand
-   waits for an admin.
-5. **Hosts**: the account and tailnet, then "Looking for GoRex hosts…"
-   and each host found, with **Connect**. A host that refuses this
-   browser says why and what to run on it.
-
-A host is found when it is your own untagged device, its name ends in
-`-gorex` (built-in Tailscale's default) or it reports itself as GoRex,
-and it answers `GET /api/help` on port 443 within 3 seconds. For a host
-to be found, on the host:
-
-```sh
-gorex rexapi tailscale on                  # sign it in with the same account
-gorex rexapi tailscale status              # wait for https: available
-gorex rexapi web allow <this page's origin>
-```
-
-MagicDNS and HTTPS must be on in the tailnet's admin console. When the
-host lets in only the account that signed it in and this browser signed
-in with another, run `gorex rexapi tailscale on --allow-tailnet-members`
-on the host (the tailnet's access rules then decide).
-
-In this version the sign-in lasts for this tab only: the node is
-ephemeral and kept in memory, so reloading or closing the tab signs this
-browser out, and Tailscale removes the device soon after. Sign Out in
-Settings does the same at once and removes the tailnet hosts from the
-list. A tailnet with Tailnet Lock is not supported, nor a control server
-other than Tailscale's.
-
 ## Mixed content
 
 A page loaded over https may open only https and `wss://` connections:
 browsers block `http://` and `ws://` from it as mixed content. So:
 
-- The hosted page (Cloudflare, https) reaches a host by its tailnet
-  address, `https://<machine>-gorex.<tailnet>.ts.net`, from built-in
-  Tailscale.
+- A hosted https page reaches a host over Direct TLS, `windrex-relay`
+  ([`NET-005`](NET-005-direct-relay.md)), or LAN WebTransport
+  ([`WEB-004`](WEB-004-webtransport.md)).
 - A gateway's local network listener is plain http
   (`http://192.0.2.2:7297`). Reach it from an http page: the local dev
   server.
@@ -343,13 +295,13 @@ npm run dev                  # http://127.0.0.1:5173
 npm run dev -- --port 7478   # another port; --host ADDR to listen elsewhere
 ```
 
-`web/dev.mjs` builds `web/dist` once (`build.mjs`, with its type check), then serves it with esbuild. It bundles `src/` again on every change (not minified, with a source map, split into chunks as the build is), without the type check, and copies `index.html` again when it changes. It rebuilds the Tailscale and Tailcat engines when Go files under `web/tailnet`, `web/tailcat` or `web/jsbridge` change. It prints the `gorex rexapi web allow <origin>` command needed for a host to trust it.
+`web/dev.mjs` builds `web/dist` once (`build.mjs`, with its type check), then serves it with esbuild. It bundles `src/` again on every change (not minified, with a source map, split into chunks as the build is), without the type check, and copies `index.html` again when it changes. It prints the `gorex rexapi web allow <origin>` command needed for a host to trust it.
 
 ## Icons
 
 `web/pwa` holds the SVG favicon and generated PNG icons (`go run ./tools/mkicon -web` rebuilds them from the WindRex master). `index.html` links `pwa/favicon.svg` and `pwa/apple-touch-icon.png`, and the sidebar/host list uses `pwa/icon-192.png`. The build copies these files into `dist/pwa`.
 
-Tailnet file downloads read bytes through the transport into a Blob (capped at 256 MiB, `saveBlob` in `web/src/files.ts`) and save via `<a download>`.
+WebTransport file downloads read bytes through the transport into a Blob (capped at 256 MiB, `saveBlob` in `web/src/files.ts`) and save via `<a download>`.
 
 ## Program tiles
 
@@ -368,10 +320,8 @@ symbols by 0.85, the desktop its SVGs by 1); a row has no status inbox.
 
 ## Build
 
-You need Node 22 or later and Git. The script gets Zig itself. Go (the
-version `go.mod` names) builds the Tailscale engine; without it the build
-skips the engine with a message, and the page works without built-in
-Tailscale.
+You need Node 22 or later and Git. The script gets Zig itself; the web build
+has no Go dependency.
 
 ```sh
 cd web
@@ -404,13 +354,7 @@ npm run build     # node build.mjs; Windows: the same, from PowerShell or Git Ba
    one copy of the themes). It cuts Maple Mono NF CN into chunks (see
    Fonts) and writes them to `dist/assets/lazy`, its index to
    `dist/assets` and its licence to `dist/fonts/MapleMono-OFL.txt`.
-6. With Go, it builds the Tailscale engine (`web/tailnet`,
-   docs/WEB-002-tailscale.md): `GOOS=js GOARCH=wasm`, tsconnect's build tags
-   and five more, `GOEXPERIMENT=nojsonv2`, `-trimpath -ldflags "-s -w"`.
-   It writes only the gzipped module, `dist/assets/lazy/tailnet-<hash>.wasm.gz`
-   (about 6.1 MB; the raw module, about 26 MB, is not shipped), and Go's
-   `wasm_exec.js` as `dist/assets/lazy/tailnet-<hash>.js`.
-7. It bundles the client with esbuild into ES modules, split at each
+6. It bundles the client with esbuild into ES modules, split at each
    `import()` (see Loading on demand), and lists all of these files in
    the asset manifest, `dist/assets/manifest-<hash>.json`, which the
    script names. esbuild runs twice: once to learn the chunks, which the
@@ -698,12 +642,7 @@ once.
   browser, and the picker.
 - `web/src/hosts.ts`: the hosts, kept in the browser; their list and
   form; why a host does not connect (see Hosts).
-- `web/src/tailnet.ts`: built-in Tailscale: loading the engine, the
-  node's state and sign-in, finding hosts in the network map, and the
-  tailnet transport (`SocketLike` and a streamed `Response` over the
-  engine). `web/src/guide.ts`: the sign-in guide. `web/src/progress.ts`:
-  a load's progress bar.
-- `web/tailnet`: the engine, in Go (docs/WEB-002-tailscale.md).
+- `web/src/progress.ts`: a load's progress bar.
 - `web/src/hostconn.ts`: one host's connection (`HostConn`): its
   control connection and reconnect token, the retries and their
   backoff, the sessions and their views, and the titles, programs and

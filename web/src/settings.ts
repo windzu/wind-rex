@@ -16,9 +16,7 @@ import {
 } from "./prefs";
 import { formatDate, formatList, Language, languages, onLanguageChange, PlainKey, setLanguage, t, tIn } from "./i18n";
 import { blockedCJK, ensure, ensureLatin, mapleFamily, noMaple } from "./maple";
-import { formatBytes, ProgressView } from "./progress";
-import type { Tailcat } from "./tailcat";
-import { Status, Tailnet, validDeviceName } from "./tailnet";
+import { ProgressView } from "./progress";
 import { desktopTheme, minimumContrast, Theme } from "./terminal";
 import { loadThemes, ThemeEntry, themeColours, themePicker } from "./themes";
 
@@ -43,14 +41,9 @@ export interface SettingsApp {
   apply(what: "appearance" | "tabs" | "headers" | "animation" | "font" | "cursor" | "contrast" | "glass", reset?: boolean): void;
   /** The dialog closed: the keyboard goes back to the terminal. */
   closed(): void;
-  /** Built-in Tailscale, and its sign-in guide. */
-  tailnet: Tailnet;
-  /** This browser's tailcat device, for the Pairing card. */
-  tailcat: Tailcat;
-  guide(): void;
 }
 
-type Section = "host" | "appearance" | "terminal" | "theme" | "keyboard" | "hosts" | "tailscale" | "about";
+type Section = "host" | "appearance" | "terminal" | "theme" | "keyboard" | "hosts" | "about";
 
 /** The sections, each with the colour of its tile, as the desktop's: macOS's system colours, a hue per kind of setting. */
 const sections: [id: Section, glyph: string, tile: string, label: () => string][] = [
@@ -59,8 +52,6 @@ const sections: [id: Section, glyph: string, tile: string, label: () => string][
   ["theme", "sparkles", "rgb(175, 82, 222)", () => t("settingsTheme")], // purple
   ["keyboard", "keyboard", "rgb(142, 142, 147)", () => t("settingsKeyboard")], // gray
   ["hosts", "monitor", "rgb(52, 199, 89)", () => t("settingsHosts")], // green
-  // A product's name, not translated.
-  ["tailscale", "tailscale", "#1f1e1e", () => "Tailscale"], // the media kit's squircle
   ["about", "info", "rgb(142, 142, 147)", () => t("settingsAbout")], // gray
 ];
 
@@ -202,43 +193,6 @@ function tile(glyph: string, colour: string): HTMLElement {
   return t;
 }
 
-/** Tailscale's state, as a chip's words and dot. */
-const tsLabels: Record<Status, PlainKey> = {
-  off: "tsStateOff", loading: "tsStateLoading", "load-failed": "tsStateLoadFailed", "in-use-other-tab": "tsStateOtherTab",
-  starting: "tsStateStarting", "needs-login": "tsStateNeedsLogin", "signing-in": "tsStateSigningIn",
-  "needs-approval": "tsStateApproval", running: "linkConnected", expired: "tsStateExpired", locked: "tsStateLocked",
-  error: "tsStateError",
-};
-const chipState: Record<Status, LinkState> = {
-  off: "none", loading: "connecting", "load-failed": "unreachable", "in-use-other-tab": "none",
-  starting: "connecting", "needs-login": "none", "signing-in": "connecting", "needs-approval": "connecting",
-  running: "connected", expired: "unreachable", locked: "unreachable", error: "unreachable",
-};
-
-/** The words under Tailscale's status. */
-function statusHint(ts: Tailnet): string {
-  switch (ts.status()) {
-    case "running":
-      return ts.statusText();
-    case "load-failed":
-      return ts.load.state === "failed" ? ts.load.message : "";
-    case "in-use-other-tab":
-      return t("tsHintOtherTab");
-    case "needs-approval":
-      return t("tsHintApproval", { name: ts.name });
-    case "expired":
-      return t("tsHintExpired");
-    case "locked":
-      return t("tsHintLocked");
-    case "error":
-      return ts.error;
-    case "needs-login":
-      return t("tsHintNeedsLogin");
-    default:
-      return "";
-  }
-}
-
 const stateKeys: Record<LinkState, PlainKey> = {
   none: "linkNone", connecting: "linkConnecting", connected: "linkConnected", unreachable: "linkUnreachable",
 };
@@ -338,9 +292,7 @@ export class Settings {
   update() {
     if (!this.dialog.open) return;
     this.drawNav();
-    // The Tailscale page follows the node, but not under a name being typed.
-    const typing = document.activeElement instanceof HTMLInputElement && this.page.contains(document.activeElement);
-    if (this.section === "host" || (this.section === "hosts" && !this.editing) || (this.section === "tailscale" && !typing)) {
+    if (this.section === "host" || (this.section === "hosts" && !this.editing)) {
       const key = (document.activeElement as HTMLElement | null)?.dataset?.key;
       const top = this.scroll.scrollTop;
       this.drawPage();
@@ -425,8 +377,6 @@ export class Settings {
         return this.keyboardPage();
       case "hosts":
         return this.hostsPage();
-      case "tailscale":
-        return this.tailscalePage();
       case "about":
         return this.aboutPage();
     }
@@ -461,13 +411,10 @@ export class Settings {
     buttons.append(actions);
     card.append(buttons);
 
-    // A tailcat host's trust is the device key, not this page's origin: no allow command applies.
-    if (host?.kind !== "tailcat") {
-      const trust = group(this.page, t("trustTitle"), t("trustNote"), t("trustFoot"));
-      const r = el("div", "settings-row");
-      r.append(commandBox(allowCommand()));
-      trust.append(r);
-    }
+    const trust = group(this.page, t("trustTitle"), t("trustNote"), t("trustFoot"));
+    const r = el("div", "settings-row");
+    r.append(commandBox(allowCommand()));
+    trust.append(r);
   }
 
   private appearancePage() {
@@ -909,159 +856,6 @@ export class Settings {
     const actions = el("div", "settings-row");
     actions.append(add);
     card.append(actions);
-    this.pairingCard();
-  }
-
-  /**
-   * This browser's tailcat device (docs/WEB-006-tailcat.md): its name, as a
-   * pairing request asks with it; its public key, to compare with what a
-   * host lists; and whether the key is kept across reloads. Shown only
-   * once a tailcat host exists.
-   */
-  private pairingCard() {
-    if (!this.app.hosts.hosts.some((h) => h.kind === "tailcat")) return;
-    const tc = this.app.tailcat;
-    const card = group(this.page, t("tcPairingCard"), t("tcPairingCardNote"));
-    const input = el("input", "theme-search settings-name");
-    input.value = tc.name;
-    input.spellcheck = false;
-    input.autocomplete = "off";
-    input.setAttribute("aria-label", t("tsDeviceName"));
-    const error = el("div", "host-error");
-    input.onchange = () => {
-      const v = input.value.trim();
-      if (!validDeviceName(v)) {
-        error.textContent = t("tsDeviceInvalid");
-        return;
-      }
-      error.textContent = "";
-      tc.rename(v);
-    };
-    row(card, t("tsDeviceName"), "", input).append(error);
-    if (tc.publicKey) {
-      row(card, t("tcDeviceKey"), t("tcDeviceKeyHint"));
-      const r = el("div", "settings-row");
-      r.append(commandBox(tc.publicKey));
-      card.append(r);
-    } else {
-      row(card, t("tcDeviceKey"), t("tcDeviceKeyHint"), el("code", "settings-value", t("tcKeyPending")));
-    }
-    const persistToggle = toggle(t("tcKeepKey"), tc.persist, (on) => void tc.setPersist(on));
-    persistToggle.dataset.key = "tc-persist";
-    row(card, t("tcKeepKey"), t("tcKeepKeyHint"), persistToggle);
-  }
-
-  /**
-   * Built-in Tailscale (docs/WEB-002-tailscale.md, Signing in): on or off, its
-   * state and account, this device's name, the hosts it found, and how
-   * long the sign-in lasts in this version.
-   */
-  private tailscalePage() {
-    const ts = this.app.tailnet;
-    const status = ts.status();
-    const card = group(this.page);
-    const top = el("div", "settings-row settings-hero");
-    const glyph = el("span", "settings-hero-icon ts-tile");
-    glyph.append(icon("tailscale"));
-    const text = el("span", "settings-hero-text");
-    const sub =
-      status === "off" ? t("tsOffNote")
-      : status === "running" ? t("tsThisDevice", { name: ts.name }) + (ts.map?.self.address ? t("listSeparator") + ts.map.self.address : "")
-      : ts.statusText();
-    text.append(el("span", "settings-hero-name", t("tsBuiltIn")), el("span", "settings-hint", sub));
-    const sw = toggle(t("tsBuiltIn"), status !== "off", (on) => {
-      if (on) {
-        ts.turnOn();
-        this.app.guide();
-      } else {
-        ts.turnOff();
-      }
-    });
-    sw.dataset.key = "switch";
-    top.append(glyph, text, sw);
-    card.append(top);
-    if (status !== "off") {
-      const chip = el("span", `settings-chip ${chipState[status]}`);
-      chip.append(el("i", `state-dot ${chipState[status]}`), el("span", "", t(tsLabels[status])));
-      row(card, t("tsStatus"), statusHint(ts), chip);
-      if (status === "running") {
-        row(card, t("tsAccount"), "", el("span", "settings-value", ts.account || t("tsUnknown")));
-        if (ts.map?.tailnet) row(card, t("tsTailnet"), "", el("span", "settings-value", ts.map.tailnet));
-        const n = ts.hosts.length;
-        row(card, t("tsHosts"), "", el("span", "settings-value", n ? t("tsFound", { n }) : ts.searching ? t("tsLooking") : t("tsNoneFound")));
-      }
-      if (ts.load.state === "loading" && ts.load.total) {
-        const received = formatBytes(ts.load.received), total = formatBytes(ts.load.total);
-        row(card, t("tsDownload"), "", el("span", "settings-value", t("progressOf", { received, total })));
-      }
-      const actions = el("div", "host-buttons");
-      if (status === "running" || status === "locked" || status === "needs-approval") {
-        const out = button(t("tsSignOut"), "host-add danger");
-        out.dataset.key = "signout";
-        out.prepend(icon("log-out"));
-        out.onclick = () => ts.signOut();
-        actions.append(out);
-      }
-      if (status === "in-use-other-tab") {
-        const take = button(t("tsTakeOver"), "host-add primary");
-        take.dataset.key = "takeover";
-        take.onclick = () => void ts.takeOver();
-        actions.append(take);
-      } else {
-        const label = status === "running" ? t("tsShowHosts") : status === "load-failed" ? t("commonTryAgain") : t("tsSignIn");
-        const guide = button(label, status === "running" ? "host-add" : "host-add primary");
-        guide.dataset.key = "guide";
-        if (status !== "running") guide.prepend(icon(status === "load-failed" ? "rotate-ccw" : "log-in"));
-        guide.onclick = () => {
-          if (status === "load-failed") ts.turnOn();
-          this.app.guide();
-        };
-        actions.append(guide);
-      }
-      const r = el("div", "settings-row");
-      r.append(actions);
-      card.append(r);
-    }
-
-    const persistCard = group(this.page);
-    const persistToggle = toggle(t("tsStaySignedIn"), ts.persist, (on) => void ts.setPersist(on));
-    persistToggle.dataset.key = "persist";
-    row(persistCard, t("tsStaySignedIn"), t("tsStaySignedInHint"), persistToggle);
-
-    const dev = group(this.page, "", "", t("tsDeviceFoot"));
-    const input = el("input", "theme-search settings-name");
-    input.value = ts.name;
-    input.spellcheck = false;
-    input.autocomplete = "off";
-    input.setAttribute("aria-label", t("tsDeviceName"));
-    const error = el("div", "host-error");
-    input.onchange = () => {
-      const v = input.value.trim();
-      if (!validDeviceName(v)) {
-        error.textContent = t("tsDeviceInvalid");
-        return;
-      }
-      error.textContent = "";
-      ts.rename(v).catch((e) => (error.textContent = t("tsRenameFailed", { error: e instanceof Error ? e.message : String(e) })));
-    };
-    row(dev, t("tsDeviceName"), "", input).append(error);
-
-    this.page.append(el("div", "settings-hint settings-note", t("tsNote")));
-    // Both extras stay closed: how it works, and the command a computer may ask for.
-    const extra = group(this.page);
-    const more = el("details", "settings-more");
-    const moreHead = el("summary");
-    moreHead.append(icon("info"), el("span", "", t("problemLearnMore")));
-    more.append(moreHead, el("p", "settings-hint", t("tsMoreFind")), el("p", "settings-hint", t("tsMoreTab")));
-    const trust = el("details", "settings-more");
-    const trustHead = el("summary");
-    trustHead.append(icon("shield-check"), el("span", "", t("tsTrustAsk")));
-    trust.append(trustHead, el("p", "settings-hint", t("tsTrustNote")), commandBox(allowCommand()));
-    for (const d of [more, trust]) {
-      const r = el("div", "settings-row");
-      r.append(d);
-      extra.append(r);
-    }
   }
 
   private aboutPage() {

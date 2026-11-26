@@ -44,18 +44,6 @@ export interface Prefs {
   themeColors?: number[];
   /** Copies a selection to the clipboard as it is made, as the desktop's Copy on selection. */
   copyOnSelect: boolean;
-  /** Built-in Tailscale's device name, "" for a new gorex-web-xxxx per tab (tailnet.ts). */
-  tailscaleName: string;
-  /** Whether built-in Tailscale stays signed in across reloads ("Stay signed in") or is ephemeral ("This tab only"). */
-  tailscalePersist: boolean;
-  /** Whether built-in Tailscale was left on while staying signed in, so reloads turn it back on. */
-  tailscaleOn: boolean;
-  /** Whether a persistent Tailscale node has ever completed sign-in (so a later NeedsLogin means expired/revoked). */
-  tailscaleSignedIn: boolean;
-  /** The tailcat device name pairing asks with, "" for a new web-xxxx per tab (tailcat.ts). */
-  tailcatName: string;
-  /** Whether the tailcat device key is kept in IndexedDB or lives this tab only (tailcat.ts). */
-  tailcatPersist: boolean;
   /** The page's language, as "zh-Hans", or "" for System: the browser's languages (i18n.ts). */
   language: string;
   /** User-edited keyboard shortcut overrides by command id (keys.ts). */
@@ -117,12 +105,6 @@ const defaults = (): Prefs => ({
   minimumContrast: 0,
   theme: standardTheme,
   copyOnSelect: false,
-  tailscaleName: "",
-  tailscalePersist: true,
-  tailscaleOn: false,
-  tailscaleSignedIn: false,
-  tailcatName: "",
-  tailcatPersist: true,
   language: "",
 });
 
@@ -150,12 +132,6 @@ function load(): Prefs {
         p.themeColors = j.themeColors;
       }
       p.copyOnSelect = j.copyOnSelect === true;
-      if (typeof j.tailscaleName === "string") p.tailscaleName = j.tailscaleName;
-      if (typeof j.tailscalePersist === "boolean") p.tailscalePersist = j.tailscalePersist;
-      p.tailscaleOn = j.tailscaleOn === true;
-      p.tailscaleSignedIn = j.tailscaleSignedIn === true;
-      if (typeof j.tailcatName === "string") p.tailcatName = j.tailcatName;
-      if (typeof j.tailcatPersist === "boolean") p.tailcatPersist = j.tailcatPersist;
       if (typeof j.language === "string") p.language = j.language;
       Object.assign(p, glassPrefs(j));
       if (j.shortcuts && typeof j.shortcuts === "object" && !Array.isArray(j.shortcuts)) {

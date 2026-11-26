@@ -5,19 +5,16 @@
 // asks for (fetched into a cache when ZIG is not set), and the
 // TypeScript client, bundled by esbuild. web/dist is served by static
 // hosts and by the local dev server (dev.mjs).
-// It also builds the tailnet engine (web/tailnet, docs/WEB-002-tailscale.md)
-// with Go, when Go is installed: a page built without Go works, with no
-// built-in Tailscale.
 //
 // The large files go in dist/assets under names that carry a hash of
 // their content (app-<hash>.js and its code chunks, ghostty-vt-<hash>.wasm,
 // manifest-<hash>.json; in assets/lazy, ghostty-themes-<hash>.json,
-// tailnet-<hash>.*, maple-*), which _headers keeps a year: a reload takes
+// maple-*), which _headers keeps a year: a reload takes
 // them from the browser's cache. index.html names the script, and the
 // script names the asset manifest (assetDefines), which lists every file
 // the page loads by name (src/loader.ts; docs/REF-007-web-client.md, Loading on
 // demand): the code chunks esbuild cuts at each import(), the terminal's
-// wasm, the themes, the Tailscale engine, and the terminal's CJK font,
+// wasm, the themes, and the terminal's CJK font,
 // Maple Mono NF CN, cut into chunks by web/fonts/maple.mjs.
 //
 // Before tsc it checks the catalogs of web/locales and writes
@@ -32,14 +29,12 @@
 // $GOREX_WEB_DIST builds into another directory than web/dist, as a check
 // beside a dev server that serves web/dist. The cache is $GOREX_WEB_CACHE, else $XDG_CACHE_HOME/gorex-web, else
 // ~/.cache/gorex-web. See docs/REF-007-web-client.md.
-import { execFile, execFileSync, execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
-import { gzipSync } from "node:zlib";
 import { faces as mapleFaces, family as mapleFamily, mapleChunks } from "./fonts/maple.mjs";
 import { generateOrFail } from "./i18n.mjs";
 
@@ -171,68 +166,6 @@ async function wasm() {
   return out;
 }
 
-/**
- * The tailnet engine's build tags: tsconnect's own list, read from the
- * pinned tailscale.com so a bump keeps it current, and five features the
- * web node does not need (docs/WEB-002-tailscale.md, Build and size).
- */
-const extraTags = ["ts_omit_c2n", "ts_omit_dns", "ts_omit_health", "ts_omit_ipnbus", "ts_omit_logtail"];
-
-/** The largest file Cloudflare Workers serves as a static asset. */
-const assetLimit = 25 * 1024 * 1024;
-
-/**
- * Builds a wasm engine of web/ (tailnet or tailcat): the module, gzipped
- * (only the compressed file is shipped, under Cloudflare's 25 MiB a file,
- * and the page unpacks it with DecompressionStream), and Go's
- * wasm_exec.js of the same toolchain, which addEngine lists in the
- * manifest. Without Go it returns undefined; a build that fails throws.
- */
-export async function buildEngine(pkg) {
-  const run = promisify(execFile);
-  const go = process.env.GO || "go";
-  let goroot, version;
-  try {
-    goroot = (await run(go, ["env", "GOROOT"], { cwd: root })).stdout.trim();
-    version = (await run(go, ["env", "GOVERSION"], { cwd: root })).stdout.trim();
-  } catch {
-    console.warn(`${pkg} engine: skipped, Go is not installed (the page builds without it; see docs/WEB-002-tailscale.md)`);
-    return undefined;
-  }
-  const started = Date.now();
-  const tags = (await run(go, ["run", "./web/tailnet/tags/tags.go"], { cwd: root })).stdout.trim();
-  const tmp = mkdtempSync(join(tmpdir(), `gorex-${pkg}-`));
-  try {
-    const out = join(tmp, `${pkg}.wasm`);
-    const env = { ...process.env, GOOS: "js", GOARCH: "wasm", CGO_ENABLED: "0", GOEXPERIMENT: "nojsonv2" };
-    console.log(`> GOOS=js GOARCH=wasm GOEXPERIMENT=nojsonv2 go build -trimpath -ldflags "-s -w" -tags <tsconnect's,${extraTags.join(",")}> ./web/${pkg}`);
-    await run(go, ["build", "-trimpath", "-ldflags", "-s -w", "-tags", [tags, ...extraTags].join(","), "-o", out, `./web/${pkg}`], {
-      cwd: root, env, maxBuffer: 16 << 20,
-    });
-    const raw = readFileSync(out);
-    const gz = gzipSync(raw, { level: 9 });
-    if (gz.length > assetLimit) throw new Error(`the gzipped ${pkg} engine is ${gz.length} bytes, over Cloudflare's ${assetLimit}`);
-    const exec = readFileSync(join(goroot, "lib", "wasm", "wasm_exec.js"));
-    const mb = (n) => (n / 1e6).toFixed(2) + " MB";
-    console.log(`${pkg} engine: ${version}, ${mb(gz.length)} gzipped (${mb(raw.length)} raw), ${((Date.now() - started) / 1000).toFixed(1)} s`);
-    return { engine: gz, exec };
-  } catch (e) {
-    throw new Error(`${pkg} engine: ${e.stderr || e.message}`);
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
-}
-
-/** Builds the tailnet engine (buildEngine). */
-export async function buildTailnet() {
-  return buildEngine("tailnet");
-}
-
-/** Builds the tailcat engine (buildEngine). */
-export async function buildTailcat() {
-  return buildEngine("tailcat");
-}
-
 /** The client's commit, short, with "-dirty" for uncommitted changes; "" outside a checkout. */
 function commit() {
   try {
@@ -241,31 +174,6 @@ function commit() {
   } catch {
     return "";
   }
-}
-
-/**
- * Lists a wasm engine (buildEngine) in the manifest, lazy: the page loads
- * it only when it needs it (<pkg>/engine, the gzipped module;
- * <pkg>/exec, wasm_exec.js). The engine files the manifest listed
- * before go.
- */
-export function addEngine(dir, manifest, pkg, en) {
-  for (const n of [`${pkg}/engine`, `${pkg}/exec`]) {
-    const had = manifest.assets[n];
-    if (had) rmSync(join(dir, had.url), { force: true });
-  }
-  manifest.add(dir, `${pkg}/engine`, en.engine, pkg, ".wasm.gz", "data", true);
-  manifest.add(dir, `${pkg}/exec`, en.exec, pkg, ".js", "script", true);
-}
-
-/** Lists the tailnet engine in the manifest (addEngine). */
-export function addTailnet(dir, manifest, tn) {
-  addEngine(dir, manifest, "tailnet", tn);
-}
-
-/** Lists the tailcat engine in the manifest (addEngine). */
-export function addTailcat(dir, manifest, tc) {
-  addEngine(dir, manifest, "tailcat", tc);
 }
 
 /**
@@ -474,12 +382,6 @@ async function main() {
   manifest.add(dist, "ghostty-themes", readFileSync(join(root, "ios", "GoRex", "ghostty-themes.json")), "ghostty-themes", ".json", "json", true);
   mkdirSync(join(dist, "fonts"));
   await addMaple(dist, manifest);
-  // Built-in Tailscale's engine, which the page loads only when the user turns it on.
-  const tn = await buildTailnet();
-  if (tn) addTailnet(dist, manifest, tn);
-  // The tailcat engine, which the page loads only when a tailcat host needs it.
-  const tc = await buildTailcat();
-  if (tc) addTailcat(dist, manifest, tc);
   const appName = await buildApp(manifest);
   const page = readFileSync(join(web, "index.html"), "utf8");
   if (!page.includes('src="app.js"')) throw new Error('index.html has no <script src="app.js">');
@@ -501,10 +403,8 @@ async function main() {
 }
 
 /**
- * Writes files.json at the root of dist so clients (such as Rex Go's
- * hotspot share) can download and verify the static web client without
- * embedding it in their own bundle. Built-in Tailscale assets are marked
- * optional because the phone forwards to hosts directly.
+ * Writes files.json at the root of dist so static hosts or clients can
+ * download and verify the web client files by SHA-256.
  */
 function writeFileIndex(dir) {
   const files = [];
@@ -518,13 +418,11 @@ function writeFileIndex(dir) {
       const rel = relative(dir, full).split("\\").join("/");
       if (rel === "_headers" || rel === "files.json" || rel === "sw.js") continue;
       const data = readFileSync(full);
-      const entry = {
+      files.push({
         path: rel,
         bytes: data.length,
         sha256: createHash("sha256").update(data).digest("hex"),
-      };
-      if (rel.startsWith("assets/lazy/tailnet-") || rel.startsWith("assets/lazy/tailcat-")) entry.optional = true;
-      files.push(entry);
+      });
     }
   };
   walk(dir);

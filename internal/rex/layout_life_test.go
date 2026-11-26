@@ -302,7 +302,7 @@ func TestTeleportWithoutWindow(t *testing.T) {
 		}
 		remote.Close()
 	})
-	writeFile(t, filepath.Join(src.dir, "hosts.json"), `{"hosts":[{"id":"h1","name":"dst","address":" tcDST "},{"id":"h2","name":"x","address":"tcX"}]}`)
+	writeFile(t, filepath.Join(src.dir, "hosts.json"), `{"hosts":[{"id":"h1","name":"dst","address":" https://dst.example.com:7443/#k=tok1 "},{"id":"h2","name":"x","address":"https://other.example.com:7443/#k=tok2"}]}`)
 	local, sid := shellIn(t, src, filepath.Join(work, "sub"))
 	seed(t, local,
 		layout.Tab{ID: "first", Name: "work", Root: &layout.Node{SID: sid, Name: "shell"}},
@@ -333,14 +333,14 @@ func TestTeleportWithoutWindow(t *testing.T) {
 	}
 	src.cmdMu.Unlock()
 	headless := must(local.Create(CreateOptions{Command: []string{"/bin/sh"}, Dir: work}))
-	if res, _ := local.Command(LayoutCommand{Op: "pane.teleported", SID: headless.ID, Target: in.ID, Host: "tcNONE"}); res.Code != "pane_not_found" {
+	if res, _ := local.Command(LayoutCommand{Op: "pane.teleported", SID: headless.ID, Target: in.ID, Host: "https://none.example.com:7443/#k=tok"}); res.Code != "pane_not_found" {
 		t.Errorf("a session no pane has: %+v", res)
 	}
-	if res, _ := local.Command(LayoutCommand{Op: "pane.teleported", SID: sid, Target: in.ID, Host: "tcNONE"}); res.Code != "host_not_found" {
+	if res, _ := local.Command(LayoutCommand{Op: "pane.teleported", SID: sid, Target: in.ID, Host: "https://none.example.com:7443/#k=tok"}); res.Code != "host_not_found" {
 		t.Errorf("a host hosts.json lacks: %+v", res)
 	}
-	command(t, local, LayoutCommand{Op: "pane.teleporting", SID: sid, Target: in.ID, Host: "tcDST"})
-	res := command(t, local, LayoutCommand{Op: "pane.teleported", SID: sid, Target: in.ID, Host: "tcDST"})
+	command(t, local, LayoutCommand{Op: "pane.teleporting", SID: sid, Target: in.ID, Host: "https://dst.example.com:7443/#k=tok1"})
+	res := command(t, local, LayoutCommand{Op: "pane.teleported", SID: sid, Target: in.ID, Host: "https://dst.example.com:7443/#k=tok1"})
 	w := storeOf(t, local).Sessions[0]
 	var ids []string
 	for _, x := range w.Tabs {
@@ -473,25 +473,25 @@ func TestKilledPaneGoesAtOnce(t *testing.T) {
 // does once it shows the session.
 func TestTeleportPending(t *testing.T) {
 	s, c := applyFixture(t)
-	writeFile(t, filepath.Join(s.dir, "hosts.json"), `{"hosts":[{"id":"h1","address":"tcDST"}]}`)
+	writeFile(t, filepath.Join(s.dir, "hosts.json"), `{"hosts":[{"id":"h1","address":"https://dst.example.com:7443/#k=tok1"}]}`)
 	cmd, dir := testShell()
 	one := command(t, c, LayoutCommand{Op: "tab.create", Dir: dir, Command: cmd})
-	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: one.New, Target: "remote1", Host: "tcDST"})
+	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: one.New, Target: "remote1", Host: "https://dst.example.com:7443/#k=tok1"})
 	if tp := storeOf(t, c).Teleports; len(tp) != 1 || tp[0] != (layout.Teleport{Host: "h1", SID: "remote1", From: one.New}) {
 		t.Fatalf("the teleports %+v", tp)
 	}
-	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: one.New, Host: "tcDST"})
+	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: one.New, Host: "https://dst.example.com:7443/#k=tok1"})
 	if tp := storeOf(t, c).Teleports; len(tp) != 0 {
 		t.Errorf("a failed teleport stays: %+v", tp)
 	}
-	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: one.New, Target: "remote2", Host: "tcDST"})
-	command(t, c, LayoutCommand{Op: "pane.teleported", SID: one.New, Target: "remote2", Host: "tcDST"})
+	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: one.New, Target: "remote2", Host: "https://dst.example.com:7443/#k=tok1"})
+	command(t, c, LayoutCommand{Op: "pane.teleported", SID: one.New, Target: "remote2", Host: "https://dst.example.com:7443/#k=tok1"})
 	st := storeOf(t, c)
 	if _, ok := findLeaf(&st, hostLeaf("h1", "remote2")); !ok || len(st.Teleports) != 0 {
 		t.Errorf("after the teleport: %s", must(c.Layout()))
 	}
 	two := command(t, c, LayoutCommand{Op: "tab.create", Dir: dir, Command: cmd})
-	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: two.New, Target: "remote3", Host: "tcDST"})
+	command(t, c, LayoutCommand{Op: "pane.teleporting", SID: two.New, Target: "remote3", Host: "https://dst.example.com:7443/#k=tok1"})
 	c.Kill(two.New)
 	if tp := storeOf(t, c).Teleports; len(tp) != 0 {
 		t.Errorf("the teleport of a session that ended stays: %+v", tp)

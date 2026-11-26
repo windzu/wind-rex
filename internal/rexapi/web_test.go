@@ -278,7 +278,7 @@ func TestWebCommand(t *testing.T) {
 	t.Setenv("GOREX_DIR", t.TempDir())
 	t.Setenv("GOREX_REXAPI_SOCKET", shortSocket(t))
 	quiet(t)
-	dir := TailnetDir()
+	dir := StateDir()
 	for _, step := range []struct {
 		args []string
 		code int

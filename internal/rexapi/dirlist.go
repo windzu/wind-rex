@@ -11,7 +11,7 @@ import (
 // (rex.CapabilityDirList). It is allowed to the callers that may take a
 // file with download_begin, the server's file.get, which reads any path
 // as the server's user already; they are those of session.create: no
-// transport limits it, as server.stop and server.tailscale.* are, and a
+// transport limits it, as server.stop is, and a
 // stopping gateway refuses it as it does session.create. The welcome
 // lists featureDirList when the server lists directories.
 

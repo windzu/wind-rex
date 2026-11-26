@@ -364,8 +364,7 @@ func (mp *mapper) build(raw json.RawMessage, host string, owners map[string]stri
 }
 
 // desktopWorkspace projects the live sessions that a remote desktop made
-// here (rex.SessionInfo.Owner: a system Tailscale peer of this machine's
-// Tailscale user, or a paired tailcat client, which see every session)
+// here (rex.SessionInfo.Owner)
 // and that have no local tab, so that a client can open them, as one of the desktop's spaces too
 // (remoteBlock). It only changes the Rex view, never the saved GoRex
 // layout.

@@ -3,7 +3,7 @@ name: IOS-006
 description: "Rex Go shows a terminal in the Dynamic Island and on the Lock Screen through Live Activities. Use when you change Live Activities or their line."
 metadata:
   created: "2026-11-17"
-  updated: "2026-11-22"
+  updated: "2026-11-26"
 ---
 
 # IOS-006: Rex Go: Live Activities for sessions
@@ -51,7 +51,7 @@ The statements below carry one of three marks:
 - The session server parses the reports from the output of each session and keeps the records (`internal/rex/status.go`). It keeps at most 64 records for each session. A title has up to 192 bytes. A message has up to 2048 bytes. A prompt (OSC 133;A) or a reset drops all records except `done` and `error`. These two stay until the user sees them. `MostUrgent` picks the record that needs the user most (`status.go`, `StatusRank`: blocked > error > done > working > idle). Records survive an in-place upgrade. They do not survive a restart. **[code]**
 - The gateway emits the block events `program_status_changed` and `program_status_removed` when the records of a block change (`internal/rexapi/events_blocks.go`). **[code]**
 - Rex Go keeps one control connection for each host with `event_scope: all` (`ios/GoRex/Rex/Host.swift`, `bootstrap`). It decodes the records into `Host.ProgramStatus`. It calls `Host.blocked` when a record turns blocked. `Notifier` posts the local notification. `Host.inbox` (`ios/GoRex/Rex/Inbox.swift`) lists each window by its most urgent record. `seen` (which done and error records the user looked at) stays on the phone, apart from the own record of the server. **[code]**
-- Rex Go has no background modes, no entitlements for this, and no push (`ios/project.yml`). Before phase 1, it asked for background time (`beginBackgroundTask`) in only two cases. The first case is to finish a write as it left (`WidgetPublisher.flush`). The second case is to keep sharing over a hotspot for a while (`HotspotShare`). Its built-in Tailscale stops with it ([IOS-001-tailnet.md](IOS-001-tailnet.md), Non-goals). No code stops the engine on leaving. It therefore runs as long as the app does, a background task included. **[code]**
+- Rex Go has no background modes, no entitlements for this, and no push (`ios/project.yml`). Before phase 1, it asked for background time (`beginBackgroundTask`) to finish a write as it left (`WidgetPublisher.flush`). Built-in Tailscale and Hotspot Share were later removed in [`NET-009`](NET-009-remove-tailscale.md). **[code]**
 
 In the foreground, the state is current to within the watch interval of the gateway. In the background, the state is current for a few seconds, then not at all. The host always knows the state, because its records do not depend on the phone.
 
@@ -259,7 +259,7 @@ These are the options for updates while Rex Go is suspended:
 
 - Silent (background) pushes wake the app. But Apple asks for no more than two or three each hour, and may hold them back. They need a relay anyway. **[doc]** [Background updates](https://developer.apple.com/documentation/usernotifications/pushing-background-updates-to-your-app)
 - Background App Refresh runs when iOS decides, often hours apart, for seconds. This is not enough to start the engine, reach a host and update.
-- A Packet Tunnel extension runs in the background and could hold the host connections. It needs the system VPN, which [IOS-001-tailnet.md](IOS-001-tailnet.md) removed on purpose. It has a tight memory limit. It is not verified if it can call ActivityKit. **[assumption]** Rejected.
+- A Packet Tunnel extension runs in the background and could hold the host connections. It needs the system VPN, which WindRex deliberately avoids ([`NET-005`](NET-005-direct-relay.md), [`NET-009`](NET-009-remove-tailscale.md)). It has a tight memory limit. It is not verified if it can call ActivityKit. **[assumption]** Rejected.
 
 ## Tests
 

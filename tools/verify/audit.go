@@ -24,10 +24,9 @@ import (
 // with findings, so its output, not its exit code, is the result.
 const deadcodeTool = "golang.org/x/tools/cmd/deadcode@v0.53.0"
 
-// deadcodeBlind are packages whose callers deadcode cannot see: web/tailnet
-// runs as wasm behind the web client's JavaScript. A function there with no
-// Go caller is not dead.
-var deadcodeBlind = []string{"web/tailnet/"}
+// deadcodeBlind are packages whose callers deadcode cannot see (for example
+// js/wasm packages called from JavaScript). None remain today.
+var deadcodeBlind []string
 
 // deadcodeFinding reads one `path:line:col: unreachable func: name` line.
 var deadcodeFinding = regexp.MustCompile(`^(.+?):(\d+):(\d+): unreachable func: (.+)$`)

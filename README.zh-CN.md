@@ -69,7 +69,7 @@ flowchart LR
 
     IOS -->|蜂窝 / Wi-Fi 直连| DIRECT
     IOS -->|主机位于 NAT 后| RELAY
-    MAC -->|直连 / Tailscale / Tailcat| GW
+    MAC -->|直连 TLS / 中继| GW
     WEB -->|WebSocket| GW
     DIRECT --> GW
     RELAY <-->|出站 WSS 隧道| GW
@@ -165,12 +165,12 @@ go build -o build/wind-rex .
 ./build/wind-rex rexapi direct off      # 关闭直连 / 中继接入
 ```
 
-此外，WindRex 同样保留了局域网配对（详见 [`docs/REF-005-rex-api.md`](docs/REF-005-rex-api.md)）；iOS 内置 Tailscale、Tailcat 与个人热点共享已按 [`docs/NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md) 移除。
+此外，WindRex 同样保留了局域网配对（详见 [`docs/REF-005-rex-api.md`](docs/REF-005-rex-api.md)）；内置 Tailscale、Tailcat 与个人热点共享已按 [`docs/NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md) 在各端全面移除。
 
 ### 3. 在 iOS、桌面或 Web 端完成连接
 
 - **iPhone / iPad**：打开 **WindRex → 远程主机 → 添加主机**，扫描主机打印的二维码（或粘贴 `https://.../#k=<token>&p=<cert_pin>&n=alice-laptop` 链接）。Bearer Token 会保存在系统 Keychain 中，每次 TLS 握手均校验固定证书指纹。
-- **桌面连远程主机**：打开 **设置 › 远程主机 → 添加远程主机…**，或在 **设置 › 服务器** 中启用 Tailscale 发现。
+- **桌面连远程主机**：打开 **设置 › 远程主机 → 添加远程主机…**，粘贴主机的直连 TLS 或中继配对链接。
 - **Web 端**：在 `web/` 下运行 `npm ci && npm run dev`，在浏览器中打开本地地址并在 **设置 › 主机** 中添加主机网关地址（或通过 `?host=<gateway-url>` 快速连接）。如需独立部署 Web 端，请在主机上配置 `WINDREX_WEB_ORIGIN`。
 
 ## 常用桌面快捷键

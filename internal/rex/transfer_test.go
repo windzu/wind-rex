@@ -19,8 +19,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"tailscale.com/types/key"
 )
 
 // transferSession starts a session of c's in dir, which the local
@@ -85,7 +83,7 @@ func TestFileRoundTrip(t *testing.T) {
 	s, _ := testServer(t)
 	local := pipe(s, "")
 	t.Cleanup(func() { _ = local.Close() })
-	alice := key.NewNode().Public().String()
+	alice := "peer-alice"
 	remote := pipe(s, alice)
 	defer remote.Close()
 	data := bytes.Repeat([]byte("gorex "), 100_000)
@@ -140,7 +138,7 @@ func TestFileRoundTrip(t *testing.T) {
 
 func TestFileNoSession(t *testing.T) {
 	s, _ := testServer(t)
-	bc := pipe(s, key.NewNode().Public().String())
+	bc := pipe(s, "peer-bob")
 	defer bc.Close()
 	dir := t.TempDir()
 	if _, _, _, err := put(bc, "nope", dir, "a.txt", "id", "", []byte("a")); err == nil || !strings.Contains(err.Error(), "no session") {

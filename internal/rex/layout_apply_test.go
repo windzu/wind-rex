@@ -1036,7 +1036,7 @@ func TestSetLayoutLegacyRevs(t *testing.T) {
 // none.
 func TestShowFocusedCreate(t *testing.T) {
 	s, c := applyFixture(t)
-	writeFile(t, filepath.Join(s.dir, "hosts.json"), `{"hosts":[{"id":"h1","address":"tcDST"}]}`)
+	writeFile(t, filepath.Join(s.dir, "hosts.json"), `{"hosts":[{"id":"h1","address":"https://dst.example.com:7443/#k=tok1"}]}`)
 	raw, _ := json.Marshal(layout.Store{Version: layout.Version, Sessions: []layout.Workspace{{ID: "w"}, {ID: "x"}}, Windows: []string{"w"}})
 	if err := c.SetLayout(raw); err != nil {
 		t.Fatal(err)
@@ -1055,7 +1055,7 @@ func TestShowFocusedCreate(t *testing.T) {
 	split := command(t, c, LayoutCommand{Op: "pane.split", SID: one.New, Dir: dir, Command: cmd})
 	command(t, c, LayoutCommand{Op: "pane.move", SID: split.New, NewTab: true})
 	show("pane.move to a new tab", "")
-	command(t, c, LayoutCommand{Op: "pane.teleported", SID: split.New, Target: "remote1", Host: "tcDST"})
+	command(t, c, LayoutCommand{Op: "pane.teleported", SID: split.New, Target: "remote1", Host: "https://dst.example.com:7443/#k=tok1"})
 	show("pane.teleported", "")
 	command(t, c, LayoutCommand{Op: "tab.create", Space: "x", Dir: dir, Command: cmd, Focus: true})
 	show("a focused tab.create in a hidden space", "x")

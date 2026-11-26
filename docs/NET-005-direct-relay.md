@@ -8,9 +8,9 @@ metadata:
 
 # NET-005: Direct TLS and stateless relay transport
 
-Status: phase 1 built (#22); phase 2 desktop GUI built (#25); phase 3 superseded by [`NET-009`](NET-009-remove-tailscale.md) (iOS built-in Tailscale removed).
+Status: phase 1 built (#22); phase 2 desktop GUI built (#25); phase 3 superseded by [`NET-009`](NET-009-remove-tailscale.md) (built-in Tailscale and tailcat removed across iOS, desktop, server, and web).
 
-This doc defines a native TLS transport for cellular remote work, with two deployment modes that share one iOS client path, plus fast foreground recovery and pipelined terminal writes. It extends [`IOS-012`](IOS-012-background-and-network-changes.md). Built-in iOS Tailscale and tailcat were later removed in [`NET-009`](NET-009-remove-tailscale.md).
+This doc defines a native TLS transport for cellular remote work, with two deployment modes that share one iOS client path, plus fast foreground recovery and pipelined terminal writes. It extends [`IOS-012`](IOS-012-background-and-network-changes.md). Built-in Tailscale and tailcat were later removed across all clients in [`NET-009`](NET-009-remove-tailscale.md).
 
 ## Problem
 

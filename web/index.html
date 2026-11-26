@@ -738,17 +738,7 @@
   .notice-more summary:focus-visible, .welcome-needs summary:focus-visible, .welcome-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .notice-more summary .pane-icon, .welcome-needs summary .pane-icon { width: 13px; height: 13px; }
   .notice-more p { margin: 6px 0 0; font-size: 12px; }
-  /* Settings › Tailscale: closed rows of a card that open to a note, and a command. */
-  .settings-more summary {
-    display: flex; align-items: center; gap: 8px; min-height: 22px; color: var(--text); font-weight: 500; cursor: pointer; list-style: none;
-  }
-  .settings-more summary::-webkit-details-marker { display: none; }
-  .settings-more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
-  .settings-more summary .pane-icon { width: 14px; height: 14px; color: var(--muted); }
-  .settings-more[open] summary { margin-bottom: 6px; }
-  .settings-more p { margin: 0 0 8px; }
-  /* The first screen (welcome.ts): the app's icon, what it is, and a card for each way in; no panel of its
-     own, it is the page. The recommended way is the primary card: tinted in the accent, as the guide's hero. */
+  /* The first screen (welcome.ts): the app's icon, what it is, and Connect by address. */
   .welcome { display: flex; flex-direction: column; width: min(480px, 100%); }
   .welcome-home { display: flex; flex-direction: column; align-items: center; text-align: center; }
   .welcome-icon { width: 72px; height: 72px; border-radius: 16px; box-shadow: 0 6px 22px -4px var(--shadow-focus); }
@@ -841,9 +831,6 @@
   }
   .settings-item:hover { background: var(--hover); }
   .settings-item[aria-selected="true"] { background: var(--pill); color: var(--accent); }
-  /* Tailscale's mark (hosts.ts tailscaleMark), and a tile of it as the media kit's squircle: #1f1e1e, white dots. */
-  .pane-icon.ts-mark { background: none; -webkit-mask: none; mask: none; }
-  .ts-mark svg { display: block; width: 100%; height: 100%; }
   .settings-tile { display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 6px; color: #fff; }
   .settings-tile .pane-icon { width: 14px; height: 14px; }
   .settings-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -947,66 +934,21 @@
   .viewer-image { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; image-rendering: auto; }
   .viewer-image[hidden], .viewer-note[hidden] { display: none; }
   .viewer-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
-  /* Built-in Tailscale (tailnet.ts): its group in the host list, its buttons, and the sign-in guide (guide.ts). */
+  /* Host list groups and notice action buttons. */
   .host-group { display: flex; align-items: center; gap: 6px; margin: 10px 8px 4px; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
   .host-group .pane-icon { width: 13px; height: 13px; }
   .host-group-name { flex: none; }
   .host-group-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
-  .host-guide { color: var(--accent); }
-  .host-guide .theme-name { white-space: normal; }
   .host-state { display: flex; align-items: center; gap: 5px; }
   .host-state .state-dot { width: 6px; height: 6px; }
-  .host-searching { text-align: left; padding: 6px 8px; }
   .notice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .host-add { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; line-height: 1.3; }
   .host-add .pane-icon { width: 14px; height: 14px; flex: none; }
-  .host-add:focus-visible, .ts-guide .settings-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .host-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings-name { width: 220px; max-width: 100%; color: var(--text); font-family: var(--mono); font-size: 12.5px; }
-  dialog.ts-guide {
-    width: min(560px, calc(100vw - 32px)); height: fit-content; min-height: min(480px, calc(100dvh - 32px)); max-height: min(720px, calc(100dvh - 32px));
-  }
-  dialog.ts-guide[open] { display: flex; flex-direction: column; }
-  .ts-head { display: flex; align-items: center; gap: 12px; flex: none; padding: 10px 10px 0 24px; min-height: 52px; }
-  .ts-steps { display: flex; gap: 6px; flex: none; margin: 0; padding: 4px 24px 14px; list-style: none; border-bottom: 1px solid var(--sep); }
-  .ts-steps li { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; color: var(--muted); font-size: 12px; }
-  .ts-steps li + li::before { content: ""; flex: none; width: 12px; height: 1px; background: var(--sep); margin-right: 2px; }
-  .ts-step-n {
-    display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%;
-    background: var(--hover); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
-  }
-  .ts-step-n .pane-icon { width: 12px; height: 12px; }
-  .ts-step-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ts-steps li.now { color: var(--text); font-weight: 600; }
-  .ts-steps li.now .ts-step-n { background: var(--accent); color: #fff; }
-  .ts-steps li.done .ts-step-n { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
-  .ts-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 20px 24px; }
-  .ts-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; padding: 12px 24px 16px; border-top: 1px solid var(--sep); }
-  .ts-hero, .ts-who { display: flex; align-items: flex-start; gap: 14px; }
-  .ts-hero-icon {
-    display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 12px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
-  }
-  .ts-hero-icon .pane-icon { width: 24px; height: 24px; }
-  .ts-hero.bad .ts-hero-icon { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-  .ts-hero.warn .ts-hero-icon { background: color-mix(in srgb, var(--attention) 16%, transparent); color: var(--attention); }
-  .ts-hero-icon.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
-  .ts-hero.busy .ts-hero-icon .pane-icon, .ts-searching .pane-icon { animation: ts-spin 1s linear infinite; }
-  @keyframes ts-spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .ts-hero.busy .ts-hero-icon .pane-icon, .ts-searching .pane-icon, .load-bar.busy .load-fill { animation: none; } }
-  /* After every tile's own colours, so the squircle wins over them. */
-  .settings-hero-icon.ts-tile, .ts-hero .ts-hero-icon.ts-tile, .welcome-choice .welcome-choice-icon.ts-tile, .welcome-choice.primary .welcome-choice-icon.ts-tile { background: #1f1e1e; color: #fff; }
-  .ts-hero-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 2px; }
-  .ts-hero-text h2 { margin: 0; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
-  .ts-hero-text p, .ts-point p, .ts-empty p, .ts-howto p, .ts-host-why p { margin: 0; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
-  .ts-points { display: flex; flex-direction: column; gap: 2px; border-radius: 14px; background: var(--card); border: 1px solid var(--card-edge); padding: 6px 0; }
-  .ts-point { display: flex; align-items: flex-start; gap: 12px; padding: 8px 14px; }
-  .ts-point > .pane-icon { flex: none; margin-top: 2px; color: var(--accent); }
-  .ts-point p { color: var(--text); }
-  .ts-body > .ts-point { padding: 0; }
-  .ts-body > .ts-point p { color: var(--muted); }
-  .ts-body > .ts-point > .pane-icon { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .load-bar.busy .load-fill { animation: none; } }
   /* A file's load (progress.ts): the terminal's wasm as the page starts, in #boot over the stage (no layout
-     moves when it goes), and Tailscale's engine in the guide. Its count in tabular figures; indeterminate
+     moves when it goes). Its count in tabular figures; indeterminate
      while the total is unknown or the module starts. */
   .load { display: flex; flex-direction: column; gap: 8px; }
   .load-head { display: flex; align-items: baseline; gap: 12px; }
@@ -1072,15 +1014,6 @@
     dialog.viewer { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
     .viewer-head { padding-left: 12px; }
     .viewer-info, .viewer-zoom { display: none; }
-    /* The guide is a sheet over the whole screen, 16px from its edges. */
-    dialog.ts-guide { width: 100vw; height: 100dvh; min-height: 0; max-height: none; }
-    .ts-head { padding-left: 16px; }
-    .ts-steps { padding: 4px 16px 12px; }
-    .ts-steps li { flex-direction: column; gap: 4px; font-size: 11px; }
-    .ts-steps li + li::before { display: none; }
-    .ts-body { padding: 16px; }
-    .ts-foot { padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
-    .ts-foot .host-add { flex: 1; }
     .notice-actions .host-add { flex: 1 1 auto; }
     /* The welcome and the cards take the screen's width less 16px each side: the overlay reaches past the
        stage's 8px margins to the screen's edges, so that it clips a card's shadow only there. */

@@ -36,10 +36,10 @@ jobs:
   # Swift app (IOS_ONLY: its sources, tests, packages, scripts and
   # project), docs, .md files or the TestFlight workflow runs only
   # what-to-test here: the TestFlight workflow builds the app when it
-  # reaches main. Everything else runs all jobs, a new path too: ios/share
-  # and ios/tailnet are Go, and Go's tests and the web build read the files
-  # in READ_ELSEWHERE. An empty diff, a manual run, and a base that is not
-  # an ancestor (a new branch, a force-push) run all.
+  # reaches main. Everything else runs all jobs, a new path too: Go's tests
+  # and the web build read the files in READ_ELSEWHERE. An empty diff, a
+  # manual run, and a base that is not an ancestor (a new branch, a
+  # force-push) run all.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5

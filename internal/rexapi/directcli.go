@@ -20,7 +20,7 @@ func directMain(args []string) int {
 		fmt.Fprintln(os.Stderr, usage)
 		return 2
 	}
-	dir := TailnetDir()
+	dir := StateDir()
 	conf, err := LoadDirect(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gorex rexapi direct: %v\n", err)

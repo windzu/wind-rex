@@ -35,7 +35,7 @@ func TestDirectTunnelEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	stateDir := t.TempDir()
-	g, err := New(Options{Client: gwClient, TailnetDir: stateDir, RexSocket: sock})
+	g, err := New(Options{Client: gwClient, StateDir: stateDir, RexSocket: sock})
 	if err != nil {
 		gwClient.Close()
 		t.Fatal(err)
@@ -245,7 +245,7 @@ func TestDirectTunnelRefusedOnNonDirectTransports(t *testing.T) {
 		t.Fatal(err)
 	}
 	stateDir := t.TempDir()
-	g, err := New(Options{Client: c, TailnetDir: stateDir, RexSocket: sock})
+	g, err := New(Options{Client: c, StateDir: stateDir, RexSocket: sock})
 	if err != nil {
 		c.Close()
 		t.Fatal(err)
