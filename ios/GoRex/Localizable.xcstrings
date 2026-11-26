@@ -350,26 +350,6 @@
         }
       }
     },
-    "Hugging Face and its mirror could not be reached.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hugging Face 和它的镜像站都无法连接。"
-          }
-        }
-      }
-    },
-    "Hugging Face, its mirror and GitHub could not be reached.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hugging Face、它的镜像站和 GitHub 都无法连接。"
-          }
-        }
-      }
-    },
     "Home": {
       "localizations": {
         "zh-Hans": {
@@ -1430,16 +1410,6 @@
         }
       }
     },
-    "Stop Downloading the Speech Model?": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停止下载语音模型？"
-          }
-        }
-      }
-    },
     "System": {
       "localizations": {
         "zh-Hans": {
@@ -1486,16 +1456,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此主机不支持发送文件"
-          }
-        }
-      }
-    },
-    "The mic types what you say into the terminal, without pressing Return; the model you choose recognises it on this device. Fun-ASR-Nano and Qwen3-ASR are larger and slower: on a Mac they take 2 to 2.6 GB of memory, and phones with less may not run them. Swipe a model to delete it. With an API key, the text you dictate and words from the terminal screen go to the service you set here, which corrects misheard terms and punctuation. Without a key, nothing you dictate leaves the device. The key and these settings sync through iCloud to your other devices.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "麦克风把你说的话打进终端，但不按回车；语音由你选的模型在本机上识别。Fun-ASR-Nano 和 Qwen3-ASR 更大、更慢：在 Mac 上要占 2 到 2.6 GB 内存，内存更小的手机可能跑不动。左滑模型可删除它。填了 API 密钥后，你听写的文字和终端屏幕上的单词会发到你在这里设置的服务，由它纠正听错的术语和标点。没有密钥时，你听写的内容不会离开本机。密钥和这些设置会通过 iCloud 同步到你的其他设备。"
           }
         }
       }
@@ -3716,16 +3676,6 @@
         }
       }
     },
-    "Downloading the Speech Model": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在下载语音模型"
-          }
-        }
-      }
-    },
     "Tap to stop.": {
       "localizations": {
         "zh-Hans": {
@@ -3766,52 +3716,12 @@
         }
       }
     },
-    "Download the Speech Model?": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下载语音模型？"
-          }
-        }
-      }
-    },
-    "Speech is recognised on this device, by %@. Its model, %@, downloads once from Hugging Face, or from hf-mirror.com, a mirror run by others, where Hugging Face can't be reached. Delete it in Settings › Terminal.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "语音由 %1$@ 在本机上识别。它的模型（%2$@）只需下载一次，来自 Hugging Face；连不上 Hugging Face 时改从 hf-mirror.com 下载，那是第三方运营的镜像。可在“设置 › 终端”中删除。"
-          }
-        }
-      }
-    },
-    "Can't Download the Speech Model": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法下载语音模型"
-          }
-        }
-      }
-    },
     "Dictate with the mic": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "用麦克风听写"
-          }
-        }
-      }
-    },
-    "Tap the mic on the key bar, or at the top right of the terminal on iPad or with a hardware keyboard, and speak; tap it again, and what you said is typed at the cursor, not sent. Speech is recognised on this device by SenseVoice, in Chinese, English, Cantonese, Japanese or Korean, with punctuation. Its model, about 240 MB, downloads on the first tap; choose a larger one, or delete it, in Settings › Terminal.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "轻点按键栏上的麦克风（在 iPad 上或连接硬件键盘时，在终端右上角）并说话；再点一下，你说的话就打在光标处，但不发送。语音由 SenseVoice 在本机上识别，支持中文、英语、粤语、日语和韩语，带标点。它的模型约 240 MB，首次轻点时下载；可在“设置 › 终端”中换用更大的模型，或删除它。"
           }
         }
       }
@@ -5300,6 +5210,106 @@
           "stringUnit": {
             "state": "translated",
             "value": "网页客户端下载失败。"
+          }
+        }
+      }
+    },
+    "Automatic": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动"
+          }
+        }
+      }
+    },
+    "Language": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        }
+      }
+    },
+    "No Access to Speech Recognition": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法使用语音识别"
+          }
+        }
+      }
+    },
+    "Allow WindRex to use Speech Recognition in Settings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“设置”中允许 WindRex 使用语音识别。"
+          }
+        }
+      }
+    },
+    "On-device speech recognition is not available for this language.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此设备不支持该语言的本机语音识别。"
+          }
+        }
+      }
+    },
+    "Can't Download Speech Assets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法下载语音资源"
+          }
+        }
+      }
+    },
+    "Downloading Speech Assets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载语音资源"
+          }
+        }
+      }
+    },
+    "Stop Downloading Speech Assets?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止下载语音资源？"
+          }
+        }
+      }
+    },
+    "The mic types what you say into the terminal without raising the keyboard or pressing Return, using iOS on-device speech recognition biased with words from your terminal screen. With an API key, the text you dictate and screen vocabulary go to the service you set here to refine technical terms and punctuation. Without a key, nothing you dictate leaves the device. The key and these settings sync through iCloud to your other devices.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风无需弹出键盘即可把你说的话打进终端，且不会自动按回车；语音通过 iOS 本机识别，并结合终端屏幕上的词汇提高术语准确率。填写 API 密钥后，听写文本和屏幕词汇会发往你配置的服务以进一步润色术语和标点。未填密钥时，听写内容不会离开本机。密钥与设置会通过 iCloud 同步到你的其他设备。"
+          }
+        }
+      }
+    },
+    "Tap the mic on the key bar, or at the top right of the terminal on iPad or with a hardware keyboard, and speak without raising the keyboard; tap it again, and what you said is typed at the cursor, not sent. Speech is recognised on this device by iOS with vocabulary hints from your terminal screen. Choose a language or configure optional AI polish in Settings › Terminal.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻点按键栏上的麦克风（在 iPad 上或连接硬件键盘时，在终端右上角）即可在不弹出键盘的情况下说话；再点一下，识别文字就会输入到光标处且不自动发送。语音由 iOS 在本机识别，并结合终端屏幕词汇提高准确率。可在“设置 › 终端”中选择听写语言或配置可选的 AI 润色。"
           }
         }
       }

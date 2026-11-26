@@ -8,7 +8,7 @@ metadata:
 
 # IOS-024: Voice input on iPhone without raising the keyboard
 
-Status: proposal.
+Status: Phase 1 implemented (native iOS 26 `SpeechAnalyzer` + `DictationTranscriber` behind `KeyBar` tap-to-talk; hold-to-talk gesture ergonomics and Phase 2 Cloud ASR remain open).
 
 This design doc researches keyboard-free voice input for the iPhone terminal (issue #21) after WindRex removes its self-managed ASR runtimes and model downloads (issue #13). It extends [`IOS-013`](IOS-013-key-bar-enter.md) and coordinates with [`IOS-008`](IOS-008-icloud-sync.md) and [`IOS-003`](IOS-003-web-share.md).
 

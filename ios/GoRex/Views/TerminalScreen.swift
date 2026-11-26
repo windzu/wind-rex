@@ -42,8 +42,7 @@ struct TerminalScreen: View {
     /// What is said while the mic is on, and whether it is finishing.
     @State private var said: Dictation.Said?
     @State private var busy = false
-    /// Whether the mic asks to download the speech model, or to stop it.
-    @State private var asking = false
+    /// Whether the mic asks to stop an Apple Speech asset download.
     @State private var stopping = false
     /// Whether the terminal has the key bar, which holds the mic.
     @State private var hasBar = TerminalView.hasBar
@@ -298,14 +297,8 @@ struct TerminalScreen: View {
                 Text(failure?.why ?? "")
             }
             // The mic's, here, as the one in the key bar can't show them.
-            .alert("Download the Speech Model?", isPresented: $asking) {
-                Button("Download") { Dictation.shared.download(Dictation.shared.model) }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Speech is recognised on this device, by \(Dictation.shared.model.name). Its model, \(Dictation.shared.model.size.formatted(.byteCount(style: .file))), downloads once from Hugging Face, or from hf-mirror.com, a mirror run by others, where Hugging Face can't be reached. Delete it in Settings › Terminal.")
-            }
             .stopsDownload($stopping)
-            .alert("Can't Download the Speech Model", isPresented: Binding { Dictation.shared.error != nil } set: { if !$0 { Dictation.shared.error = nil } }) {
+            .alert("Can't Download Speech Assets", isPresented: Binding { Dictation.shared.error != nil } set: { if !$0 { Dictation.shared.error = nil } }) {
             } message: {
                 Text(Dictation.shared.error ?? "")
             }
@@ -403,7 +396,7 @@ struct TerminalScreen: View {
         moreMenu()
     }
 
-    private var mic: Mic { Mic(terminal: { terminal }, said: $said, busy: $busy, asking: $asking, stopping: $stopping) }
+    private var mic: Mic { Mic(terminal: { terminal }, said: $said, busy: $busy, stopping: $stopping) }
 
     private var voiceCapsule: VoiceCapsule {
         VoiceCapsule(said: said, busy: $busy, cancel: { terminal?.stopDictating() }, finish: {
@@ -1079,11 +1072,11 @@ private struct Reconnecting: View {
 }
 
 /// The mic: a tap turns it on, and what is said shows as it is spoken,
-/// recognised on the phone (Dictation); a tap turns it off and types it
-/// into the terminal, unsent, once it spins as its last phrase is. Its
-/// first tap asks to download the models, and while they download it shows
-/// how far, and a tap asks to stop it. It goes off, typing nothing, as the
-/// screen goes or a call comes. It is on while something is said.
+/// recognised on the phone via Apple Speech (Dictation); a tap turns it off
+/// and types it into the terminal, unsent, once it spins as its last phrase
+/// finalizes. While iOS installs an on-device locale asset it shows progress,
+/// and a tap asks to stop it. It goes off, typing nothing, as the screen goes
+/// or a call comes.
 ///
 /// In the key bar it is given again only as what is said, or busy, changes
 /// (DictationShown): an input it shows besides those goes in there too.
@@ -1091,7 +1084,6 @@ private struct Mic: View {
     let terminal: () -> TerminalView?
     @Binding var said: Dictation.Said?
     @Binding var busy: Bool
-    @Binding var asking: Bool
     @Binding var stopping: Bool
     private let dictation = Dictation.shared
     private var on: Bool { said != nil && !busy }
@@ -1102,7 +1094,7 @@ private struct Mic: View {
                 Circle().stroke(.secondary.opacity(0.3), lineWidth: 2.5)
                     .overlay { Circle().trim(from: 0, to: p).stroke(.primary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round)).rotationEffect(.degrees(-90)) }
                     .frame(width: 18, height: 18)
-                    .accessibilityLabel("Downloading the Speech Model")
+                    .accessibilityLabel("Downloading Speech Assets")
                     .accessibilityValue(p.formatted(.percent.precision(.fractionLength(0))))
                     .accessibilityHint("Tap to stop.")
             } else if busy {
@@ -1127,28 +1119,11 @@ private struct Mic: View {
                     await terminal()?.typeDictation()
                     busy = false
                 }
-            } else if dictation.scanned {
-                turnOn()
             } else {
-                // The scan for the models on disk, quick, ends first: the
-                // mic never offers to download one already there.
-                Task {
-                    _ = await dictation.installedModels()
-                    turnOn()
-                }
+                _ = terminal()?.dictate { said = $0 }
             }
         }
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-    }
-
-    /// Turns the mic on, or asks to download its model first.
-    private func turnOn() {
-        guard !busy, said == nil, dictation.progress == nil else { return }
-        if !dictation.installed.contains(dictation.model) {
-            asking = true
-        } else {
-            _ = terminal()?.dictate { said = $0 }
-        }
     }
 }
 
@@ -1500,10 +1475,10 @@ private struct TerminalRepresentable: UIViewRepresentable {
 }
 
 extension View {
-    /// Asks before a tap stops the speech model's download.
+    /// Asks before a tap stops the Apple Speech asset download.
     func stopsDownload(_ asking: Binding<Bool>) -> some View {
-        alert("Stop Downloading the Speech Model?", isPresented: asking) {
-            Button("Stop Downloading", role: .destructive) { Dictation.shared.cancel() }
+        alert("Stop Downloading Speech Assets?", isPresented: asking) {
+            Button("Stop Downloading", role: .destructive) { Dictation.shared.cancelDownload() }
             Button("Keep Downloading", role: .cancel) {}
         }
     }

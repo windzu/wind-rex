@@ -79,6 +79,7 @@ struct GoRexApp: App {
     /// snapshot follows the hosts from the start, and NetworkPath the network.
     init() {
         OpenedFiles.clean()
+        Dictation.cleanLegacyArtifactsInBackground()
         Polish.syncKey()
         CloudSettings.shared.start()
         Notifier.shared.start()

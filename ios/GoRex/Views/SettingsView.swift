@@ -333,7 +333,6 @@ private struct TerminalSettings: View {
     }
     private let maple = Maple.shared
     private let dictation = Dictation.shared
-    @State private var stopping = false
 
     var body: some View {
         List {
@@ -360,7 +359,15 @@ private struct TerminalSettings: View {
                 Text("Draws pairs like != and => as one glyph, in fonts that have the shapes.")
             }
             Section {
-                ForEach(Dictation.Model.allCases, id: \.self, content: speech)
+                Picker("Language", selection: Binding(
+                    get: { dictation.localeOption },
+                    set: { dictation.localeOption = $0 }
+                )) {
+                    ForEach(Dictation.LocaleOption.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .listRowBackground(Color.card)
                 Group {
                     LabeledContent("API Key") {
                         SecureField("Off", text: $key).onChange(of: key) { if key != loaded { edited = true } }.onSubmit(saveKey)
@@ -379,7 +386,7 @@ private struct TerminalSettings: View {
             } header: {
                 Text("Dictation")
             } footer: {
-                Text("The mic types what you say into the terminal, without pressing Return; the model you choose recognises it on this device. Fun-ASR-Nano and Qwen3-ASR are larger and slower: on a Mac they take 2 to 2.6 GB of memory, and phones with less may not run them. Swipe a model to delete it. With an API key, the text you dictate and words from the terminal screen go to the service you set here, which corrects misheard terms and punctuation. Without a key, nothing you dictate leaves the device. The key and these settings sync through iCloud to your other devices.")
+                Text("The mic types what you say into the terminal without raising the keyboard or pressing Return, using iOS on-device speech recognition biased with words from your terminal screen. With an API key, the text you dictate and screen vocabulary go to the service you set here to refine technical terms and punctuation. Without a key, nothing you dictate leaves the device. The key and these settings sync through iCloud to your other devices.")
             }
             Section {
                 ForEach(contrasts, id: \.0) { value, name in
@@ -403,7 +410,6 @@ private struct TerminalSettings: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.page)
-        .stopsDownload($stopping)
         // Saved when done, not per keystroke: it syncs to other devices.
         .onDisappear(perform: saveKey)
         .onAppear {
@@ -453,43 +459,6 @@ private struct TerminalSettings: View {
                 if let e = maple.error { Text(e).font(.footnote).foregroundStyle(.red) }
             }
         }
-        .listRowBackground(Color.card)
-    }
-
-    /// A speech model: a tap chooses it, and downloads it unless it is or
-    /// another downloads; its size, or its download's progress and a stop,
-    /// which asks; swiped, deleted.
-    private func speech(_ m: Dictation.Model) -> some View {
-        let downloading = dictation.downloading == m
-        return Button {
-            if downloading, dictation.progress != nil { stopping = true; return }
-            dictation.model = m
-            // The scan for the models on disk, quick, ends first: a model
-            // already there is not downloaded again.
-            Task {
-                let installed = await dictation.installedModels()
-                if !installed.contains(m), dictation.progress == nil, dictation.model == m { dictation.download(m) }
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(verbatim: m.name).foregroundStyle(.primary)
-                    Spacer()
-                    if downloading, let p = dictation.progress {
-                        ProgressView(value: p).frame(width: 64)
-                        Image(systemName: "stop.circle").accessibilityLabel("Cancel")
-                    } else {
-                        Text(m.size.formatted(.byteCount(style: .file))).foregroundStyle(.secondary)
-                        if dictation.scanned, !dictation.installed.contains(m) {
-                            Image(systemName: "arrow.down.circle").accessibilityLabel("Download")
-                        }
-                    }
-                    if m == dictation.model { Image(systemName: "checkmark").fontWeight(.semibold) }
-                }
-                if downloading, let e = dictation.error { Text(e).font(.footnote).foregroundStyle(.red) }
-            }
-        }
-        .swipeActions { Button("Delete", role: .destructive) { dictation.delete(m) } }
         .listRowBackground(Color.card)
     }
 }
