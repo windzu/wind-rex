@@ -24,19 +24,19 @@ var hostsUI struct {
 	adding bool // the sheet shows
 	// The sheet's fields. The address is a secret: its field hides it,
 	// and it is forgotten once the host is saved or the sheet closes.
-	address, name, pairAs string
-	formErr               func() string // what is wrong, said when drawn
-	note                  func() string // why the host is not reached while it is asked to approve
-	stage                 addStage
-	fingerprint           string             // this machine's, while the host is asked to approve it
-	code                  string             // the pairing code of an IP address, to compare with the host's
-	codeAnswer            func(match bool)   // the user's word on the code, while it shows
-	cancel                context.CancelFunc // stops the attempt under way
-	removing              string             // the id of the host Remove asks about
-	renaming              string             // the id of the host whose alias is edited
-	alias                 string             // the alias as it is typed
-	aliasFocus            bool               // the alias field had the focus
-	aliasTaken            string             // the alias refused, another host's
+	address, name, autoName, pairAs string
+	formErr                         func() string // what is wrong, said when drawn
+	note                            func() string // why the host is not reached while it is asked to approve
+	stage                           addStage
+	fingerprint                     string             // this machine's, while the host is asked to approve it
+	code                            string             // the pairing code of an IP address, to compare with the host's
+	codeAnswer                      func(match bool)   // the user's word on the code, while it shows
+	cancel                          context.CancelFunc // stops the attempt under way
+	removing                        string             // the id of the host Remove asks about
+	renaming                        string             // the id of the host whose alias is edited
+	alias                           string             // the alias as it is typed
+	aliasFocus                      bool               // the alias field had the focus
+	aliasTaken                      string             // the alias refused, another host's
 }
 
 type addStage int
@@ -105,7 +105,7 @@ func (a *App) openSettingsAt(id string) {
 func (a *App) openAddHost() {
 	cancelAddHost()
 	page := &hostsUI
-	page.adding, page.address, page.name, page.pairAs = true, "", "", a.localName()
+	page.adding, page.address, page.name, page.autoName, page.pairAs = true, "", "", "", a.localName()
 	page.formErr, page.fingerprint = nil, ""
 	a.refreshTailnetFound()
 }
@@ -142,24 +142,48 @@ func cancelAddHost() {
 func closeAddHost() {
 	cancelAddHost()
 	page := &hostsUI
-	page.adding, page.address, page.name, page.formErr = false, "", "", nil
+	page.adding, page.address, page.name, page.autoName, page.formErr = false, "", "", "", nil
+}
+
+// sameDirectHost reports whether a and b are Direct TLS / Relay pairing URLs
+// pointing at the same host endpoint (ignoring fragment token or display name).
+func sameDirectHost(a, b string) bool {
+	if !rex.IsDirectTarget(a) || !rex.IsDirectTarget(b) {
+		return false
+	}
+	ta, erra := rex.ParseDirectTarget(a)
+	tb, errb := rex.ParseDirectTarget(b)
+	return erra == nil && errb == nil && ta.BaseURL == tb.BaseURL
 }
 
 // validateHost returns what is wrong with a host to add, "" if nothing.
 func validateHost(address, name, pairAs string, hosts []*hostConn) string {
 	address, name = strings.TrimSpace(address), strings.TrimSpace(name)
+	direct := rex.IsDirectTarget(address)
+	if direct {
+		t, err := rex.ParseDirectTarget(address)
+		if err != nil {
+			if errors.Is(err, rex.ErrDirectInvalidPin) {
+				return locales.HostsBadDirectPin()
+			}
+			return locales.HostsBadDirectAddress()
+		}
+		if name == "" {
+			name = t.DefaultName()
+		}
+	}
 	switch {
 	case name == "":
 		return locales.HostsEnterName()
 	case address == "":
 		return locales.HostsEnterAddress()
-	case !validAddress(address) && !isIPAddress(address):
+	case !direct && !validAddress(address) && !isIPAddress(address):
 		return locales.HostsBadAddress()
-	case strings.TrimSpace(pairAs) == "":
+	case !direct && strings.TrimSpace(pairAs) == "":
 		return locales.HostsEnterPairName()
 	}
 	for _, h := range hosts {
-		if h.Address == address {
+		if h.Address == address || sameDirectHost(h.Address, address) {
 			return locales.HostsAlreadySaved()
 		}
 	}
@@ -184,12 +208,18 @@ func (a *App) submitHost() {
 	if page.stage != addForm {
 		return
 	}
-	address, name, pairAs, hosts := page.address, page.name, page.pairAs, a.hosts
+	address, name, pairAs, hosts := strings.TrimSpace(page.address), strings.TrimSpace(page.name), page.pairAs, a.hosts
+	if name == "" && rex.IsDirectTarget(address) {
+		if t, err := rex.ParseDirectTarget(address); err == nil {
+			name = t.DefaultName()
+			page.name = name
+		}
+	}
 	if validateHost(address, name, pairAs, hosts) != "" {
 		page.formErr = func() string { return validateHost(address, name, pairAs, hosts) }
 		return
 	}
-	s := savedHost{ID: newHostID(), Name: strings.TrimSpace(name), Address: strings.TrimSpace(address)}
+	s := savedHost{ID: newHostID(), Name: name, Address: address}
 	ctx, cancel := context.WithCancel(context.Background())
 	page.stage, page.cancel, page.formErr, page.note = addConnecting, cancel, nil, nil
 	// The pairing is the settings window's: it goes on, and saves the host,
@@ -315,6 +345,11 @@ func pairHost(ctx context.Context, s savedHost, pairAs string, report func(func(
 		report(done)
 		return
 	case ctx.Err() != nil:
+		return
+	case rex.IsDirectTarget(s.Address):
+		// Direct TLS and relay hosts authenticate with their Bearer token and
+		// never fall back to tailcat pairing.
+		fail(why)
 		return
 	case failed != failRefused && failed != failPending:
 		// Only a host that refuses this machine is asked to pair.
@@ -473,9 +508,21 @@ func (a *App) hostDiag(c *ui.Context, k *colors, h *hostConn) {
 	a.refreshHostPath(h)
 	tag := locales.HostsDiagTagTailcat()
 	var segs []string
-	if rex.IsTailnetTarget(h.Address) {
+	switch {
+	case rex.IsTailnetTarget(h.Address):
 		tag = locales.HostsDiagTagTailnet()
-	} else if h.path != nil {
+	case rex.IsDirectTarget(h.Address):
+		if t, err := rex.ParseDirectTarget(h.Address); err == nil {
+			if t.IsRelay {
+				tag = locales.HostsDiagTagRelay()
+			} else {
+				tag = locales.HostsDiagTagDirect()
+			}
+			segs = append(segs, t.Host)
+		} else {
+			tag = locales.HostsDiagTagDirect()
+		}
+	case h.path != nil:
 		if s := hostPathLine(h.path); s != "" {
 			segs = append(segs, s)
 		}
@@ -532,18 +579,19 @@ var hostPing = func(c *rex.Client, timeout time.Duration) (time.Duration, error)
 // ask is under way; the answers land on the main thread. Call it on the
 // main thread.
 func (a *App) refreshHostPath(h *hostConn) {
+	addr := h.Address
+	tailnet := rex.IsTailnetTarget(addr)
+	direct := rex.IsDirectTarget(addr)
 	srv := a.client
-	if srv == nil || h.pathAsking || time.Since(h.pathAt) < hostPathFresh {
+	cl := h.current()
+	if (srv == nil && !direct) || (direct && cl == nil) || h.pathAsking || time.Since(h.pathAt) < hostPathFresh {
 		return
 	}
 	h.pathAsking = true
-	addr := h.Address
-	cl := h.current()
-	tailnet := rex.IsTailnetTarget(addr)
 	update := a.settingsUpdate()
 	go func() {
 		var st *rex.TailcatStatus
-		if !tailnet {
+		if !tailnet && !direct && srv != nil {
 			if s, err := tailcatStatus(srv, addr); err == nil {
 				st = &s
 			}
@@ -724,25 +772,48 @@ func (a *App) addHostSheet(c *ui.Context, k *colors) {
 		default:
 			ui.Text(c, locales.HostsAddNote()).FontSize(fontSubhead).TextColor(k.textMuted).LineHeight(1.3)
 			a.foundHostRows(c, k)
-			field := func(label string, input func() ui.Element) {
+			field := func(label string, input func() ui.Element) bool {
+				changed := false
 				ui.Column(c).Gap(4).Children(func() {
 					ui.Text(c, label).FontSize(fontSubhead).FontWeight(600).TextColor(k.textMuted)
 					if input().Changed() {
 						page.formErr = nil
+						changed = true
 					}
 				})
+				return changed
 			}
-			field(locales.HostsAddress(), func() ui.Element {
+			if field(locales.HostsAddress(), func() ui.Element {
 				return ui.TextInput(c.Key("address"), &page.address).Password().Font(monoFamily()).
 					Placeholder(locales.HostsAddressPlaceholder()).Label(locales.HostsAddress()).AutoFocus()
-			})
-			field(locales.HostsName(), func() ui.Element {
+			}) {
+				if t, err := rex.ParseDirectTarget(page.address); err == nil {
+					if def := t.DefaultName(); def != "" && (strings.TrimSpace(page.name) == "" || page.name == page.autoName) {
+						page.name, page.autoName = def, def
+					}
+				}
+			}
+			direct := rex.IsDirectTarget(page.address)
+			if direct {
+				if t, err := rex.ParseDirectTarget(page.address); err == nil {
+					hint := locales.HostsDirectDetected(t.DisplayAddress())
+					if t.IsRelay {
+						hint = locales.HostsRelayDetected(t.DisplayAddress())
+					}
+					ui.Text(c, hint).FontSize(fontSubhead).TextColor(k.textMuted).Margin(-6, 0, 0, 0).SingleLine().Ellipsis("…")
+				}
+			}
+			if field(locales.HostsName(), func() ui.Element {
 				return ui.TextInput(c.Key("name"), &page.name).Placeholder(locales.HostsNamePlaceholder()).Label(locales.HostsName())
-			})
-			field(locales.HostsPairAs(), func() ui.Element {
-				return ui.TextInput(c.Key("pair-as"), &page.pairAs).Label(locales.HostsPairAs())
-			})
-			ui.Text(c, locales.HostsPairAsHint()).FontSize(fontSubhead).TextColor(k.textMuted).Margin(-6, 0, 0, 0)
+			}) {
+				page.autoName = ""
+			}
+			if !direct {
+				field(locales.HostsPairAs(), func() ui.Element {
+					return ui.TextInput(c.Key("pair-as"), &page.pairAs).Label(locales.HostsPairAs())
+				})
+				ui.Text(c, locales.HostsPairAsHint()).FontSize(fontSubhead).TextColor(k.textMuted).Margin(-6, 0, 0, 0)
+			}
 			if page.formErr != nil {
 				ui.Text(c, page.formErr()).FontSize(fontSubhead).TextColor(k.danger).LineHeight(1.3)
 			}
