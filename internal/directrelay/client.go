@@ -2,10 +2,14 @@ package directrelay
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,10 +17,25 @@ import (
 	"github.com/coder/websocket"
 )
 
+const (
+	defaultDiscoverTimeout = 15 * time.Second
+	maxDiscoverBodyBytes   = 1 << 20
+)
+
+var (
+	// ErrDiscoveryDisabled is returned by DiscoverHosts when the relay returns
+	// 404 Not Found because host discovery is disabled (no relay secret set).
+	ErrDiscoveryDisabled = errors.New("directrelay: host discovery disabled")
+	// ErrUnauthorized is returned by DiscoverHosts when the relay rejects the
+	// Bearer token with 401 Unauthorized.
+	ErrUnauthorized = errors.New("directrelay: unauthorized")
+)
+
 // ClientConfig configures a host's outbound tunnel to a stateless relay.
 type ClientConfig struct {
 	RelayURL string
 	HostID   string
+	HostName string
 	Secret   string
 	CertPin  string
 	OnStatus func(connected bool, err error)
@@ -55,6 +74,12 @@ func StartTunnel(cfg ClientConfig) (*TunnelListener, error) {
 
 // RelayRegisterURL constructs the WebSocket URL used by a host to register on a relay.
 func RelayRegisterURL(relayBase, hostID string) (string, error) {
+	return RelayRegisterURLWithName(relayBase, hostID, "")
+}
+
+// RelayRegisterURLWithName constructs the WebSocket URL used by a host to
+// register on a relay, attaching an optional sanitized display name.
+func RelayRegisterURLWithName(relayBase, hostID, hostName string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(relayBase))
 	if err != nil || u.Host == "" {
 		return "", errors.New("invalid relay URL")
@@ -73,6 +98,9 @@ func RelayRegisterURL(relayBase, hostID string) (string, error) {
 	u.Path = strings.TrimRight(u.Path, "/") + "/relay/host"
 	q := u.Query()
 	q.Set("id", hostID)
+	if name := SanitizeHostName(hostName); name != "" {
+		q.Set("name", name)
+	}
 	u.RawQuery = q.Encode()
 	u.Fragment = ""
 	return u.String(), nil
@@ -99,6 +127,122 @@ func RelayClientBaseURL(relayBase, hostID string) (string, error) {
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String(), nil
+}
+
+// RelayHostsURL returns the HTTPS/HTTP discovery endpoint URL for a relay.
+func RelayHostsURL(relayBase string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(relayBase))
+	if err != nil || u.Host == "" {
+		return "", errors.New("invalid relay URL")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https", "wss":
+		u.Scheme = "https"
+	case "http", "ws":
+		u.Scheme = "http"
+	default:
+		return "", errors.New("relay URL must use https:// or wss://")
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/api/hosts"
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+// DiscoverHosts queries GET /api/hosts on a windrex-relay server using
+// relayToken for Bearer authentication and optional tlsPin for leaf
+// certificate SHA-256 verification.
+func DiscoverHosts(ctx context.Context, relayURL, relayToken, tlsPin string) ([]HostInfo, error) {
+	endpoint, err := RelayHostsURL(relayURL)
+	if err != nil {
+		return nil, err
+	}
+	if tlsPin != "" && !ValidPin(tlsPin) {
+		return nil, errors.New("directrelay: invalid certificate pin")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultDiscoverTimeout)
+		defer cancel()
+	}
+	tr := &http.Transport{
+		TLSClientConfig: TLSConfigWithPin(tlsPin),
+	}
+	defer tr.CloseIdleConnections()
+
+	client := &http.Client{
+		Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if relayToken != "" {
+		req.Header.Set("Authorization", "Bearer "+relayToken)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDiscoverBodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return nil, ErrDiscoveryDisabled
+	case http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	default:
+		var apiErr struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(body, &apiErr) == nil && apiErr.Error != "" {
+			return nil, fmt.Errorf("directrelay: discover hosts: HTTP %d: %s", resp.StatusCode, apiErr.Error)
+		}
+		return nil, fmt.Errorf("directrelay: discover hosts: HTTP %d", resp.StatusCode)
+	}
+
+	var out hostsResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("directrelay: decode host list: %w", err)
+	}
+	if out.Hosts == nil {
+		out.Hosts = []HostInfo{}
+	}
+	return out.Hosts, nil
+}
+
+func defaultHostName() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return SanitizeHostName(stripLocalSuffix(h))
+}
+
+func stripLocalSuffix(s string) string {
+	s = strings.TrimSpace(s)
+	const suffix = ".local"
+	if len(s) > len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix) {
+		s = s[:len(s)-len(suffix)]
+	}
+	return s
+}
+
+func (l *TunnelListener) resolvedHostName() string {
+	if name := SanitizeHostName(l.cfg.HostName); name != "" {
+		return name
+	}
+	return defaultHostName()
 }
 
 func (l *TunnelListener) Accept() (net.Conn, error) {
@@ -140,7 +284,7 @@ func (l *TunnelListener) loop() {
 		if l.ctx.Err() != nil {
 			return
 		}
-		dialURL, err := RelayRegisterURL(l.cfg.RelayURL, l.cfg.HostID)
+		dialURL, err := RelayRegisterURLWithName(l.cfg.RelayURL, l.cfg.HostID, l.resolvedHostName())
 		if err != nil {
 			l.report(false, err)
 			return
