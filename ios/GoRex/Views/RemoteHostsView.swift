@@ -542,8 +542,10 @@ private struct HostForm: View {
             // credentials unless a new pairing URL with them is pasted.
             if c.lanToken == nil, c.url == config.url { c.lanToken = config.lanToken }
             if c.tlsPin == nil, c.url == config.url { c.tlsPin = config.tlsPin }
-            c.relayID = config.relayID
-            c.relayHostID = config.relayHostID
+            if c.url == config.url {
+                c.relayID = config.relayID
+                c.relayHostID = config.relayHostID
+            }
             c.customName = config.customName
         }
         let n = name.trimmingCharacters(in: .whitespaces)

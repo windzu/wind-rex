@@ -82,8 +82,12 @@ struct GoRexApp: App {
         CloudSettings.shared.start()
         Notifier.shared.start()
         let store = HostStore()
+        let relays = RelayStore()
+        store.onRemove = { [weak relays] config in
+            relays?.noteHostRemoved(config)
+        }
         _store = State(initialValue: store)
-        _relays = State(initialValue: RelayStore())
+        _relays = State(initialValue: relays)
         // The Live Activity's buttons answer through this store's hosts
         // (docs/IOS-006-live-activities.md, Actions).
         ActivityAnswerer.send = { host, session, block, action in

@@ -1740,6 +1740,10 @@ final class HostStore {
     private(set) var hosts: [Host]
     /// The hosts' LAN tokens, kept apart from the list saved.
     @ObservationIgnored private let tokens: LANTokens
+    /// Single choke point notified whenever a real host is explicitly removed
+    /// (wired to `RelayStore.noteHostRemoved` so every delete path records
+    /// `ignoredHostIDs`).
+    @ObservationIgnored var onRemove: ((HostConfig) -> Void)?
 
     init(tokens: LANTokens = KeychainLANTokens()) {
         self.tokens = tokens
@@ -1790,10 +1794,25 @@ final class HostStore {
     }
 
     func remove(_ id: UUID) {
-        hosts.first { $0.id == id }?.stop()
+        let removed = hosts.first { $0.id == id }
+        removed?.stop()
         hosts.removeAll { $0.id == id }
         tokens.set(nil, for: id)
         save()
+        if let removed, !removed.isDemo {
+            onRemove?(removed.config)
+        }
+    }
+
+    /// Renames a host from any UI surface and marks `customName = true` when
+    /// changed so Relay Fleet sync preserves the user's chosen display name.
+    func rename(_ id: UUID, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var config = host(id)?.config else { return }
+        guard trimmed != config.name else { return }
+        config.name = trimmed
+        config.customName = true
+        update(config)
     }
 
     /// Changes a host; one with a new address, token, or certificate pin

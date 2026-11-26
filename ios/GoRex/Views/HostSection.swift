@@ -41,6 +41,7 @@ struct HostSection: View {
     /// a point is the one the drop goes to.
     var hostDrop: HostDrop?
     @Environment(HostStore.self) private var store
+    @Environment(RelayStore.self) private var relays
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(SpaceBook.self) private var book
     /// The sessions whose new tab is on its way.
@@ -126,11 +127,7 @@ struct HostSection: View {
             TextField(host.config.name, text: $name)
             Button("Cancel", role: .cancel) {}
             Button("Save") {
-                let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !n.isEmpty else { return }
-                var c = host.config
-                c.name = n
-                store.update(c)
+                store.rename(host.id, to: name)
             }
         } message: {
             Text("The name shows on this device only.")
@@ -186,7 +183,10 @@ struct HostSection: View {
                         .disabled(creating)
                 }
                 Button("Reconnect", systemImage: "arrow.clockwise") { host.resume() }
-                Button("Remove", systemImage: "trash", role: .destructive) { store.remove(host.id) }
+                Button("Remove", systemImage: "trash", role: .destructive) {
+                    relays.noteHostRemoved(host.config)
+                    store.remove(host.id)
+                }
             } label: {
                 Group {
                     if creating { ProgressView() } else { Image(systemName: "ellipsis") }

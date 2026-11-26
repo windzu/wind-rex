@@ -96,6 +96,8 @@ nonisolated struct RelayPairingPayload: Equatable, Hashable, Sendable {
         }
 
         guard let secret else { return nil }
+        // A TLS leaf certificate pin cannot be verified over plain HTTP.
+        if pin != nil && scheme != "https" { return nil }
         c.scheme = scheme
         c.path = ""
         c.fragment = nil
@@ -261,8 +263,10 @@ final class URLSessionRelayDiscoveryClient: RelayDiscoveryClient {
 
     func discoverHosts(relayURL: URL, secret: String, tlsPin: String?) async throws -> [DiscoveredRelayHost] {
         guard !secret.isEmpty else { throw RelayDiscoveryError.missingSecret }
-        if let tlsPin, !tlsPin.isEmpty, !PinnedTLSSession.validPin(tlsPin) {
-            throw RelayDiscoveryError.invalidPin
+        if let tlsPin, !tlsPin.isEmpty {
+            guard relayURL.scheme?.lowercased() == "https", PinnedTLSSession.validPin(tlsPin) else {
+                throw RelayDiscoveryError.invalidPin
+            }
         }
 
         let session = PinnedTLSSession.session(pin: tlsPin, rejectRedirects: true)

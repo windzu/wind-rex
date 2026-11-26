@@ -128,6 +128,7 @@ nonisolated final class RelayFleetTests: XCTestCase {
             "https://relay.example.com:7443/h/host_12345678/#r=secret",
             "https://relay.example.com:7443/?r=secret",
             "https://user:pass@relay.example.com:7443/#r=secret",
+            "http://relay.example.com:7443/#r=secret&p=\(pin)",
             "ftp://relay.example.com/#r=secret",
         ] {
             XCTAssertNil(RelayPairingPayload(pairing: bad), bad)
@@ -248,11 +249,10 @@ nonisolated final class RelayFleetTests: XCTestCase {
         // Offline host dev-box-1 MUST stay in HostStore!
         XCTAssertEqual(hostStore.hosts.map(\.config.name), ["alice-studio", "dev-box-1", "gpu-node-1"])
 
-        // 3. Custom iOS rename is preserved even when server reports another name.
-        var renamed = alice.config
-        renamed.name = "My Mac"
-        renamed.customName = true
-        hostStore.update(renamed)
+        // 3. Custom iOS rename (via HostStore.rename choke point, as HostSection uses)
+        //    sets customName = true and is preserved even when server reports another name.
+        hostStore.rename(alice.id, to: "My Mac")
+        XCTAssertEqual(hostStore.host(alice.id)?.config.customName, true)
         onlineHosts = [
             DiscoveredRelayHost(id: "host-abc-123", name: "alice-server-name", fleetAuth: true),
             DiscoveredRelayHost(id: "gpu-node-001", name: "gpu-node-1", fleetAuth: true),
@@ -260,9 +260,12 @@ nonisolated final class RelayFleetTests: XCTestCase {
         _ = try await relayStore.sync(relayID: first.relay.id, into: hostStore)
         XCTAssertEqual(hostStore.host(alice.id)?.config.name, "My Mac")
 
-        // 4. User deletes gpu-node-1 -> recorded in ignoredHostIDs -> next sync does NOT re-add it.
+        // 4. Deleting gpu-node-1 through HostStore.remove triggers the onRemove
+        //    choke point -> recorded in ignoredHostIDs -> next sync does NOT re-add it.
+        hostStore.onRemove = { [weak relayStore] config in
+            relayStore?.noteHostRemoved(config)
+        }
         let gpu = try XCTUnwrap(hostStore.hosts.first { $0.config.relayHostID == "gpu-node-001" })
-        relayStore.noteHostRemoved(gpu.config)
         hostStore.remove(gpu.id)
         XCTAssertEqual(relayStore.relay(first.relay.id)?.ignoredHostIDs, ["gpu-node-001"])
 
@@ -328,6 +331,14 @@ nonisolated final class RelayFleetTests: XCTestCase {
             XCTFail("expected discoveryDisabled error")
         } catch let err as RelayDiscoveryError {
             XCTAssertEqual(err, .discoveryDisabled)
+        }
+
+        // Rejects plain HTTP when a TLS certificate pin is specified.
+        do {
+            _ = try await client.discoverHosts(relayURL: base, secret: "relay-secret-xyz", tlsPin: samplePin)
+            XCTFail("expected invalidPin error for http:// with tlsPin")
+        } catch let err as RelayDiscoveryError {
+            XCTAssertEqual(err, .invalidPin)
         }
     }
 
