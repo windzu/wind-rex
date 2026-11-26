@@ -10,6 +10,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 `web` job of `.github/workflows/ci.yml` fails it.
 
 ## en-US
+- Connecting to a terminal or running a task with top progress now traces the WindRex handwritten W along its stroke, fills to real progress, and stays static under Reduce Motion.
 - When no hosts are connected yet, the home screen now offers a direct Scan QR to Pair button and shows where to find the WindRex QR code in Settings > Server on your Mac.
 - Connected hosts now show a solid green status dot in Settings > Remote Hosts and in the host list, with amber rings while connecting, gray rings offline, and tinted detail buttons.
 - On iPhone, terminals now default to 10 pt instead of 12 pt so more columns fit on screen. Custom font sizes set in Settings or by pinching still apply.
@@ -145,6 +146,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 - With Developer Mode on, the floating connection bar at the top no longer covers the first row of the computer list.
 
 ## zh-Hans
+- 顶部加载提示与终端连接动画现已换用 WindRex 单笔画图标，亮线沿笔画逐步点亮并按实际进度填充；开启「减少动态效果」时保持静态标记。
 - 尚未连接主机时，首页现在直接提供「扫码配对」按钮，并提示在 Mac 上打开「WindRex › 设置 › 服务器 › 连接手机」获取配对二维码。
 - 已连接的主机在「设置 › 远程主机」和主机列表中会显示绿色实心状态灯，连接中为琥珀色圆环、离线为灰色圆环，右侧详情按钮也改为清晰的主题色可点击样式。
 - 在 iPhone 上，终端默认字号从 12 pt 调整为 10 pt，单屏可显示更多列；你在设置里或通过双指捏合自定义的字号继续生效。

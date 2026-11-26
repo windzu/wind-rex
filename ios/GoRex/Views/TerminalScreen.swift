@@ -38,6 +38,7 @@ struct TerminalScreen: View {
     /// Regular width has the split view's sidebar toggle in the bar, which
     /// side mode would hide.
     @Environment(\.horizontalSizeClass) private var width
+    @Environment(\.accessibilityReduceMotion) private var still
     /// What is said while the mic is on, and whether it is finishing.
     @State private var said: Dictation.Said?
     @State private var busy = false
@@ -120,7 +121,6 @@ struct TerminalScreen: View {
             .clipped()
             .ignoresSafeArea(.container, edges: Self.edges(side: sideBar, row: sideMode, insets: Self.windowInsets))
             .ignoresSafeArea(.keyboard)
-            .overlay(alignment: .top) { if let p = session?.progress { ProgressLine(progress: p).padding(.top, statusBar).ignoresSafeArea(.container, edges: .top) } }
             .background {
                 // The status bar is the window's inset, read as the page's changes.
                 Color(cgColor: bg.cgColor)
@@ -138,6 +138,16 @@ struct TerminalScreen: View {
                     .ignoresSafeArea(.container, edges: .top)
                     .allowsHitTesting(false)
             }
+            // Top progress indicator reported by a terminal program (OSC 9;4),
+            // drawn with the WindRex single-stroke mark below the top bar.
+            .overlay(alignment: .top) {
+                if let p = session?.progress {
+                    TopBrandLoading(mode: BrandLoadingMode(fraction: p.fraction, failed: p.failed))
+                        .padding(.top, 8)
+                        .transition(still ? .opacity : .opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                }
+            }
+            .animation(still ? .easeInOut(duration: 0.15) : .snappy(duration: 0.24), value: session?.progress != nil)
             // On iPad or with a hardware keyboard (no KeyBar), show the floating preview.
             .overlay(alignment: .bottom) { if !hasBar, let said { Heard(said: said) { terminal?.stopDictating() } } }
             .overlay { status }
@@ -1018,7 +1028,7 @@ struct TerminalScreen: View {
         switch session?.state ?? .connecting {
         case .connecting:
             // A reconnect shows its note above the key bar instead.
-            if session?.reconnecting != true { BrandLoading() }
+            if session?.reconnecting != true { BrandLoading(accessibilityLabel: "Connecting…") }
         case .live:
             EmptyView()
         case .exited(let code):
@@ -1065,40 +1075,6 @@ private struct Reconnecting: View {
         .padding(.horizontal, 16)
         .accessibilityElement(children: .combine)
         .allowsHitTesting(false)
-    }
-}
-
-/// The WindRex mark while the terminal stream opens.
-private struct BrandLoading: View {
-    @State private var edge: CGFloat = -0.2
-    @Environment(\.accessibilityReduceMotion) private var still
-
-    private var mark: some View {
-        Image("BrandMark")
-            .resizable()
-            .scaledToFit()
-            .foregroundStyle(.primary)
-    }
-
-    var body: some View {
-        ZStack {
-            mark.opacity(still ? 1 : 0.25)
-            if !still {
-                mark.mask {
-                    LinearGradient(stops: [
-                        .init(color: .white, location: max(edge - 0.15, 0)),
-                        .init(color: .clear, location: min(max(edge, 0.001), 1)),
-                    ], startPoint: .leading, endPoint: .trailing)
-                }
-            }
-        }
-        .frame(width: 80, height: 80)
-        .onAppear {
-            if !still {
-                withAnimation(.easeInOut(duration: 1.5).repeatForever()) { edge = 1.15 }
-            }
-        }
-        .accessibilityLabel("Connecting…")
     }
 }
 
@@ -1306,24 +1282,6 @@ private struct TopEdge: UIViewControllerRepresentable {
         func setColor(_ c: UIColor) {
             edgeView.setColor(c)
         }
-    }
-}
-
-/// The progress a program reports, as a thin line atop the terminal: its
-/// share, or all of it faint while it can't tell, red on an error.
-private struct ProgressLine: View {
-    let progress: TerminalSession.Progress
-
-    var body: some View {
-        GeometryReader { g in
-            Rectangle()
-                .fill(progress.failed ? Color.red : Color.accentColor)
-                .opacity(progress.fraction == nil ? 0.4 : 1)
-                .frame(width: g.size.width * (progress.fraction ?? 1))
-                .animation(.default, value: progress)
-        }
-        .frame(height: 2)
-        .allowsHitTesting(false)
     }
 }
 
