@@ -1,17 +1,14 @@
 import XCTest
 
 nonisolated final class HostPairingTests: XCTestCase {
-    @MainActor func testTailcatNewAndExisting() {
-        let code = "rexgo://tailcat?a=tcExampleAddr123&n=alice-laptop"
-        let first = HostPairing.resolve(code, existing: [])
-        guard case .pairTailcat(let config) = first else {
-            return XCTFail("expected pairTailcat, got \(first)")
+    @MainActor func testLegacyTailcatCodesRejectedWithGuidance() {
+        for code in ["rexgo://tailcat?a=tcExampleAddr123&n=alice-laptop", "windrex://tailcat?a=tcExampleAddr123&n=alice-laptop"] {
+            let result = HostPairing.resolve(code, existing: [])
+            guard case .invalid(let why) = result else {
+                return XCTFail("expected invalid for \(code), got \(result)")
+            }
+            XCTAssertFalse(why.isEmpty)
         }
-        XCTAssertEqual(config.name, "alice-laptop")
-        XCTAssertEqual(config.tailcat?.address, "tcExampleAddr123")
-
-        let second = HostPairing.resolve(code, existing: [config])
-        XCTAssertEqual(second, .existing(config))
     }
 
     @MainActor func testDirectTLSRelayAddsAndUpdatesTokenAndPin() {

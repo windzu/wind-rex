@@ -8,7 +8,6 @@ struct SettingsView: View {
     @AppStorage("scheme") private var scheme = "dark"
     @AppStorage("theme") private var theme = TerminalTheme.standard
     @AppStorage("clientLabel") private var label = ""
-    @AppStorage(TailnetSettings.onKey) private var tailnet = false
     @State private var query = ""
     /// The icon on the Home Screen, for the row to name; the page changes it.
     @State private var appIcon = AppIcon.current
@@ -36,11 +35,7 @@ struct SettingsView: View {
              Item(title: "App Icon", icon: AnyView(appIcon.image(size: 30)), value: String(localized: appIcon.title),
                   page: { AnyView(AppIconView(current: $appIcon)) })],
             [Item(title: "Terminal", icon: tile("apple.terminal.fill", .gray), page: { AnyView(TerminalSettings()) }),
-             Item(title: "Remote Hosts", icon: tile("globe", .orange), page: { AnyView(RemoteHostsView()) }),
-             Item(title: "Tailscale", icon: AnyView(TailscaleGlyph.tile()),
-                  value: String(localized: tailnet ? "On · WindRex Only" : "Off"), page: { AnyView(TailscaleView()) }),
-             Item(title: "Share on Hotspot", icon: tile("personalhotspot", .green),
-                  value: String(localized: HotspotShare.shared.isSharing ? "On" : "Off"), page: { AnyView(HotspotShareView()) })],
+             Item(title: "Remote Hosts", icon: tile("globe", .orange), page: { AnyView(RemoteHostsView()) })],
             [Item(title: "Features", icon: tile("sparkles", .blue), page: { AnyView(FeaturesView()) }),
              Item(title: "About", icon: tile("info.circle.fill", .gray),
                   value: "\(version) (\(build))", page: { AnyView(AboutView(version: version, build: build, icon: appIcon)) }),

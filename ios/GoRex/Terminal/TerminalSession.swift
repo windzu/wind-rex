@@ -188,9 +188,8 @@ final class TerminalSession {
                 ]).payload["ticket"] as? String ?? ""
                 guard g == generation else { return }
                 ConnectionLog.note("terminal \(block): ticket, \(began.duration(to: .now).ms)")
-                // The session of the moment: the engine's proxy may have
-                // started over since the last connect (Host.session).
-                let session = try host.session()
+                // Use the host's current URLSession (shared or leaf-pinned TLS).
+                let session = host.session()
                 // What ends this generation closes the connection it opens.
                 let c = DataConnection(base: host.config.url, auth: host.config.auth, tag: block)
                 d = c
@@ -252,10 +251,8 @@ final class TerminalSession {
         let g = generation
         Task {
             do {
-                // The session of the moment: a session of the built-in
-                // Tailscale's proxy of a past run is invalid, and a task on
-                // it aborts the app.
-                try await data.resume(session: try host.session())
+                // Use the host's current URLSession (shared or leaf-pinned TLS).
+                try await data.resume(session: host.session())
                 guard g == generation else { return }
                 setReconnecting(false)
                 log.info("resumed \(self.block, privacy: .public)")

@@ -225,9 +225,8 @@ final class DataConnection {
         return ok && task === t
     }
 
-    /// A session of the built-in Tailscale's proxy is invalid once the proxy
-    /// changes, and its next task would abort the app, so the caller gives
-    /// the session of the moment instead of one held from a past connect.
+    /// Uses the caller's current URLSession so a replaced pinned session is
+    /// never reused after invalidation.
     private func connect(_ first: Data, session: URLSession) async throws {
         task?.cancel()
         var request = URLRequest(url: base.rexURL("/api/data"))

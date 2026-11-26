@@ -69,11 +69,8 @@ struct GoRexApp: App {
     @State private var away: Date?
 
     /// The notifications start with the app, for a tap that launches it.
-    /// TailnetEngine registers its lazy Host hooks before HostStore loads,
-    /// and starts the built-in Tailscale engine only on demand when
-    /// TailnetActivationPolicy says it is needed (docs/NET-005-direct-relay.md,
-    /// Phase 3). The files a run opened from its hosts go. The API key and
-    /// the settings that sync through iCloud come in before Ghostty, which
+    /// The files a run opened from its hosts go. The API key and the
+    /// settings that sync through iCloud come in before Ghostty, which
     /// reads some. Ghostty, with the downloaded font, starts once the list
     /// is on screen (startGhostty), not before the first frame. The widgets'
     /// snapshot follows the hosts from the start, and NetworkPath the network.
@@ -83,7 +80,6 @@ struct GoRexApp: App {
         Polish.syncKey()
         CloudSettings.shared.start()
         Notifier.shared.start()
-        let engine = TailnetEngine.shared
         let store = HostStore()
         _store = State(initialValue: store)
         // The Live Activity's buttons answer through this store's hosts
@@ -107,10 +103,6 @@ struct GoRexApp: App {
         // activities' — run from the start: a start push may wake the
         // app with no terminal ever shown (docs/NET-003-push-relay.md).
         _ = TerminalLive.shared
-        let configs = store.hosts.map(\.config)
-        if TailnetActivationPolicy.needsTailscale(hosts: configs, tailnetEnabled: TailnetSettings.isOn) {
-            Task { await engine.apply() }
-        }
     }
 
     /// Starts Ghostty, as in rootshell, not in a terminal's push, but on
@@ -153,7 +145,6 @@ struct GoRexApp: App {
                         }
                         // A setting changed just now goes before the app may end.
                         CloudSettings.shared.flush()
-                        HotspotShare.shared.handleBackground()
                         WidgetPublisher.shared.flush()
                     }
                     if p == .inactive {
@@ -170,27 +161,17 @@ struct GoRexApp: App {
                     ConnectionLog.note("app: active\(suspended ? since : "")")
                     BackgroundGrace.shared.cancel()
                     away = nil
-                    HotspotShare.shared.handleForeground()
                     // What a Live Activity showed while the app was
                     // away may have been seen; a host still connecting
                     // hears it once its register's answer lands
                     // (gorex.push.seen, Host.activitySeen).
                     TerminalLive.shared.reportSeen()
-                    Task { await store.foreground(suspended: suspended, wasBackground: wasBackground) { await TailnetEngine.shared.resume() } }
-                }
-                .onChange(of: store.hosts.map(\.config)) { _, configs in
-                    HotspotShare.shared.updateHosts(configs)
+                    Task { await store.foreground(wasBackground: wasBackground) }
                 }
                 // A new network: the hosts reconnect at once, not after a ping
                 // finds the old path dead (docs/IOS-012-background-and-network-changes.md).
                 .onChange(of: NetworkPath.shared.changes) {
                     store.networkChanged(inBackground: phase == .background)
-                }
-                // Hosts the gateway refused try again as the engine runs anew.
-                .onChange(of: TailnetEngine.shared.status.state) { _, s in
-                    if s == "Running" { store.hosts.forEach { $0.reconnectIfNeeded() } }
-                    // The way a host marked tailnet is reached changed with it.
-                    HotspotShare.shared.updateHosts(store.hosts.map(\.config))
                 }
         }
     }

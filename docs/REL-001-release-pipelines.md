@@ -37,7 +37,7 @@ WindRex started from GoRex `v0.56.1` with two release gaps. First, `.github/work
 #### iOS TestFlight release
 
 1. A maintainer triggers `.github/workflows/testflight.yml` manually on `main` (choosing `destination: upload` or `destination: export`) or pushes an `ios-v*` tag.
-2. The workflow validates all required App Store Connect secrets and variables before building `GhosttyVt.xcframework` and `Tailnet.xcframework`. On a tag push, it also warns if the tag version disagrees with `MARKETING_VERSION` in `ios/project.yml` (`"1.1"` for the initial submission track).
+2. The workflow validates all required App Store Connect secrets and variables before building `GhosttyVt.xcframework`. On a tag push, it also warns if the tag version disagrees with `MARKETING_VERSION` in `ios/project.yml` (`"1.1"` for the initial submission track).
 3. `ios/scripts/upload` queries App Store Connect (`asc builds next-build-number`) for the next monotonic `CURRENT_PROJECT_VERSION` unless `BUILD` is supplied explicitly, archives with `CODE_SIGNING_ALLOWED=NO`, applies ad hoc entitlement signatures to the embedded widget extension and main app, and runs `ios/scripts/verify-entitlements` on the archived `.app`.
 4. `xcodebuild -exportArchive` signs with Apple cloud-managed signing (`-allowProvisioningUpdates` with the App Store Connect API key) and either uploads directly or writes `ios/build/export/GoRex.ipa`. Whenever an IPA is written (`destination=export` or local-profile upload), `ios/scripts/verify-entitlements` unpacks `GoRex.ipa` and checks the exported bundle's entitlements again before any upload occurs.
 5. On a successful `upload`, the workflow diffs `ios/WhatToTest.md` against the previous successful TestFlight run's commit and calls `ios/scripts/test-notes` to update both `en-US` and `zh-Hans` TestFlight notes.
@@ -97,7 +97,7 @@ WindRex started from GoRex `v0.56.1` with two release gaps. First, `.github/work
 
 If the Apple Developer account holder chooses Xcode Cloud instead of GitHub Actions for TestFlight, complete these three steps before onboarding the repository:
 
-1. Add a `ci_scripts/ci_post_clone.sh` script that installs `xcodegen`, builds `ios/Frameworks/GhosttyVt.xcframework` and `ios/Frameworks/Tailnet.xcframework`, and runs `xcodegen generate` in `ios/`.
+1. Add a `ci_scripts/ci_post_clone.sh` script that installs `xcodegen`, builds `ios/Frameworks/GhosttyVt.xcframework`, and runs `xcodegen generate` in `ios/`.
 2. Confirm that `wiki.wind.windrex` and `wiki.wind.windrex.widgets` have App Group (`group.wiki.wind.windrex`), iCloud Key-Value Storage and Push Notifications enabled on the Apple Developer portal.
 3. Update the App Store Connect initial version record from `1.0` to `1.1` to match `MARKETING_VERSION: "1.1"` in `ios/project.yml` before App Store submission.
 

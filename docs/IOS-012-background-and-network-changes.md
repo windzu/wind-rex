@@ -3,12 +3,12 @@ name: IOS-012
 description: "Rex Go keeps its host connections for a short grace on every trip to the background, not only from a terminal, and reconnects at once when the phone changes network. Use when you change the background grace, BackgroundGrace, HostStore.foreground, or how Rex Go notices a dead connection."
 metadata:
   created: "2026-11-21"
-  updated: "2026-11-22"
+  updated: "2026-11-26"
 ---
 
 # IOS-012: Connections across the background and network changes
 
-Status: built (#929, #932).
+Status: built (#929, #932). Updated by [`NET-009`](NET-009-remove-tailscale.md) after built-in Tailscale removal.
 
 Replaces: [`IOS-006`](IOS-006-live-activities.md), section "Grace". This doc makes the grace app-wide, ties its end to the time that iOS gives, and adds a reconnect when the network changes. It compares Rex Go with rootshell, another iOS terminal, and takes two of its four methods. It does not keep the app running after the grace: [`IOS-006`](IOS-006-live-activities.md), Alternatives b, rejected that.
 

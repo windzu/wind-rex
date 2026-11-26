@@ -1,6 +1,5 @@
 # XcodeGen spec: `xcodegen generate` writes GoRex.xcodeproj (not committed).
 # Build ios/Frameworks/GhosttyVt.xcframework first: scripts/build-ghostty-vt.sh.
-# And ios/Frameworks/Tailnet.xcframework: scripts/build-tailnet.
 name: GoRex
 packages:
   # rootshell's prebuilt Ghostty (Metal renderer, key encoding), at the
@@ -43,9 +42,6 @@ targets:
       - target: GoRexWidgets
       # libghostty-vt reads the snapshot a stream starts with.
       - framework: Frameworks/GhosttyVt.xcframework
-        embed: false
-      # Built-in Tailscale (ios/tailnet), a static library.
-      - framework: Frameworks/Tailnet.xcframework
         embed: false
       - package: GhosttyKit
         product: GhosttyKitAppStore
@@ -108,9 +104,7 @@ targets:
           - UTTypeIdentifier: wiki.wind.windrex.host
             UTTypeDescription: WindRex Host
             UTTypeConformsTo: [public.data]
-        # rexgo://tailcat?a=…&n=…, GoRex's pairing QR code, opened from the
-        # camera app. The Tailscale login's callback (TailnetEngine) is the
-        # same scheme; its session takes that one itself.
+        # Widget deep links: windrex://open and windrex://inbox.
         CFBundleURLTypes:
           - CFBundleURLName: wiki.wind.windrex
             CFBundleURLSchemes: [windrex]
@@ -182,11 +176,7 @@ targets:
       - GoRex/Terminal/Dictation.swift
       - GoRex/Terminal/VoiceBarState.swift
       - GoRex/Terminal/Polish.swift
-      - GoRex/Tailnet/TailnetSettings.swift
       - GoRex/Views/ProgramTile.swift
-      - GoRex/Share/WebClientSync.swift
-      - GoRex/Share/ShareCalls.swift
-      - GoRex/Share/ShareHosts.swift
       - path: ../internal/rexapi/testdata/rex-terminal-stream.bin
         buildPhase: resources
     dependencies:

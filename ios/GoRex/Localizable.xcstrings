@@ -3726,12 +3726,12 @@
         }
       }
     },
-    "A terminal that can't connect offers Diagnostics: where it stopped, the path to the host, pings of three sizes and the recent log, to copy into a report. A GoRex machine in Settings › Tailscale opens the same.": {
+    "A terminal that can't connect offers Diagnostics: where it stopped, host details and the recent log, to copy into a report.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连不上的终端提供“诊断”：卡在哪一步、到主机的路径、三种大小的 ping 和最近的日志，可复制到问题报告里。在“设置 › Tailscale”中轻点一台 GoRex 电脑也能打开。"
+            "value": "连不上的终端提供“诊断”：卡在哪一步、主机信息和最近的日志，可复制到问题报告里。"
           }
         }
       }

@@ -30,12 +30,12 @@ nonisolated final class ConnectionTests: XCTestCase {
         }
     }
 
-    /// A gateway that refuses the caller, as one on the tailnet refuses
-    /// another Tailscale user, is told from a connection that failed.
+    /// A gateway that refuses the caller (HTTP 403) is distinguished from a
+    /// general connection failure.
     @MainActor func testRefused() async throws {
         let http = try FakeHTTP()
         defer { http.stop() }
-        http.respond = { _ in (403, ["error": "this server lets in only the Tailscale user who signed it in"]) }
+        http.respond = { _ in (403, ["error": "refused"]) }
         let c = ControlConnection(base: try await http.url(), auth: nil)
         do {
             try await c.open(token: nil)
@@ -369,8 +369,7 @@ nonisolated final class ConnectionTests: XCTestCase {
     }
 
     /// A stream that resumes after the app comes back makes its task on the
-    /// session of that time: the built-in Tailscale's proxy of a past run
-    /// leaves its session invalid, and a task on that one aborts the app.
+    /// session of that time: an invalidated pinned session must not be reused.
     @MainActor func testResumeUsesTheSessionOfNow() async throws {
         let rex = try FakeRex()
         defer { rex.stop() }
@@ -383,9 +382,7 @@ nonisolated final class ConnectionTests: XCTestCase {
         let c = DataConnection(base: try await rex.url(), auth: nil)
         try await c.open(ticket: "uH4mJKwzMarlTNT-UiyMog", session: opened)
         c.suspend()
-        // The engine started over, as Host.session leaves the session of
-        // its past run; a task on it aborts the app once the invalidation
-        // has taken effect, as it has by the next foreground.
+        // Previous pinned session invalidated when host credentials rotated.
         opened.invalidateAndCancel()
         try await Task.sleep(for: .seconds(1))
         try await c.resume(session: URLSession(configuration: .default))
@@ -393,10 +390,8 @@ nonisolated final class ConnectionTests: XCTestCase {
         c.close()
     }
 
-    /// A byte stream, as of an upload, a download or a tunnel, makes its
-    /// task on the session of the time its ticket comes: the built-in
-    /// Tailscale's proxy can start over during the ticket's round trip, and
-    /// a task on the session of before aborts the app.
+    /// A byte stream, as of an upload, a download or a tunnel, resolves the
+    /// URLSession after its ticket arrives so an invalidated session is never reused.
     @MainActor func testBytesStreamUsesTheSessionAfterItsTicket() async throws {
         let rex = try FakeRex()
         defer { rex.stop() }

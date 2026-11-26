@@ -165,7 +165,7 @@ go build -o build/wind-rex .
 ./build/wind-rex rexapi direct off      # 关闭直连 / 中继接入
 ```
 
-此外，WindRex 同样保留了局域网、Tailscale 与 Tailcat 接入方式用于桌面互联或兼容既有配置，详见 [`docs/REF-005-rex-api.md`](docs/REF-005-rex-api.md) 与 [`docs/IOS-002-tailcat.md`](docs/IOS-002-tailcat.md)。
+此外，WindRex 同样保留了局域网配对（详见 [`docs/REF-005-rex-api.md`](docs/REF-005-rex-api.md)）；iOS 内置 Tailscale、Tailcat 与个人热点共享已按 [`docs/NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md) 移除。
 
 ### 3. 在 iOS、桌面或 Web 端完成连接
 
@@ -192,7 +192,7 @@ WindRex 自动兼容 Ghostty 配置文件（字体、主题、调色板、光标
 
 ## 本地开发与分发
 
-- **iOS 本地构建**：需要完整版 Xcode（含 iOS Simulator 运行时）、Go 1.27.4+ 与 XcodeGen 2.45.1+。在仓库根目录依次执行 `ios/scripts/build-ghostty-vt.sh` 与 `ios/scripts/build-tailnet`，随后在 `ios/` 下执行 `xcodegen generate`，在 `ios/GoRex.xcodeproj` 中使用 `GoRex` scheme 运行（安装后的应用名为 **WindRex**）。
+- **iOS 本地构建**：需要完整版 Xcode（含 iOS Simulator 运行时）与 XcodeGen 2.45.1+。在仓库根目录执行 `ios/scripts/build-ghostty-vt.sh`，随后在 `ios/` 下执行 `xcodegen generate`，在 `ios/GoRex.xcodeproj` 中使用 `GoRex` scheme 运行（安装后的应用名为 **WindRex**）。
 - **桌面端本地开发**：使用 `go tool mygo dev -background` 或 `go tool mygo build`；纯服务端开发可用 `go build -o build/wind-rex .` 后运行 `-server`。
 - **Web 端本地开发**：在 `web/` 目录执行 `npm ci && npm run dev`，使用 `npm run typecheck` 和 `npm test` 运行本地检查。
 - **TestFlight 签名与分发配置**：Bundle ID（`wiki.wind.windrex`）、Widget Extension（`wiki.wind.windrex.widgets`）、App Group（`group.wiki.wind.windrex`）以及 GitHub Actions / 本地 `ios/scripts/upload` 签名环境变量说明详见 [README.md#distribution](README.md#distribution)。
@@ -215,7 +215,7 @@ WindRex 自动兼容 Ghostty 配置文件（字体、主题、调色板、光标
 
 ### 设计与参考文档
 
-- **网络与远程接入**：[`NET-005-direct-relay.md`](docs/NET-005-direct-relay.md)（直连 TLS 与无状态中继）· [`REF-005-rex-api.md`](docs/REF-005-rex-api.md)（Rex API 网关与配对）· [`IOS-002-tailcat.md`](docs/IOS-002-tailcat.md)（Tailcat）· [`NET-003-push-relay.md`](docs/NET-003-push-relay.md)（实时活动推送中继）
+- **网络与远程接入**：[`NET-005-direct-relay.md`](docs/NET-005-direct-relay.md)（直连 TLS 与无状态中继）· [`NET-009-remove-tailscale.md`](docs/NET-009-remove-tailscale.md)（移除内置 Tailscale）· [`REF-005-rex-api.md`](docs/REF-005-rex-api.md)（Rex API 网关与配对）· [`NET-003-push-relay.md`](docs/NET-003-push-relay.md)（实时活动推送中继）
 - **会话服务与 CLI**：[`REF-006-session-server.md`](docs/REF-006-session-server.md)（无头终端与恢复机制）· [`REF-001-cli.md`](docs/REF-001-cli.md)（CLI 与 Agent 技能钩子）· [`REF-004-shared-server.md`](docs/REF-004-shared-server.md)（Linux systemd 共享服务）· [`REF-003-session-size.md`](docs/REF-003-session-size.md)（多端窗口尺寸协商）
 - **工作区与客户端**：[`MOD-002-projects.md`](docs/MOD-002-projects.md)（空间、主机与项目）· [`MOD-001-osc-7501.md`](docs/MOD-001-osc-7501.md)（程序状态协议）· [`DSK-003-teleport.md`](docs/DSK-003-teleport.md)（跨主机 Teleport）· [`DSK-009-terminal-settings.md`](docs/DSK-009-terminal-settings.md)（Ghostty 与终端设置）· [`REF-007-web-client.md`](docs/REF-007-web-client.md)（Web 客户端）
 - **iOS 体验与界面规范**：[`IOS-006-live-activities.md`](docs/IOS-006-live-activities.md) · [`IOS-010-widgets.md`](docs/IOS-010-widgets.md) · [`IOS-012-background-and-network-changes.md`](docs/IOS-012-background-and-network-changes.md) · [`DESIGN.md`](DESIGN.md)

@@ -73,13 +73,9 @@ nonisolated final class NetworkPathTests: XCTestCase {
         XCTAssertEqual(started, 1)
     }
 
-    /// Out of the background a change of network resumes the real hosts
-    /// the system's way reaches — a connection behind the engine rides
-    /// the proxy's loopback, which no path change strands — and those
-    /// waiting to retry, whatever their reach; not the demo host nor one
-    /// idle; in the background, none. HostStore has no hold of the
-    /// tailnet engine (TailnetEngine is not in this target), so the
-    /// change cannot reset it.
+    /// Out of the background a change of network resumes the connected real
+    /// hosts and those waiting to retry; not the demo host nor an idle host;
+    /// in the background, none.
     @MainActor func testResumedOnNetworkChange() async throws {
         let demo = Host(Demo.config())
         demo.connect()
@@ -88,31 +84,20 @@ nonisolated final class NetworkPathTests: XCTestCase {
         defer { rex.stop() }
         let h = Host(HostConfig(name: "alice-laptop", url: try await rex.url()))
         let idle = Host(HostConfig(name: "bob-desktop", url: try await rex.url()))
-        XCTAssertEqual(h.config.reach(tailnetOn: false), .system)
         h.connect()
         defer { h.stop() }
         await until("online") { h.status == .online }
 
-        XCTAssertEqual(HostStore.resumedOnNetworkChange([demo, h, idle], inBackground: false, tailnetOn: true).map(\.id), [h.id])
+        XCTAssertEqual(HostStore.resumedOnNetworkChange([demo, h, idle], inBackground: false).map(\.id), [h.id])
         XCTAssertTrue(HostStore.resumedOnNetworkChange([demo, h, idle], inBackground: true).isEmpty)
 
-        // A connected host the engine reaches is left to it: the change
-        // cannot strand the proxy's loopback connection.
-        h.config.transport = .tailnet
-        XCTAssertTrue(HostStore.resumedOnNetworkChange([h], inBackground: false, tailnetOn: true).isEmpty)
-        XCTAssertEqual(HostStore.resumedOnNetworkChange([h], inBackground: false, tailnetOn: false).map(\.id), [h.id])
-        h.config.transport = nil
-        h.config.tailcat = HostConfig.Tailcat(address: "tcx", machine: "mac")
-        XCTAssertTrue(HostStore.resumedOnNetworkChange([h], inBackground: false, tailnetOn: true).isEmpty)
-        XCTAssertTrue(HostStore.resumedOnNetworkChange([h], inBackground: false, tailnetOn: false).isEmpty)
-
         // A host that cannot connect waits in its retry backoff, and a
-        // change dials it at once, whatever its reach.
+        // change dials it at once.
         let down = Host(HostConfig(name: "carol-server", url: try XCTUnwrap(URL(string: "http://127.0.0.1:1"))))
         down.connect()
         defer { down.stop() }
         await until("retrying") { down.isRetrying }
-        XCTAssertEqual(HostStore.resumedOnNetworkChange([idle, down], inBackground: false, tailnetOn: true).map(\.id), [down.id])
+        XCTAssertEqual(HostStore.resumedOnNetworkChange([idle, down], inBackground: false).map(\.id), [down.id])
     }
 
     /// The store's hosts connect anew on a change in the foreground, on a

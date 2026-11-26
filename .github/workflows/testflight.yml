@@ -92,25 +92,6 @@ jobs:
         with:
           path: ios/Frameworks/GhosttyVt.xcframework
           key: ${{ steps.ghostty-vt.outputs.cache-primary-key }}
-      # Built-in Tailscale (ios/tailnet), with the Go and gomobile go.mod pins.
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          # The runner keeps Go's caches between runs; a saved copy took
-          # 7 GB of the repository's 10 GB Actions cache.
-          cache: false
-      - uses: actions/cache/restore@v6
-        id: tailnet
-        with:
-          path: ios/Frameworks/Tailnet.xcframework
-          key: tailnet-${{ hashFiles('go.mod', 'go.sum', 'ios/tailnet/**', 'internal/tailnode/**', 'ios/scripts/build-tailnet') }}
-      - if: steps.tailnet.outputs.cache-hit != 'true'
-        run: ios/scripts/build-tailnet
-      - if: steps.tailnet.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ios/Frameworks/Tailnet.xcframework
-          key: ${{ steps.tailnet.outputs.cache-primary-key }}
       - name: Build, verify entitlements, and upload
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}

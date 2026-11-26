@@ -10,7 +10,7 @@ metadata:
 
 Status: Phase 1 implemented (native iOS 26 `SpeechAnalyzer` + `DictationTranscriber` behind the iPhone WeChat-style single-row dual-mode Voice Bar with hold-to-talk, slide-up-to-cancel, and tap-to-type; Phase 2 Cloud ASR remains open).
 
-This design doc researches keyboard-free voice input for the iPhone terminal (issue #21) after WindRex removes its self-managed ASR runtimes and model downloads (issue #13). It extends [`IOS-013`](IOS-013-key-bar-enter.md) and coordinates with [`IOS-008`](IOS-008-icloud-sync.md) and [`IOS-003`](IOS-003-web-share.md).
+This design doc researches keyboard-free voice input for the iPhone terminal (issue #21) after WindRex removes its self-managed ASR runtimes and model downloads (issue #13). It extends [`IOS-013`](IOS-013-key-bar-enter.md) and coordinates with [`IOS-008`](IOS-008-icloud-sync.md).
 
 ## Problem
 
@@ -70,7 +70,7 @@ The dictation pipeline splits into a small protocol so the UI and audio lifecycl
 - **`DictationEngine` protocol**: Accepts a stream of audio buffers and contextual vocabulary words, emits `AsyncStream<Dictation.Said>` updates (`phrases` for finalized ranges and `open` for volatile hypotheses), and returns the final transcript on `finish()` or discards work on `cancel()`.
 - **Phase 1 engine (`AppleSpeechEngine`)**: Uses Apple's iOS 26 `Speech` framework: `SpeechAnalyzer` paired with `DictationTranscriber` (selected as primary module because `DictationTranscriber` targets short interactive utterances and supports `AnalysisContext.contextualStrings`, whereas `SpeechTranscriber` currently lacks custom vocabulary injection). When `DictationTranscriber` does not support a chosen locale, the engine falls back to `SpeechTranscriber` for that locale. `SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith:)` drives the `AVAudioConverter` format in `Recording`, eliminating manual Silero VAD segmentation.
 - **Phase 2 optional engine (`CloudASREngine`)**: Uses the existing `Recording` (`AVAudioEngine`, 16 kHz mono PCM encoded to lightweight WAV or M4A in memory) and sends one multipart `POST {base}/audio/transcriptions` request to an OpenAI-compatible endpoint (such as OpenAI `gpt-4o-transcribe`, Groq `whisper-large-v3-turbo`, or a self-hosted Whisper server), passing `Polish.words(in:program:)` in the `prompt` field. Because batch upload produces no mid-speech hypotheses, `VoiceCapsule` shows the live audio meter while recording and a spinner while transcribing.
-- **State rules**: Only one dictation session runs at a time. Leaving the terminal screen, switching panes ([`IOS-006`](IOS-006-live-activities.md)), entering background, or receiving `AVAudioSession.interruptionNotification` calls `TerminalView.stopDictating()`, which cancels capture and inserts nothing. Audio session deactivation uses `.notifyOthersOnDeactivation` so background audio and hotspot web share ([`IOS-003`](IOS-003-web-share.md)) recover cleanly.
+- **State rules**: Only one dictation session runs at a time. Leaving the terminal screen, switching panes ([`IOS-006`](IOS-006-live-activities.md)), entering background, or receiving `AVAudioSession.interruptionNotification` calls `TerminalView.stopDictating()`, which cancels capture and inserts nothing. Audio session deactivation uses `.notifyOthersOnDeactivation` so background audio recovers cleanly.
 
 ### Code
 

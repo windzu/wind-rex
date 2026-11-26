@@ -450,30 +450,105 @@ nonisolated final class HostTests: XCTestCase {
         XCTAssertNil(Host.before("a", onto: "e", shown: shown, all: all))
     }
 
-    /// A host list saved before hosts had a transport still decodes, each
-    /// host through the system; one saved with it keeps it.
-    @MainActor func testHostsSavedWithoutTransportDecode() throws {
-        let old = #"[{"id":"8C1F2D3E-4A5B-4C6D-8E7F-9A0B1C2D3E4F","name":"mac","url":"https:\/\/mac-gorex.example.ts.net","desktop":false}]"#
-        let hosts = try JSONDecoder().decode([HostConfig].self, from: Data(old.utf8))
-        XCTAssertEqual(hosts.map(\.name), ["mac"])
-        XCTAssertNil(hosts[0].transport)
-        var h = hosts[0]
-        h.transport = .tailnet
-        let again = try JSONDecoder().decode(HostConfig.self, from: JSONEncoder().encode(h))
-        XCTAssertEqual(again.transport, .tailnet)
-        XCTAssertNil(again.tailcat)
+    /// Pre-#46 UserDefaults["hosts"] lists containing legacy built-in Tailscale
+    /// (`.tailnet`), tailcat (`*.tailcat.invalid`), demo, or malformed records
+    /// decode tolerantly: every Direct TLS, stateless relay, and LAN host
+    /// survives with its metadata intact while unroutable records are dropped.
+    @MainActor func testLegacyTailnetAndTailcatRecordsDroppedWhileDirectRelayLANSurvive() throws {
+        let directID = UUID()
+        let relayID = UUID()
+        let lanID = UUID()
+        let plainID = UUID()
+        let pin1 = PinnedTLSSession.sha256Pin(of: Data("direct-cert".utf8))
+        let pin2 = PinnedTLSSession.sha256Pin(of: Data("relay-cert".utf8))
+        let mixed = """
+        [
+          {"id":"\(directID.uuidString)","name":"alice-direct","url":"https:\\/\\/203.0.113.10:7443","desktop":false,"icon":"macstudio","command":"tmux","transport":"system","tlsPin":"\(pin1)"},
+          {"id":"\(UUID().uuidString)","name":"old-ts","url":"https:\\/\\/alice-gorex.example.ts.net","desktop":false,"transport":"tailnet"},
+          {"id":"\(relayID.uuidString)","name":"alice-relay","url":"https:\\/\\/relay.example.com:7443\\/h\\/host_12345678","desktop":false,"tlsPin":"\(pin2)"},
+          {"id":"\(UUID().uuidString)","name":"old-tailcat","url":"http:\\/\\/8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f.tailcat.invalid:7297","desktop":false,"tailcat":{"address":"tcx","machine":"mac"}},
+          {"id":"\(UUID().uuidString)","name":"partial-tailcat","url":"http:\\/\\/9c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f.tailcat.invalid:7297","tailcat":{"address":"tcx"}},
+          {"id":"\(UUID().uuidString)","name":"bare-tailcat-host","url":"http:\\/\\/legacy.tailcat.invalid:7297","desktop":false},
+          {"id":"\(UUID().uuidString)","name":"transport-tailcat","url":"http:\\/\\/192.0.2.50:7297","transport":"tailcat"},
+          {"id":"\(UUID().uuidString)","name":"old-ts-ip","url":"http:\\/\\/100.64.0.1:7297","transport":"tailnet"},
+          {"id":"\(UUID().uuidString)","name":"demo","url":"http:\\/\\/127.0.0.1:7297","demo":true},
+          {"broken":true},
+          123,
+          null,
+          {"id":"\(lanID.uuidString)","name":"alice-lan","url":"http:\\/\\/192.0.2.10:7297","desktop":true,"transport":null},
+          {"id":"\(plainID.uuidString)","name":"studio","url":"https:\\/\\/studio.example.com:7443"}
+        ]
+        """
+        let result = HostConfig.decodeSaved(Data(mixed.utf8))
+        XCTAssertEqual(result.dropped, 10)
+        XCTAssertEqual(result.hosts.map(\.id), [directID, relayID, lanID, plainID])
+        XCTAssertEqual(result.hosts.map(\.name), ["alice-direct", "alice-relay", "alice-lan", "studio"])
+        XCTAssertEqual(result.hosts[0].tlsPin, pin1)
+        XCTAssertEqual(result.hosts[0].icon, "macstudio")
+        XCTAssertEqual(result.hosts[0].command, "tmux")
+        XCTAssertEqual(result.hosts[1].url.absoluteString, "https://relay.example.com:7443/h/host_12345678")
+        XCTAssertEqual(result.hosts[1].tlsPin, pin2)
+        XCTAssertTrue(result.hosts[2].desktop)
+        XCTAssertFalse(result.hosts[3].desktop)
+
+        // Direct single-object decoding ignores legacy keys without throwing.
+        let single = try JSONDecoder().decode(
+            HostConfig.self,
+            from: Data(#"{"id":"8C1F2D3E-4A5B-4C6D-8E7F-9A0B1C2D3E4F","name":"mac","url":"https:\/\/203.0.113.10:7443","transport":"system"}"#.utf8)
+        )
+        XCTAssertEqual(single.name, "mac")
+        XCTAssertEqual(single.url.absoluteString, "https://203.0.113.10:7443")
     }
 
-    /// A tailcat host keeps its address and machine through a save; one
-    /// saved before tailcat has none.
-    @MainActor func testTailcatHostDecodes() throws {
-        let saved = #"[{"id":"8C1F2D3E-4A5B-4C6D-8E7F-9A0B1C2D3E4F","name":"mac","url":"http:\/\/8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f.tailcat.invalid:7297","desktop":false,"tailcat":{"address":"tcx","machine":"mac"}}]"#
-        let hosts = try JSONDecoder().decode([HostConfig].self, from: Data(saved.utf8))
-        XCTAssertEqual(hosts[0].tailcat, HostConfig.Tailcat(address: "tcx", machine: "mac"))
-        XCTAssertEqual(try JSONDecoder().decode([HostConfig].self, from: JSONEncoder().encode(hosts)), hosts)
-        // A tailcat entry that doesn't read fails the host, as any other
-        // field would; the list is only ever written by the app.
-        XCTAssertThrowsError(try JSONDecoder().decode(HostConfig.self, from: Data(#"{"id":"8C1F2D3E-4A5B-4C6D-8E7F-9A0B1C2D3E4F","name":"mac","url":"http:\/\/mac","tailcat":{"address":"tcx"}}"#.utf8)))
+    /// HostStore.init drops legacy tailcat/tailnet records from mixed pre-#46
+    /// UserDefaults JSON while preserving Direct/Relay/LAN hosts, their Keychain
+    /// tokens, and live connectivity.
+    @MainActor func testLegacyMigrationPreservesKeychainTokensAndConnects() async throws {
+        let d = UserDefaults.standard
+        let saved = d.data(forKey: "hosts")
+        defer {
+            if let saved { d.set(saved, forKey: "hosts") }
+            else { d.removeObject(forKey: "hosts") }
+        }
+        let rex = try FakeRex()
+        defer { rex.stop() }
+        rex.respond = { m, _ in m == "session.bootstrap" ? ["attach_all": ["sessions": []]] : [:] }
+        let liveURL = try await rex.url()
+
+        let lanID = UUID()
+        let relayID = UUID()
+        let pin = PinnedTLSSession.sha256Pin(of: Data("relay-cert".utf8))
+        let pre46 = """
+        [
+          {"id":"\(UUID().uuidString)","name":"legacy-tailcat","url":"http:\\/\\/8c1f2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f.tailcat.invalid:7297","desktop":false,"tailcat":{"address":"tcx","machine":"mac"}},
+          {"id":"\(lanID.uuidString)","name":"alice-lan","url":"\(liveURL.absoluteString.replacingOccurrences(of: "/", with: "\\/"))","desktop":false,"transport":"system"},
+          {"id":"\(UUID().uuidString)","name":"legacy-tailnet","url":"https:\\/\\/alice-gorex.example.ts.net","desktop":false,"transport":"tailnet"},
+          {"id":"\(relayID.uuidString)","name":"alice-relay","url":"https:\\/\\/relay.example.com:7443\\/h\\/host_12345678","desktop":false,"tlsPin":"\(pin)"}
+        ]
+        """
+        d.set(Data(pre46.utf8), forKey: "hosts")
+
+        let tokens = MemoryLANTokens()
+        tokens.tokens[lanID] = "lan-secret-token"
+        tokens.tokens[relayID] = "relay-secret-token"
+
+        let store = HostStore(tokens: tokens)
+        defer { store.hosts.forEach { $0.stop() } }
+
+        XCTAssertEqual(store.hosts.map(\.id), [lanID, relayID])
+        XCTAssertEqual(store.host(lanID)?.config.lanToken, "lan-secret-token")
+        XCTAssertEqual(store.host(relayID)?.config.lanToken, "relay-secret-token")
+        XCTAssertEqual(store.host(relayID)?.config.tlsPin, pin)
+
+        let lanHost = try XCTUnwrap(store.host(lanID))
+        await until("surviving host connects") { lanHost.status == .online }
+
+        // Cleaned list persisted back to UserDefaults without legacy entries.
+        let persisted = String(decoding: try XCTUnwrap(d.data(forKey: "hosts")), as: UTF8.self)
+        XCTAssertFalse(persisted.contains("tailcat"))
+        XCTAssertFalse(persisted.contains("tailnet"))
+        XCTAssertTrue(persisted.contains("alice-lan"))
+        XCTAssertTrue(persisted.contains("alice-relay"))
     }
 
     /// A host saved before icons keeps its laptop or desktop; one saved
@@ -487,82 +562,6 @@ nonisolated final class HostTests: XCTestCase {
         var h = try decode(#""desktop":false"#)
         h.icon = "macmini"
         XCTAssertEqual(try JSONDecoder().decode(HostConfig.self, from: JSONEncoder().encode(h)).symbol, "macmini")
-    }
-
-    /// A host added with the built-in Tailscale on goes through it when
-    /// its name is under the tailnet's suffix or its address is
-    /// Tailscale's; with it off, every host goes the system's way.
-    @MainActor func testTransportRule() throws {
-        func t(_ s: String, on: Bool = true) -> HostConfig.Transport? {
-            HostConfig.transport(of: URL(string: s)!, tailnetOn: on, suffix: "example.ts.net")
-        }
-        XCTAssertEqual(t("https://mac-gorex.example.ts.net"), .tailnet)
-        XCTAssertEqual(t("https://MAC-gorex.Example.ts.net."), .tailnet)
-        XCTAssertNil(t("https://mac-gorex.other.ts.net"))
-        XCTAssertNil(t("https://example.ts.net"))
-        XCTAssertNil(t("https://notexample.ts.net"))
-        XCTAssertEqual(t("http://100.64.0.1:7297"), .tailnet)
-        XCTAssertEqual(t("http://100.127.255.254:7297"), .tailnet)
-        XCTAssertNil(t("http://100.128.0.1:7297"))
-        XCTAssertNil(t("http://100.63.255.255:7297"))
-        XCTAssertNil(t("http://192.168.1.2:7297"))
-        XCTAssertEqual(t("http://[fd7a:115c:a1e0::1]:7297"), .tailnet)
-        XCTAssertEqual(t("http://[fd7a:115c:a1e0:ab12::42]"), .tailnet)
-        XCTAssertNil(t("http://[fd7a:115c:a1e1::1]:7297"))
-        XCTAssertNil(t("http://[fe80::1]:7297"))
-        XCTAssertNil(t("http://studio.local:7297"))
-        XCTAssertNil(HostConfig.transport(of: URL(string: "https://mac-gorex.example.ts.net")!, tailnetOn: true, suffix: nil))
-        XCTAssertNil(t("https://mac-gorex.example.ts.net", on: false))
-        XCTAssertNil(t("http://100.64.0.1:7297", on: false))
-
-        // A host on the tailnet goes the system's way while it is off.
-        var h = try XCTUnwrap(HostConfig(pairing: "https://mac-gorex.example.ts.net"))
-        XCTAssertEqual(h.reach(tailnetOn: true), .system)
-        h.transport = .tailnet
-        XCTAssertEqual(h.reach(tailnetOn: true), .tailnet)
-        XCTAssertEqual(h.reach(tailnetOn: false), .system)
-
-        // A host with a tailcat address goes over it, built-in Tailscale
-        // on or off, whatever its transport says.
-        var t = try XCTUnwrap(HostConfig(tailcat: "rexgo://tailcat?a=tcx&n=mac"))
-        XCTAssertEqual(t.reach(tailnetOn: false), .tailcat)
-        XCTAssertEqual(t.reach(tailnetOn: true), .tailcat)
-        t.transport = .tailnet
-        XCTAssertEqual(t.reach(tailnetOn: true), .tailcat)
-    }
-
-    /// An edited host keeps its transport while its address stays; a new
-    /// address takes the rule's, and the switch wins over both.
-    @MainActor func testEnteredTransport() throws {
-        var old = try XCTUnwrap(HostConfig(pairing: "http://192.168.1.2:7297"))
-        old.transport = .system
-        let same = old.url, moved = URL(string: "http://100.64.0.9:7297")!
-        XCTAssertEqual(HostConfig.transport(switched: nil, was: old, at: same, rule: .tailnet), .system)
-        XCTAssertEqual(HostConfig.transport(switched: nil, was: old, at: moved, rule: .tailnet), .tailnet)
-        XCTAssertNil(HostConfig.transport(switched: nil, was: nil, at: same, rule: nil))
-        XCTAssertEqual(HostConfig.transport(switched: true, was: old, at: same, rule: nil), .tailnet)
-        XCTAssertEqual(HostConfig.transport(switched: false, was: nil, at: moved, rule: .tailnet), .system)
-    }
-
-    /// The device's default name is the sanitized model, -rex- and four
-    /// lowercase letters, made once and kept.
-    @MainActor func testDeviceName() {
-        for _ in 0..<50 {
-            XCTAssertNotNil(TailnetSettings.defaultName(device: "iPhone").wholeMatch(of: /iphone-rex-[a-z]{4}/))
-        }
-        XCTAssertNotNil(TailnetSettings.defaultName(device: "Alice's iPhone").wholeMatch(of: /alices-iphone-rex-[a-z]{4}/))
-        XCTAssertNotNil(TailnetSettings.defaultName(device: "").wholeMatch(of: /rex-[a-z]{4}/))
-        XCTAssertNotNil(TailnetSettings.defaultName(device: "— —").wholeMatch(of: /rex-[a-z]{4}/))
-        let d = UserDefaults.standard, saved = d.string(forKey: TailnetSettings.nameKey)
-        defer { d.set(saved, forKey: TailnetSettings.nameKey) }
-        d.removeObject(forKey: TailnetSettings.nameKey)
-        XCTAssertEqual(TailnetSettings.name, "")
-        XCTAssertNil(d.string(forKey: TailnetSettings.nameKey))
-        TailnetSettings.makeName()
-        let n = TailnetSettings.name
-        XCTAssertNotNil(n.wholeMatch(of: /([a-z0-9-]+-)?rex-[a-z]{4}/))
-        TailnetSettings.makeName()
-        XCTAssertEqual(TailnetSettings.name, n)
     }
 
     /// A resumed host connects anew though its connection looks open,
@@ -681,34 +680,6 @@ nonisolated final class HostTests: XCTestCase {
         XCTAssertLessThanOrEqual(http.requests.count, 4)
     }
 
-    /// The engine hears of the hosts as their list changes, as it loads
-    /// and as one is added or removed; of one added, before it connects.
-    @MainActor func testTailcatHostsTold() throws {
-        let d = UserDefaults.standard
-        let (hosts, hook, proxy) = (d.data(forKey: "hosts"), Host.tailcatHosts, Host.tailcatProxy)
-        defer {
-            d.set(hosts, forKey: "hosts")
-            Host.tailcatHosts = hook
-            Host.tailcatProxy = proxy
-        }
-        d.removeObject(forKey: "hosts")
-        var told: [[HostConfig]] = []
-        var order: [String] = []
-        Host.tailcatHosts = { told.append($0); order.append("told") }
-        Host.tailcatProxy = { order.append("connect"); return nil }
-        let store = HostStore()
-        XCTAssertEqual(told, [[]])
-        let t = try XCTUnwrap(HostConfig(tailcat: "rexgo://tailcat?a=tcx&n=mac"))
-        order = []
-        store.add(t)
-        XCTAssertEqual(order, ["told", "connect"])
-        XCTAssertEqual(told.last?.compactMap(\.tailcat), [HostConfig.Tailcat(address: "tcx", machine: "mac")])
-        XCTAssertEqual(store.host(tailcat: "tcx")?.id, t.id)
-        store.remove(t.id)
-        XCTAssertEqual(told.last, [])
-        XCTAssertNil(store.host(tailcat: "tcx"))
-    }
-
     /// The list's drop reorders the real hosts by their ids and saves the
     /// order; the demo host keeps its place, and an order that no longer
     /// matches the hosts — one missing or a foreign id — changes nothing.
@@ -755,60 +726,30 @@ nonisolated final class HostTests: XCTestCase {
         XCTAssertTrue(HostStore.suspended(since: now.addingTimeInterval(-6), now: now))
     }
 
-    /// Back after a suspension, the hosts on the built-in Tailscale connect
-    /// anew once it resumes on its proxy, and not when it started anew; the
-    /// tailcat hosts connect anew either way; the others only reconnect if
-    /// needed. Back sooner, nothing resumes.
+    /// Back in the foreground from background: active live hosts stay connected
+    /// after probing, and foregroundReady increments for open terminals.
     @MainActor func testForeground() async throws {
         let d = UserDefaults.standard
-        let (hosts, on, proxy, catProxy) = (d.data(forKey: "hosts"), d.object(forKey: TailnetSettings.onKey), Host.tailnetProxy, Host.tailcatProxy)
+        let saved = d.data(forKey: "hosts")
         defer {
-            d.set(hosts, forKey: "hosts")
-            d.set(on, forKey: TailnetSettings.onKey)
-            Host.tailnetProxy = proxy
-            Host.tailcatProxy = catProxy
+            if let saved { d.set(saved, forKey: "hosts") }
+            else { d.removeObject(forKey: "hosts") }
         }
         d.removeObject(forKey: "hosts")
-        d.set(true, forKey: TailnetSettings.onKey)
-        // Each connection the tailnet host tries asks for the proxy; only
-        // those of foreground count, not its retries.
-        var order: [String] = []
-        var counting = false
-        Host.tailnetProxy = {
-            if counting { order.append("tailnet") }
-            return nil
-        }
-        Host.tailcatProxy = {
-            if counting { order.append("tailcat") }
-            return nil
-        }
-        let rex = try FakeRex()
+        let rex = try FakeRex(pongs: true)
         defer { rex.stop() }
         rex.respond = { m, _ in m == "session.bootstrap" ? ["attach_all": ["sessions": []]] : [:] }
         let store = HostStore()
-        let system = HostConfig(name: "system", url: try await rex.url())
-        let tailnet = HostConfig(name: "tailnet", url: try await rex.url(), transport: .tailnet)
-        let tailcat = try XCTUnwrap(HostConfig(tailcat: "rexgo://tailcat?a=tcx&n=mac"))
-        store.add(system)
-        store.add(tailnet)
-        store.add(tailcat)
-        defer { store.remove(system.id); store.remove(tailnet.id); store.remove(tailcat.id) }
-        await until("online") { store.host(system.id)?.status == .online }
+        let host = HostConfig(name: "alice-laptop", url: try await rex.url())
+        store.add(host)
+        defer { store.remove(host.id) }
+        let h = try XCTUnwrap(store.host(host.id))
+        await until("online") { h.status == .online }
 
-        func foreground(suspended: Bool, kept: Bool) async -> [String] {
-            order = []
-            counting = true
-            await store.foreground(suspended: suspended) { order.append("resume"); return kept }
-            counting = false
-            return order
-        }
-        let shortly = await foreground(suspended: false, kept: true)
-        XCTAssertEqual(shortly, ["tailnet", "tailcat"])
-        let resumed = await foreground(suspended: true, kept: true)
-        XCTAssertEqual(resumed, ["resume", "tailnet", "tailcat"])
-        let restarted = await foreground(suspended: true, kept: false)
-        XCTAssertEqual(restarted, ["resume", "tailcat"])
-        XCTAssertEqual(rex.controls.count, 1, "the system host connected anew")
+        let before = h.foregroundReady
+        await store.foreground(wasBackground: true)
+        XCTAssertEqual(h.foregroundReady, before + 1)
+        XCTAssertEqual(rex.controls.count, 1, "live host should stay connected after foreground probe")
     }
 
     /// A pull to refresh resumes each real host that is not online: one

@@ -49,8 +49,8 @@ nonisolated enum ActivityAnswerError: Error {
 /// fails — it never runs perform.
 nonisolated enum ActivityAnswerer {
     /// The seconds an answer may take; iOS gives an intent a few. A
-    /// connect that outruns it, as the built-in Tailscale's can, fails
-    /// the intent and the activity stays as it was.
+    /// connect that outruns it fails the intent and the activity stays
+    /// as it was.
     nonisolated(unsafe) static var budget = Duration.seconds(6)
     /// The send: the host's id, the session, the block and the answer.
     nonisolated(unsafe) static var send: @Sendable (UUID, String, String, TerminalAction) async throws -> Void = { _, _, _, _ in

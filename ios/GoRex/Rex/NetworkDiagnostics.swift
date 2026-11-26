@@ -13,13 +13,12 @@ final class NetworkDiagnostics {
         var interfaces: [String] = []
         var supportsIPv4 = false
         var supportsIPv6 = false
-        var tailscaleInterface: String?
         var changedAt = Date.now
 
         /// Identity of the path without `changedAt`, so the age timer only
         /// resets when the network actually changes.
         var fingerprint: String {
-            "\(isSatisfied)|\(transportLabel)|\(interfaces.joined(separator: ","))|\(supportsIPv4)|\(supportsIPv6)|\(tailscaleInterface ?? "")"
+            "\(isSatisfied)|\(transportLabel)|\(interfaces.joined(separator: ","))|\(supportsIPv4)|\(supportsIPv6)"
         }
 
         var ipLabel: String {
@@ -32,25 +31,14 @@ final class NetworkDiagnostics {
         }
 
         /// One combined path summary string, matching the Developer Mode HUD:
-        /// `Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 · for 81.3s · no Tailscale interface`
-        func summaryLine(now: Date, tailnetOn: Bool, tailnetState: String, tailnetIP: String?) -> String {
+        /// `Wi-Fi + VPN · en0 Wi-Fi, pdp_ip0 cellular, utun5 tunnel · IPv4 · for 81.3s`
+        func summaryLine(now: Date) -> String {
             var parts: [String] = [transportLabel]
             if !interfaces.isEmpty {
                 parts.append(interfaces.joined(separator: ", "))
             }
             parts.append(ipLabel)
             parts.append("for \(DeveloperModeSummary.formatDuration(max(0, now.timeIntervalSince(changedAt))))")
-            if tailnetOn {
-                if let ip = tailnetIP, !ip.isEmpty {
-                    parts.append("Tailnet \(tailnetState) (\(ip))")
-                } else {
-                    parts.append("Tailnet \(tailnetState)")
-                }
-            } else if let ts = tailscaleInterface {
-                parts.append("Tailscale \(ts)")
-            } else {
-                parts.append("no Tailscale interface")
-            }
             return parts.joined(separator: " · ")
         }
     }
@@ -152,30 +140,26 @@ final class NetworkDiagnostics {
             interfaces: ifaceList,
             supportsIPv4: path.supportsIPv4 || inspected.hasIPv4,
             supportsIPv6: path.supportsIPv6 || inspected.hasIPv6,
-            tailscaleInterface: inspected.tailscaleInterface,
             changedAt: .now
         )
     }
 
     struct InterfaceInspection: Equatable {
         var tunnels: [String]
-        var tailscaleInterface: String?
         var hasIPv4 = false
         var hasIPv6 = false
     }
 
     /// Reads active interfaces via `getifaddrs` to detect routable VPN tunnels
-    /// (`utun*` with a non-link-local address), IPv4/IPv6 presence, and a system
-    /// Tailscale VPN interface (100.64.0.0/10 or fd7a:115c:a1e0::/48).
+    /// (`utun*` with a non-link-local address) and IPv4/IPv6 presence.
     nonisolated static func inspectSystemInterfaces() -> InterfaceInspection {
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddr) == 0, let first = ifaddr else {
-            return InterfaceInspection(tunnels: [], tailscaleInterface: nil)
+            return InterfaceInspection(tunnels: [])
         }
         defer { freeifaddrs(first) }
 
         var tunnels: [String] = []
-        var tailscale: String?
         var hasIPv4 = false
         var hasIPv6 = false
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
@@ -199,12 +183,9 @@ final class NetworkDiagnostics {
                 if !tunnels.contains(name) {
                     tunnels.append(name)
                 }
-                if tailscale == nil, isTailscaleAddress(addr) {
-                    tailscale = name
-                }
             }
         }
-        return InterfaceInspection(tunnels: tunnels, tailscaleInterface: tailscale, hasIPv4: hasIPv4, hasIPv6: hasIPv6)
+        return InterfaceInspection(tunnels: tunnels, hasIPv4: hasIPv4, hasIPv6: hasIPv6)
     }
 
     nonisolated private static func isLinkLocal(_ addr: UnsafeMutablePointer<sockaddr>) -> Bool {
@@ -218,23 +199,6 @@ final class NetworkDiagnostics {
             let sin6 = addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
             let bytes = withUnsafeBytes(of: sin6.sin6_addr) { Array($0) }
             return bytes.count >= 2 && bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80
-        }
-        return false
-    }
-
-    nonisolated private static func isTailscaleAddress(_ addr: UnsafeMutablePointer<sockaddr>) -> Bool {
-        let family = Int32(addr.pointee.sa_family)
-        if family == AF_INET {
-            let sin = addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
-            let ip = UInt32(bigEndian: sin.sin_addr.s_addr)
-            let b0 = (ip >> 24) & 0xFF
-            let b1 = (ip >> 16) & 0xFF
-            return b0 == 100 && (b1 & 0xC0) == 64
-        }
-        if family == AF_INET6 {
-            let sin6 = addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
-            let bytes = withUnsafeBytes(of: sin6.sin6_addr) { Array($0) }
-            return bytes.starts(with: [0xFD, 0x7A, 0x11, 0x5C, 0xA1, 0xE0])
         }
         return false
     }
@@ -354,8 +318,7 @@ struct DeveloperModeSummary: Equatable {
                     detail = "offline"
                 }
             }
-            let transport = h.config.reach(tailnetOn: TailnetSettings.isOn).rawValue
-            lines.append("- \(h.config.name) [\(transport)] \(h.config.url.absoluteString): \(detail)")
+            lines.append("- \(h.config.name) \(h.config.url.absoluteString): \(detail)")
         }
         lines.append("")
         lines.append("Events (\(entries.count))")

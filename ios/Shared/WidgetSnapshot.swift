@@ -119,8 +119,7 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
 }
 
 /// What a widget's tap opens in the app: windrex://open?host=&session=&block=
-/// a terminal, windrex://inbox the status inbox. The pairing code
-/// (rexgo://tailcat) is HostConfig(tailcat:)'s.
+/// a terminal, windrex://inbox the status inbox.
 nonisolated enum WidgetLink: Equatable, Sendable {
     case open(host: UUID, session: String, block: String)
     case inbox

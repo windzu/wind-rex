@@ -7,13 +7,11 @@ import UIKit
 struct DeveloperModeOverlay: View {
     @Environment(HostStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(TailnetSettings.onKey) private var tailnetOn = false
     @State private var expanded = false
     @State private var diagnostics = NetworkDiagnostics()
     @State private var copied = false
 
     private let logStore = ConnectionLog.store
-    private let tailnet = TailnetEngine.shared
 
     private static let amber = Color(red: 0.92, green: 0.68, blue: 0.30)
     private static let green = Color(red: 0.36, green: 0.85, blue: 0.48)
@@ -92,12 +90,7 @@ struct DeveloperModeOverlay: View {
     }
 
     private func expandedCard(summary: DeveloperModeSummary, now: Date) -> some View {
-        let networkLine = diagnostics.snapshot.summaryLine(
-            now: now,
-            tailnetOn: tailnetOn,
-            tailnetState: tailnet.status.state,
-            tailnetIP: tailnet.status.ips?.first
-        )
+        let networkLine = diagnostics.snapshot.summaryLine(now: now)
         let entries = logStore.entries
         let report = makeReport(networkLine: networkLine, entries: entries, now: now)
 
