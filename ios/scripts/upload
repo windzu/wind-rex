@@ -10,11 +10,22 @@ cd "$(dirname "$0")/.."
 TEAM=${WINDREX_APPLE_TEAM_ID:-}
 SIGNING=${WINDREX_RELEASE_SIGNING:-cloud}
 DEST=${DESTINATION:-upload}
+INTERNAL_ONLY=${WINDREX_TESTFLIGHT_INTERNAL_ONLY:-0}
+SUBMIT=${WINDREX_TESTFLIGHT_SUBMIT:-0}
 [[ $TEAM =~ ^[A-Z0-9]{10}$ ]] || { echo "Set WINDREX_APPLE_TEAM_ID to the signing team ID" >&2; exit 1; }
 case "$DEST" in
   export|upload) ;;
   *) echo "DESTINATION must be export or upload" >&2; exit 1 ;;
 esac
+case "$INTERNAL_ONLY" in
+  0|1) ;;
+  *) echo "WINDREX_TESTFLIGHT_INTERNAL_ONLY must be 0 or 1" >&2; exit 1 ;;
+esac
+case "$SUBMIT" in
+  0|1) ;;
+  *) echo "WINDREX_TESTFLIGHT_SUBMIT must be 0 or 1" >&2; exit 1 ;;
+esac
+[[ $INTERNAL_ONLY != 1 || $SUBMIT != 1 ]] || { echo "WINDREX_TESTFLIGHT_INTERNAL_ONLY=1 cannot be combined with WINDREX_TESTFLIGHT_SUBMIT=1" >&2; exit 1; }
 EXPORT_ARGS=(-exportArchive -archivePath build/GoRex.xcarchive -exportOptionsPlist build/export.plist -exportPath build/export)
 case "$SIGNING" in
   cloud)
@@ -38,14 +49,22 @@ XCODE_DEST=$DEST
 if [[ $DEST == upload && -n ${WINDREX_ASC_PROFILE:-} ]]; then
   [[ $SIGNING == local ]] || { echo "WINDREX_ASC_PROFILE upload requires local signing" >&2; exit 1; }
   require_asc_app
-  : "${WINDREX_TESTFLIGHT_GROUP_ID:?Set WINDREX_TESTFLIGHT_GROUP_ID to the internal group ID}"
-  "${ASC[@]}" testflight groups list --app "$APP" --internal --output json |
+  : "${WINDREX_TESTFLIGHT_GROUP_ID:?Set WINDREX_TESTFLIGHT_GROUP_ID to one or more comma-separated TestFlight group IDs}"
+  "${ASC[@]}" testflight groups list --app "$APP" --output json |
     python3 -I -c '
 import json, sys
-groups = json.load(sys.stdin)["data"]
-if not any(group["id"] == sys.argv[1] and group["attributes"]["isInternalGroup"] for group in groups):
-    sys.exit("The TestFlight group is not an internal group of this app")
-' "$WINDREX_TESTFLIGHT_GROUP_ID"
+groups = {group["id"]: group["attributes"] for group in json.load(sys.stdin)["data"]}
+requested = [g.strip() for g in sys.argv[1].split(",") if g.strip()]
+internal_only = sys.argv[2] == "1"
+if not requested:
+    sys.exit("WINDREX_TESTFLIGHT_GROUP_ID must list at least one group ID")
+for gid in requested:
+    attrs = groups.get(gid)
+    if attrs is None:
+        sys.exit(f"TestFlight group {gid} does not belong to this app")
+    if internal_only and not attrs.get("isInternalGroup"):
+        sys.exit(f"WINDREX_TESTFLIGHT_INTERNAL_ONLY=1 cannot target external TestFlight group {gid}")
+' "$WINDREX_TESTFLIGHT_GROUP_ID" "$INTERNAL_ONLY"
   XCODE_DEST=export
 fi
 V=$(sed -n 's/^ *MARKETING_VERSION: "\([0-9.]*\)"$/\1/p' project.yml)
@@ -61,12 +80,12 @@ fi
 C=$(git rev-parse --short=7 HEAD 2>/dev/null || true)
 xcodegen generate -q
 mkdir -p build
-python3 -I - "$SIGNING" "$XCODE_DEST" "$TEAM" <<'PY'
+python3 -I - "$SIGNING" "$XCODE_DEST" "$TEAM" "$INTERNAL_ONLY" <<'PY'
 import os
 import plistlib
 import sys
 
-signing, destination, team = sys.argv[1:]
+signing, destination, team, internal_only = sys.argv[1:]
 options = {
     "method": "app-store-connect",
     "destination": destination,
@@ -82,8 +101,9 @@ if signing == "local":
             "wiki.wind.windrex": os.environ["WINDREX_APP_PROFILE"],
             "wiki.wind.windrex.widgets": os.environ["WINDREX_WIDGET_PROFILE"],
         },
-        testFlightInternalTestingOnly=True,
     )
+    if internal_only == "1":
+        options["testFlightInternalTestingOnly"] = True
 with open("build/export.plist", "wb") as output:
     plistlib.dump(options, output)
 PY
@@ -141,7 +161,10 @@ if [[ $XCODE_DEST == export ]]; then
 fi
 [[ $DEST == upload ]] || { echo "EXPORTED $V ($B) to build/export"; exit 0; }
 if [[ $XCODE_DEST == export ]]; then
-  "${ASC[@]}" publish testflight --app "$APP" --ipa build/export/GoRex.ipa \
-    --group "$WINDREX_TESTFLIGHT_GROUP_ID" --wait
+  PUBLISH_ARGS=(publish testflight --app "$APP" --ipa build/export/GoRex.ipa --group "$WINDREX_TESTFLIGHT_GROUP_ID" --wait)
+  if [[ $SUBMIT == 1 ]]; then
+    PUBLISH_ARGS+=(--submit --confirm)
+  fi
+  "${ASC[@]}" "${PUBLISH_ARGS[@]}"
 fi
 echo "UPLOADED $V ($B)"
