@@ -1,667 +1,240 @@
-# WindRex
+<p align="center">
+  <img src="resources/icon.png" alt="WindRex icon" width="96" height="96">
+</p>
 
-WindRex is an independently developed fork of [GoRex](https://github.com/si-mods/gorex)
-for iPhone and iPad, desktop, and the web. It starts from upstream v0.56.1
-and retains the Rex connection protocol for existing hosts.
+<h1 align="center">WindRex</h1>
+
+<p align="center">
+  <strong>Persistent remote terminal &amp; coding-agent workspace across macOS, iOS, Linux, Windows, and Web.</strong>
+</p>
+
+<p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+---
+
+**WindRex** keeps your terminal sessions, split layouts, and coding agents running on your Mac or Linux host—so you can start work at your desk, step away, and pick up the exact same session on iPhone, iPad, another desktop, or a browser with low-latency native TLS over cellular networks.
+
+WindRex is an independently developed fork of [GoRex](https://github.com/si-mods/gorex) starting from `v0.56.1`, retaining compatibility with the Rex connection protocol while adding native Direct TLS &amp; self-hosted stateless relay transport ([`NET-005`](docs/NET-005-direct-relay.md)), compact project navigation, and WindRex branding across desktop, iOS, and Web.
+
+## Typical Workflow
+
+1. **Start at your desk**: Open a project on your Mac or remote Linux host with split panes for your shell, editor, logs, and coding agent (Claude Code, Codex, OpenCode, Pi, etc.).
+2. **Step away without interrupting anything**: Close the desktop window or lock your laptop—shells and TUIs keep running inside the background session server.
+3. **Continue from iPhone or iPad**: Glance at running tasks and agent prompts from **Live Activities** (Dynamic Island / Lock Screen) or tap straight into the live terminal over cellular with sub-second foreground recovery.
+4. **Return to desktop seamlessly**: Every pane, directory, scrollback buffer, and split stays in sync across clients.
+
+## Core Features
+
+- **Persistent session server with in-place upgrade** — Shells run inside a background session server (`-server`) backed by headless `libghostty-vt`. Closing the app never kills your processes, full-screen TUIs (`vim`, `lazygit`, `htop`) restore from live snapshots, and `server upgrade` upgrades the server binary in place without dropping shells ([`REF-006`](docs/REF-006-session-server.md)).
+- **Direct TLS &amp; Stateless Relay for cellular (`NET-005`)** — Reach your host directly over native TLS 1.3 (with CA certificates or self-signed leaf SHA-256 pinning) or through a self-hosted stateless [`windrex-relay`](cmd/windrex-relay/main.go) binary. No user accounts, no coordination server, and no iOS VPN slot required. Includes 1.5s foreground liveness probes and pipelined ordered writes for responsive typing on high-RTT mobile links ([`NET-005`](docs/NET-005-direct-relay.md)).
+- **Mac + iPhone pairing &amp; live host status** — Organize work by **Spaces → Hosts → Projects → Tabs → Split Panes** with compact project sidebars on desktop and iOS, real-time green online indicators for connected hosts, QR code pairing, **Live Activities** (Dynamic Island &amp; Lock Screen), and Home Screen **Widgets** ([`MOD-002`](docs/MOD-002-projects.md), [`IOS-006`](docs/IOS-006-live-activities.md), [`IOS-010`](docs/IOS-010-widgets.md)).
+- **Agent-friendly terminal workflows** — Automatic foreground process detection and OSC 7501 status tracking (`working`, `blocked`, `done`, `error`), `gorex skill setup` for Claude Code, Codex, Antigravity CLI, Devin, OpenCode, and Pi, full CLI automation (`ls`, `new`, `split`, `send`, `capture`, `wait`, `run`), pane **Teleport** across hosts ([`DSK-003`](docs/DSK-003-teleport.md)), Ghostty config/theme compatibility, plus local Browser and Markdown Note panes.
+
+## Platform Support &amp; Current Status
+
+> **Release status:** WindRex does not have published GitHub Releases or public TestFlight links yet. All clients, the Linux session server, and `windrex-relay` can be built and run from source today.
+
+| Platform | Role | Capabilities | Availability |
+|---|---|---|---|
+| **macOS** (13.0+) | Desktop client + local host | Persistent tabs/splits, compact project sidebar, Ghostty themes/config, remote hosts, browser &amp; note panes, Teleport | Build from source (`go tool mygo build` / `dev`) · Signed `.dmg` pending |
+| **iOS / iPadOS** | Remote mobile client | Native Ghostty Metal terminal, Direct TLS &amp; Relay over cellular, QR pairing, Live Activities, Widgets, compact project &amp; session lists | Build with Xcode (`ios/GoRex.xcodeproj`) · TestFlight onboarding in progress |
+| **Linux** | Headless host + desktop | Persistent session server (`-server`), in-place upgrades, Direct TLS / relay host, shared systemd service, desktop GUI | Build from source (`go build`) · Packages pending |
+| **Windows** (10 1809+) | Desktop client + local host | ConPTY session server, custom title bar, remote hosts, Ghostty config | Build from source (`go tool mygo build`) · Installer pending |
+| **Web (`web/`)** | Standalone remote client (prototype) | Multi-host browser terminal powered by `libghostty-vt` WASM, split panes, themes, no local daemon required | Run locally (`npm run dev`) or self-host static build · No public URL yet |
+| **`windrex-relay`** | Stateless reverse-proxy relay | Bridges hosts behind NAT to iOS/remote clients over a single outbound TLS WebSocket with zero stored state | Build from source (`go build ./cmd/windrex-relay`) |
+
+## Interface Preview &amp; Architecture
+
+```mermaid
+flowchart LR
+    subgraph Clients["Clients (No Account Required)"]
+        IOS["iPhone / iPad<br/>Native Ghostty Metal + Live Activities"]
+        MAC["Desktop App<br/>macOS / Linux / Windows"]
+        WEB["Web Client (web/)<br/>libghostty-vt WASM"]
+    end
+
+    subgraph Transport["Native TLS Transport (NET-005)"]
+        DIRECT["Direct TLS :7443<br/>Bearer Token + Cert Pin"]
+        RELAY["Self-Hosted windrex-relay<br/>Stateless Outbound Mux"]
+    end
+
+    subgraph Host["WindRex Host (macOS / Linux / Windows)"]
+        GW["Rex API Gateway<br/>internal/rexapi"]
+        SRV["Persistent Session Server<br/>internal/rex + libghostty-vt"]
+        SH["Shells &amp; Coding Agents<br/>zsh, vim, Claude Code, Codex…"]
+        GW <--> SRV <--> SH
+    end
+
+    IOS -->|Cellular / Wi-Fi| DIRECT
+    IOS -->|Host behind NAT| RELAY
+    MAC -->|Direct / Tailscale / Tailcat| GW
+    WEB -->|WebSocket| GW
+    DIRECT --> GW
+    RELAY <-->|Outbound WSS Tunnel| GW
+```
+
+| Surface | Key UI Elements | Preview Status |
+|---|---|---|
+| **Desktop (macOS / Linux / Windows)** | Compact project sidebar, green host online dots, split terminal/browser/note cards, command palette (`⇧⌘P`), light/dark Ghostty themes | WindRex screenshots will be published alongside the first tagged release (captured via the `GOREX_DEBUG` hook with sample data). |
+| **iOS / iPadOS** | Compact project &amp; session list, Metal terminal surface, custom key bar, Dynamic Island &amp; Lock Screen Live Activities | WindRex iOS screenshots will be published with the first TestFlight build. |
+| **Web (`web/`)** | Multi-host sidebar with live connection dots, split panes, Settings dialog (`npm run dev` in `web/`) | Preview locally via `cd web && npm ci && npm run dev`. |
+
+## Quick Start &amp; Installation
+
+> **Note on CLI naming:** A local binary built with `go build -o build/wind-rex .` can be invoked directly as `./build/wind-rex`. Inside terminals launched by WindRex, the injected shim on `PATH` still uses the inherited `gorex` command name (`docs/REF-001-cli.md`).
+
+### 1. Start a Host (macOS Desktop or Linux Server)
+
+iOS and Web are remote clients—you need at least one running WindRex host (your Mac or a Linux machine).
+
+**macOS / Desktop (from source):**
+
+Requires Go 1.27.4+ (MyGo CLI is pinned in `go.mod`).
+
+```sh
+git clone https://github.com/windzu/wind-rex.git
+cd wind-rex
+
+# Run the desktop app (rebuilds on change without stealing focus)
+go tool mygo dev -background
+
+# Or build a standalone desktop app bundle
+go tool mygo build -sign -
+```
+
+**Linux Headless Session Server (from source):**
+
+```sh
+git clone https://github.com/windzu/wind-rex.git
+cd wind-rex
+go build -o build/wind-rex .
+
+# Start the persistent session server (use GOREX_DIR to isolate state if desired)
+./build/wind-rex -server
+```
+
+For systemd installation and multi-client Linux servers, see [`docs/REF-004-shared-server.md`](docs/REF-004-shared-server.md).
+
+> **Upgrading a running server:** Never kill a running server to upgrade it. Run `<new-binary> server upgrade` to replace the server in place while keeping every shell and terminal screen alive.
+
+### 2. Expose the Host for iPhone / iPad Pairing (`NET-005`)
+
+Choose **Option A** if your host is reachable on a public IP or home router port forward, or **Option B** if your host is behind NAT.
+
+#### Option A — Direct TLS (Public IP / Port Forward)
+
+```sh
+# Starts a TLS listener on :7443 with a 256-bit Bearer token and self-signed cert
+# (or pass --cert FILE --key FILE for a CA-signed certificate), and prints a QR code.
+./build/wind-rex rexapi direct on \
+  --listen :7443 \
+  --public https://203.0.113.10:7443
+```
+
+#### Option B — Self-Hosted Stateless Relay (`windrex-relay`, Behind NAT)
+
+1. Build and run `windrex-relay` on any reachable VPS or router:
+
+   ```sh
+   go build -o build/windrex-relay ./cmd/windrex-relay
+   ./build/windrex-relay \
+     -listen :7443 \
+     -hosts relay.example.com \
+     -secret "replace-with-shared-secret"
+   ```
+
+   On startup, `windrex-relay` prints its self-signed TLS certificate SHA-256 pin (omit `-pin` below if using a CA-signed `-cert`/`-key`).
+
+2. Connect your host behind NAT to the relay and display the pairing QR code:
+
+   ```sh
+   ./build/wind-rex rexapi direct relay \
+     --url https://relay.example.com:7443 \
+     --pin "<relay-cert-pin>" \
+     --secret "replace-with-shared-secret"
+   ```
+
+Useful management commands:
+
+```sh
+./build/wind-rex rexapi direct status   # inspect listener / relay connection state
+./build/wind-rex rexapi direct qr       # reprint the pairing URL and QR code
+./build/wind-rex rexapi direct rotate   # rotate the 256-bit pairing token
+./build/wind-rex rexapi direct off      # disable direct / relay access
+```
+
+WindRex also retains LAN, Tailscale, and Tailcat transports for desktop-to-desktop and legacy pairing; see [`docs/REF-005-rex-api.md`](docs/REF-005-rex-api.md) and [`docs/IOS-002-tailcat.md`](docs/IOS-002-tailcat.md).
+
+### 3. Pair &amp; Connect from iOS, Desktop, or Web
+
+- **iPhone / iPad**: Open **WindRex → Remote Hosts → Add Host**, scan the QR code (or paste the `https://.../#k=<token>&p=<cert_pin>&n=alice-laptop` URL). The Bearer token is stored in Keychain and the certificate pin is verified on every TLS handshake.
+- **Desktop to Desktop**: Open **Settings › Remote Hosts → Add Remote Host…** (or use Tailscale discovery in **Settings › Server**).
+- **Web Client**: Start the web app (`cd web && npm ci && npm run dev`), open the local URL in your browser, and add your host gateway URL in **Settings › Hosts** (or pass `?host=<gateway-url>`). Set `WINDREX_WEB_ORIGIN` on the host if deploying the web client to a custom origin.
+
+## Essential Desktop Shortcuts
+
+| macOS | Windows / Linux | Action |
+|---|---|---|
+| `⌘T` | `Ctrl+Shift+T` | New tab |
+| `⌘D` / `⇧⌘D` | `Ctrl+Shift+D` / `Ctrl+Shift+E` | Split right / down |
+| `⌘W` / `⇧⌘W` | `Ctrl+Shift+W` | Close pane / tab |
+| `⇧⌘↩` | `Ctrl+Shift+Enter` | Zoom focused pane |
+| `⌥⌘` + Arrows | `Alt` + Arrows | Move focus across panes |
+| `⌃⌘S` | `Ctrl+Shift+S` | Toggle sidebar |
+| `⌘J` / `⇧⌘J` | `Ctrl+Shift+J` | Jump to / list panes needing attention |
+| `⇧⌘P` | `Ctrl+Shift+P` | Command palette |
+| `⌘,` | `Ctrl+,` | Settings (Appearance, Terminal, Theme, Remote, Network) |
+| `⌥⌘Q` | — | Quit and end all sessions |
+
+WindRex reads Ghostty configuration (`font-family`, `theme`, `palette`, `cursor-style`, `minimum-contrast`, etc.) with Settings taking precedence (`terminal.minimumContrast` defaults to `3`). See [`docs/DSK-009-terminal-settings.md`](docs/DSK-009-terminal-settings.md).
 
 ## Develop locally
 
-- **iOS** needs full Xcode with an iOS Simulator runtime, Go 1.27.4 or newer
-  and XcodeGen 2.45.1 or newer. From the repository root run
-  `ios/scripts/build-ghostty-vt.sh` and `ios/scripts/build-tailnet`, then run
-  `xcodegen generate` from `ios/`. Use the `GoRex` scheme in
-  `ios/GoRex.xcodeproj` with an iPhone simulator. A CLI build uses
-  `xcodebuild -scheme GoRex -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build` from `ios/`.
-- **Desktop** uses `go tool mygo dev -background` or `go tool mygo build`.
-  For local server-only work, build with `go build -o build/wind-rex .`
-  and run that binary with `-server`. WindRex uses its own data directory.
-- **Web** uses `npm ci` and `npm run dev` from `web/`. Run
-  `npm run typecheck` and `npm test` there for local checks.
+- **iOS** needs full Xcode with an iOS Simulator runtime, Go 1.27.4 or newer, and XcodeGen 2.45.1 or newer. From the repository root run `ios/scripts/build-ghostty-vt.sh` and `ios/scripts/build-tailnet`, then run `xcodegen generate` from `ios/`. Open `ios/GoRex.xcodeproj` and run the `GoRex` scheme on an iPhone simulator (the installed app is **WindRex**). A CLI build uses:
+
+  ```sh
+  cd ios && xcodebuild -scheme GoRex -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+  ```
+
+- **Desktop** uses `go tool mygo dev -background` or `go tool mygo build`. For local server-only work, build with `go build -o build/wind-rex .` and run that binary with `-server`. Use an isolated `GOREX_DIR` when testing against a separate data directory.
+- **Web** uses `npm ci` and `npm run dev` from `web/`. Run `npm run typecheck` and `npm test` there for local checks.
+- **Localization** runs `go tool mygo generate` after editing `locales/*.json` (commit generated `locales/catalog_gen.go` alongside catalog changes).
+- **Pre-push verification** runs `go run ./tools/verify` against your diff.
 
 ## Distribution
 
-The iOS bundle ID is `wiki.wind.windrex`. Its widget is
-`wiki.wind.windrex.widgets` and uses the App Group `group.wiki.wind.windrex`
-with the iOS app. Prepare those identifiers and entitlements in the Apple
-team before setting up the manual TestFlight workflow in this repository.
-The workflow takes `WINDREX_APPLE_TEAM_ID`, `WINDREX_ASC_APP_ID`,
-`ASC_KEY_ID` and `ASC_ISSUER_ID` from repository variables, and `ASC_KEY_P8`
-from a repository secret. Configure your distribution authorization before
-running it.
+The iOS bundle ID is `wiki.wind.windrex`. Its widget extension is `wiki.wind.windrex.widgets` and shares the App Group `group.wiki.wind.windrex` with the iOS app. Prepare those identifiers and entitlements in the Apple Developer team before setting up the manual TestFlight workflow in `.github/workflows/testflight.yml`.
 
-For local signing, run `ios/scripts/upload` with `WINDREX_RELEASE_SIGNING=local`
-and `WINDREX_APPLE_TEAM_ID`. Set `WINDREX_SIGNING_CERTIFICATE` to the installed
-distribution certificate's SHA-1 hash, and use `WINDREX_APP_PROFILE` and
-`WINDREX_WIDGET_PROFILE` for the respective App Store profile UUIDs. Upload uses
-the Apple account signed into Xcode and marks the build for internal TestFlight
-testing. Set `BUILD` explicitly or let `asc` query App Store Connect for the next
-build number. `DESTINATION=export` writes the signed IPA to `ios/build/export`.
+- **GitHub Actions TestFlight workflow**: Configure repository variables `WINDREX_APPLE_TEAM_ID`, `WINDREX_ASC_APP_ID`, `ASC_KEY_ID`, and `ASC_ISSUER_ID`, plus repository secret `ASC_KEY_P8`.
+- **Local signing &amp; upload**: Run `ios/scripts/upload` with `WINDREX_RELEASE_SIGNING=local`, `WINDREX_APPLE_TEAM_ID`, `WINDREX_SIGNING_CERTIFICATE` (SHA-1 of the installed distribution certificate), `WINDREX_APP_PROFILE`, and `WINDREX_WIDGET_PROFILE` (App Store profile UUIDs). Set `BUILD` explicitly or let `asc` query App Store Connect for the next build number. `DESTINATION=export` writes the signed IPA to `ios/build/export`.
+- **Publishing to an internal TestFlight group via `asc`**: Also set `WINDREX_ASC_PROFILE`, `WINDREX_ASC_APP_ID`, and `WINDREX_TESTFLIGHT_GROUP_ID`.
+- **Optional hosted services**: Set `WINDREX_WEB_ORIGIN` on the host for hosted Web pairing, `WINDREX_PUSH_RELAY_URL` on the host and iOS build for background Live Activity push updates ([`NET-003`](docs/NET-003-push-relay.md)), and the Web snapshot URL in iOS settings for Hotspot Share.
 
-To publish with a local `asc` authentication profile, also set
-`WINDREX_ASC_PROFILE`, `WINDREX_ASC_APP_ID` and
-`WINDREX_TESTFLIGHT_GROUP_ID`. The script checks that the group belongs to
-the app and is internal, exports the signed IPA, and uses `asc` to upload and
-add the processed build to that group.
+## Architecture &amp; Documentation Map
 
-To enable hosted Web pairing, set `WINDREX_WEB_ORIGIN` on the desktop or
-server to the deployed Web client's origin. The optional iOS Live Activity
-relay uses `WINDREX_PUSH_RELAY_URL` on the host and in the iOS build. For iOS
-Hotspot Share, set the Web snapshot URL in the app's settings.
+### Repository Entry Points
 
-The remaining documentation describes the inherited GoRex behavior and
-may refer to its historical product and command names.
-
-## What it does
-
-- **Tabs and split panes.** Every pane is a card over the window's gradient,
-  with its program's icon, name and directory in its header, and buttons to
-  split right, split down, zoom and close. Drag the gaps between panes to
-  resize them (double-click resets a split to half).
-- **Browser panes.** New Browser Tab, or Split with Browser, opens a pane
-  that shows a web page in the system's web view: an address field, back,
-  forward and reload in its header, and the page's title on its tab. The
-  page lives while its tab does, and opens again at its URL when GoRex
-  starts. A browser pane belongs to this machine, so a remote tab takes
-  none, and Find searches terminals alone. Only http and https pages
-  open; a page is untrusted, so it reaches no GoRex code, asks for no
-  permission, opens no window of its own and downloads nothing.
-- **Note panes.** New Note Tab, or Split with Note, opens a pane that is a
-  sticky note: free text you type in place, named by its first line. The
-  layout keeps the text, so it is there when GoRex starts. A note pane
-  belongs to this machine, so a remote tab takes none, peers and the API
-  never see it, and Find searches terminals alone. With a note focused, the
-  text-size keys (`⌘+`, `⌘−`, `⌘0`) resize its text, a note at a time, and the
-  eye button or `⌘E` shows it as rendered Markdown (links open in the browser,
-  images show their descriptions); the pencil button or `⌘E` edits again. On
-  Windows and Linux the key is `Ctrl+Shift+M`, and a terminal keeps it unless
-  a note has the focus.
-- **Persistent sessions.** Shells run in a session server, a background
-  process of the same binary (`GoRex -server`). Quit GoRex and everything
-  keeps running; open it again and every tab, split and pane comes back as
-  it was, programs still running. The server keeps each session's screen in
-  a headless libghostty-vt emulator and sends a snapshot on attach, so
-  full-screen programs (lazygit, vim, htop…) come back exactly. A server
-  restarted (`gorex server restart`, or the app on Windows replacing an
-  older one once asked) brings its sessions back as new shells at their
-  panes' directories; Quit and End All ends them. How the server keeps
-  the screens: [docs/REF-006-session-server.md](docs/REF-006-session-server.md).
-- **Kitty graphics.** Images sent by file path are read where the program
-  runs, including on a remote host, and are shown in-band; a window that
-  attaches again replays them.
-- **Find and links.** Cmd+F searches the focused pane's screen and
-  scrollback, with the match count and next/previous; Escape closes it.
-  Command-click (Control-click elsewhere) opens URLs through the system,
-  and file paths relative to the pane's program.
-- **Spaces, hosts, projects, tabs, panes** (`docs/MOD-002-projects.md`). A
-  project is a folder on one host; its tabs, splits, floating panes and
-  browser panes live in that host's layout, so every client of the host
-  (this app on another machine, Rex Go, the web client) sees the same
-  tabs. A space (Work, Life) is a name on projects.
-  - The sidebar has the space picker atop (New Space…, Edit Spaces… to
-    rename, color and order them), then each host you added as a section
-    header with its state and a `+` for a new project, and under it its
-    projects of the space, flush, each with its color dot and tab count
-    (the folder in its tooltip), latest used first, those unused for 30
-    days under a folded **Older**, then its **No Project** (tabs with no project), which
-    every space shows. A click on the project shown, or on a project's dot,
-    opens its tabs one step in, joined by a guide line; its `+` (and ⌘T
-    while it is shown) opens a tab in its folder. Its menu has New Tab, Rename…,
-    Color, Move to Space, Reveal Folder (this machine's) and Close
-    Project…. A host's menu has Rename… (its alias) and New Tab with No
-    Project. Drag a tab onto a project of its host to move it there, its
-    programs running.
-  - With the tabs on top, the title bar shows `Space ▾` and `host ›
-    project ▾`, whose menu lists the space's hosts, their projects with
-    their tab counts, the tabs with no project, and New Project….
-  - **New Project…** (the `+` of a host's header, the sidebar's foot, the
-    palette, the Project menu, ⇧⌘N) opens the folder sheet on that host:
-    browse its folders, name the project (the folder's name by default),
-    Create. The host makes the project in the space shown and its first
-    tab in the folder. A folder that is a project already shows that
-    project, and offers to move it to this space.
-  - A host that is away shows its projects greyed, as GoRex last saw them;
-    nothing in them opens until it connects.
-  - Each window keeps the project it shows, the space shown, the sidebar's
-    open rows and the spaces' colors and order in `settings.json`, for
-    this machine only.
-  - A layout of v0.38 to v0.40 is migrated once: this machine's projects
-    stay, old spaces' tabs become tabs with no project, and the panes
-    another host ran in this machine's tabs go to that host as it
-    connects (the sidebar says "Waiting for" the host until then), into
-    the project they were homed in there, with their splits, and no
-    program restarts.
-- **Single instance.** GoRex runs once: opened again, it brings the
-  window used last to the front, or opens one. The installed app and
-  `mygo dev`'s GoRex Dev each run once, apart, and an app given a
-  `GOREX_DIR` of its own runs beside them.
-- **Program activity.** The server watches each terminal's foreground
-  process (`tcgetpgrp`, `sysctl`, `proc_pidinfo`; on Windows, the shell's
-  newest child, its command line and directory): headers and tabs name the
-  program (`Node`, `Git Changes` for lazygit, `Codex`, `SSH host`…) and its
-  working directory, a green dot shows a program printing, and an orange dot
-  marks a pane whose program finished or rang the bell out of sight. When
-  the window is in the background, a long command finishing posts a
-  notification. A session's most urgent program status shows in the
-  session picker and the sidebar.
-- **Agent skill and hooks.** `gorex skill setup` finds Claude Code, Codex,
-  Antigravity CLI, Devin, OpenCode and Pi, installs a `gorex` skill into
-  each, and adds a session-start hook to Claude Code, Codex, Antigravity
-  CLI and Devin that tells the agent its session and pane and how to
-  drive GoRex from the command line. It adds
-  only its own hook and leaves other settings, hooks and skills as they
-  were; `gorex skill status` says what is installed, and `gorex skill
-  remove` removes only what it added. `--project` keeps the skill in the
-  repository, and `--dry-run` reports first.
-
-- **Tab icons** stack the tiles of a tab's programs, the focused pane's in
-  front, as Rex does. Tabs reorder by dragging, rename by double-click, and
-  have a context menu.
-- **Vertical tabs.** Settings ▸ Appearance places the tabs above the panes,
-  or in a sidebar on the left or the right side of the window. Drag the
-  sidebar's inner edge to resize it (double-click resets it), and Toggle
-  Sidebar (⌃⌘S) hides and shows it. "Show pane headers" off hides the
-  panes' headers while the sidebar shows on the left; they always show
-  when it is hidden or on the right, as in Rex.
-- **Pane animations.** Panes spring into place when they move, split or
-  zoom, and new or closing panes pop in and out. Settings ▸ Appearance ▸
-  Animation style chooses Snappy, Natural or Off, which also sets how the
-  sidebar shows and hides. While the system's Reduce Motion is on,
-  animations stay off.
-- **Infinite canvas (experimental).** Settings ▸ Appearance ▸ Experimental
-  ▸ Infinite canvas lays every tab out as free boxes on an endless plane,
-  each pane where it showed. Scroll or drag the empty plane to pan, or
-  hold Space over it and drag anywhere; pinch, or hold Ctrl or Cmd and
-  scroll, to zoom (25% to 200%), and Reset Canvas View in the palette goes
-  back to the start. Right-click the empty plane for a new terminal,
-  browser or note there. Move and resize a box by its header and edges; a
-  split puts a box of the same size right of or below the focused one. A box keeps its size as the window resizes or the canvas
-  zooms, so its terminal keeps its columns and rows. Turning it off docks
-  every box back into the tab's splits. It may change or go away.
-- **Host chip** with the machine's name and model; its popover shows the
-  chip, memory, OS and the session server, and a remote host that is not
-  connected with a button to Settings › Remote Hosts (Add Remote Host… while
-  none is saved).
-- **Command palette** (⇧⌘P, Ctrl+Shift+P, or the ⌘ button): every command, and every pane
-  to jump to, fuzzy-matched.
-- Light and dark appearances (View ▸ Appearance), text size (⌘+ ⌘− ⌘0),
-  JetBrains Mono embedded.
-- English and Simplified Chinese (简体中文): Settings ▸ Appearance ▸ Language
-  follows the system's language or chooses one. The command palette finds a
-  command by its English title in either.
-
-## Shortcuts
-
-| macOS | Windows, Linux | |
-|---|---|---|
-| ⌘T | Ctrl+Shift+T | New tab |
-| ⌘D / ⇧⌘D | Ctrl+Shift+D / Ctrl+Shift+E | Split right / down |
-| ⌘W / ⇧⌘W | Ctrl+Shift+W | Close pane / tab |
-| ⇧⌘↩ | Ctrl+Shift+Enter | Zoom the pane |
-| ⌥⌘ arrows | Alt+arrows | Focus the pane in that direction |
-| ⌃⌘ arrows | Alt+Shift+arrows | Move the nearest divider |
-| ⌃⌘= | | Equalize panes |
-| ⌘1…⌘9, ⇧⌘[ ⇧⌘], ⌃Tab | Ctrl+Shift+1…9, Ctrl+PageUp/PageDown, Ctrl+Tab | Switch tabs |
-| ⇧⌘R | Ctrl+Shift+R | Rename tab |
-| ⌘N | Ctrl+Shift+N | New window, of a project no window shows |
-| ⇧⌘N | | New project… |
-| ⇧⌘O | Ctrl+Shift+O | Change project |
-| ⌃⌘] ⌃⌘[ | Ctrl+Shift+PageDown/PageUp | Next / previous project |
-| ⌘J | Ctrl+Shift+J | Jump to the pane that needs you |
-| ⇧⌘J | | List what needs you, by state, across windows and hosts |
-| ⌃⌘S | Ctrl+Shift+S | Hide or show the tabs' sidebar |
-| ⇧⌘P, ⌘P | Ctrl+Shift+P | Command palette |
-| ⌘K | Ctrl+Shift+K | Clear |
-| ⌘+ ⌘− ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | Text size |
-| ⌥⌘Q | | Quit and end all sessions |
-
-Elsewhere than on macOS, Control and a letter are the terminal's (Ctrl+C,
-Ctrl+D, Ctrl+W…), so GoRex's shortcuts take Shift too, as copying and
-pasting do (Ctrl+Shift+C, Ctrl+Shift+V), and none take Control and Alt,
-which type characters (AltGr) on many keyboards.
-
-### Settings
-
-Settings… (⌘, on macOS, Ctrl+, elsewhere; Shell menu and command palette)
-opens a window of its own with a sidebar of sections: Appearance (light,
-dark or system; tab placement; pane headers; animation style; text size;
-language), Terminal (font, cursor style and blink, copy on
-selection, minimum contrast), Theme (any of Ghostty's themes, or follow the config),
-Keyboard (GoRex's shortcuts, read only), Remote (see
-[Remote access](#remote-access) and [Remote hosts](#remote-hosts)),
-Network (see [Remote hosts](#remote-hosts) and [Tailscale discovery](#tailscale-discovery-desktop))
-and About (version, Check for Updates…).
-The choices go to `settings.json`, as do the sidebar's width and whether
-it is hidden.
-
-Remote turns the server's remote access on and off, and manages it:
-pairing a new device (Start pairing opens a five-minute window; each
-request shows its name and fingerprint, to Approve or Reject), the list
-of allowed clients (revoke one, or add one by name and public key), this
-machine's own key and its fingerprint, and, while listening, the address,
-hidden until you show it, with Copy and Regenerate (which asks first). The
-page asks the server every two seconds while it shows. Its Remote Hosts
-group is the other side: the machines this one connects to (see
-[Remote hosts](#remote-hosts)).
-
-Precedence: what you set in Settings, over Ghostty's config, over GoRex's
-defaults. "Reload Ghostty Config" reads the config again but never
-replaces a choice made in Settings; "Use Ghostty config" (Terminal)
-forgets the font, cursor, and copy-on-selection choices, and Theme's
-"Follow Ghostty config" the theme's. A theme chosen in Settings also
-replaces the config's `background`, `foreground`, `palette`, and the other
-colors, which belonged to its own theme. Font, theme, copy on selection,
-and the cursor apply to open panes at once.
-
-### Ghostty configuration
-
-GoRex reads Ghostty's config: `$XDG_CONFIG_HOME/ghostty/config.ghostty`
-(`config`), else `%LOCALAPPDATA%` on Windows or `~/.config`; on macOS also
-`~/Library/Application Support/com.mitchellh.ghostty/`. `config-file`
-includes work. `GOREX_GHOSTTY_CONFIG` names one file instead.
-
-Supported: `font-family`, `font-size`, `font-feature`, `font-thicken`,
-`adjust-cell-height` (percent), `theme` (also `light:…,dark:…`),
-`background`, `foreground`, `cursor-color`, `cursor-text`,
-`selection-background`, `selection-foreground`, `palette` (0–15),
-`cursor-style`, `cursor-style-blink`, `scrollback-limit`,
-`macos-option-as-alt`, `copy-on-select` (`clipboard`; `true` is
-Linux's selection clipboard, so it copies nothing), `right-click-action`,
-`minimum-contrast`, `clipboard-read`, `clipboard-write`,
-`window-padding-x`, `window-padding-y`, `window-padding-color`,
-`image-storage-limit`, `search-background`, `search-foreground`,
-`search-selected-background`, `search-selected-foreground`, `keybind`.
-`keybind` takes `clear`, `performable:`,
-and the actions unbind, ignore, copy_to_clipboard, paste_from_clipboard,
-select_all, clear_screen, increase_font_size, decrease_font_size,
-reset_font_size, and scroll_page_up, scroll_page_down, scroll_to_top,
-scroll_to_bottom; `global:`, `all:`, and `unconsumed:` binds, sequences
-(`a>b`), and other actions are skipped. GoRex's own shortcuts come
-before keybinds. A text size set with ⌘+ ⌘− wins over `font-size`;
-⌘0 goes back to it. With a theme or background, panes draw its
-background, and unless View ▸ Appearance names one, the window turns
-dark or light by it, as Ghostty's `window-theme = auto` does (not with
-`light:…,dark:…`, which follows the system). "Reload Ghostty Config"
-(command palette, View menu) applies fonts, themes, `copy-on-select`,
-and `minimum-contrast` to open panes; the other options apply to new
-panes.
-
-`minimum-contrast` is 3 unless Ghostty's config or Settings ▸ Terminal
-▸ Minimum contrast (`terminal.minimumContrast` in settings.json) sets it: text
-closer than that to its background, colors programs set too (ANSI, 256
-and RGB), turns lighter or darker in its hue, in local and remote panes
-alike; box drawing keeps its colors. 1 turns the correction off. Unset,
-Ghostty's is 1, so GoRex corrects colors where Ghostty would not.
-
-Options GoRex maps fully: the colors and fonts above, `cursor-style`,
-`cursor-style-blink`, `scrollback-limit`, `macos-option-as-alt`,
-`copy-on-select`, `right-click-action`, `minimum-contrast`,
-`clipboard-read` (allow, ask or deny), `clipboard-write` (allow or
-deny; ask is treated as deny), the first value of `window-padding-x`
-and `window-padding-y` (the library has one width and one height),
-`window-padding-color`, `image-storage-limit` (0 refuses images), and
-the supported `keybind`s. Options it reads but leaves out, as the library
-has no mapping: `background-opacity`, `background-blur`,
-`mouse-hide-while-typing`, `scroll-multiplier`, `window-padding-balance`,
-and window decorations. Other options are ignored, and `gorex config check`
-lists the Ghostty options it ignores.
-
-## Remote access
-
-### Tailscale discovery (desktop)
-
-On Linux, GoRex uses an existing, running system Tailscale client to
-discover GoRex hosts and connect to their terminals. On macOS and
-Windows, it uses the gateway's built-in Tailscale node instead (no
-Tailscale app), which you sign in once in a browser (click **Sign in** in Settings ›
-Server). Devices with the
-same Tailscale user in the same tailnet appear in Remote Hosts once they
-have a compatible GoRex server and Tailscale policy allows TCP port
-7464. Click Connect on a host to open or reattach to a session. The
-server only listens on its Tailscale interface, or in the built-in
-node's own network stack, and checks each connection's device identity
-with Tailscale.
-
-Turn **Tailscale discovery and connections** on in Settings › Server, or
-use `gorex remote tailscale on`; on macOS and Windows this also turns
-built-in Tailscale on, which serves Rex's API on port 443 to your own
-devices. An upgrade never turns built-in Tailscale on: with the mode on
-from an earlier version, it stays off until you click **Turn on** under
-the switch or run `gorex remote tailscale on` (or `gorex rexapi tailscale
-on`). Built-in Tailscale that you turn off later stays off over
-restarts; **Turn on** starts it again. The mode is off by default and waits when Tailscale is
-unavailable. `gorex remote status --json` reports the local mode, the
-side that carries it (`system` or `built-in`), the built-in node's state
-and the hosts it has discovered.
-
-### Tailcat
-
-The session server can also listen on a
-[tailcat](https://github.com/tailscale/tailcat) address: Tailscale's data
-plane without its control plane, so WireGuard end to end, through a DERP
-relay or directly, with no Tailscale account. Remote access is off by
-default. Each machine has a client key (`remote-client.json`), and the
-server serves the keys of its allowlist only: it reads the key of every
-connection, and closes those of other keys at once, saying first that
-they are not allowed (so that a client tells a refusal from a network
-that dropped). With an empty
-allowlist nobody gets in. The server keeps its keys (`remote.json`, mode
-0600), so its address stays the same; regenerating them makes a new one,
-and the old address stops working.
-
-Pairing adds a client without copying its key by hand:
-
-1. On the server, turn remote access on and Start pairing: a window
-   opens for five minutes.
-2. On the client, ask to pair with the server's address and a name
-   (`remotectl pair ADDRESS alice-laptop`). It prints a fingerprint, as
-   `01234567-cdef`.
-3. The request shows on the server with its name and fingerprint.
-   Approve it only if the fingerprint is the one the client printed:
-   anyone with the address can ask too.
-
-While the window is open, a client not allowed may ask to pair and
-nothing else; at most 8 requests wait, one per key, and they are
-forgotten when the window closes. They are never saved.
-
-What to know before turning it on:
-
-- The address is a secret: it holds the server's key and the WireGuard
-  pre-shared key. Do not paste it where others read it. GoRex never logs
-  it, nor any key.
-- The allowlist is what keeps others out. A leaked address alone gets
-  nobody in, but it lets anyone ask to pair while a window is open:
-  compare fingerprints, and regenerate a leaked address anyway.
-- An allowed key means running commands as this user: a client may
-  start any program with any environment. From a shell there it can
-  reach the local socket, and so change the layout and remote access
-  itself. Trust it as you would an SSH key.
-- Every allowed client sees and uses every session: this machine's
-  window's and other clients'. The server remembers which key created a
-  session, in memory, and keeps it across an in-place upgrade. A session a client opens
-  here gets a tab in this window too, last among this machine's tabs and
-  without taking the focus, rather than running unseen.
-- Over the connection itself, a remote client may list, create, kill,
-  resize and attach to sessions only. It may not shut the server down,
-  read or set the window layout, or see or change remote access
-  (`remote.*`, pairing included): those are for the local socket only.
-- Every connection is limited: a line of requests of at most 1 MiB, a
-  terminal of 1 to 1000 columns and rows, and 8 kills at once.
-
-The same address also serves Rex's API on its port, 7297, for Rex Go
-(see [docs/IOS-002-tailcat.md](docs/IOS-002-tailcat.md)). Rex's API commands
-the layout, as a client may over 7464 too: an allowed key gets it; any
-other gets nothing there, and pairing stays on 7464. The session server hands each such connection to the Rex API
-gateway, which it runs while remote access is on, on the gateway's
-socket (`rexapi-tailcat.sock`, this user's only); with no gateway there,
-the connection closes and the client dials again. Remove, or remote
-access turned off, closes these connections.
-
-The address names the DERP relay where clients meet the server when
-they cannot connect directly: by default one of tailcat's free relays,
-picked once. A relay of one's own takes its place: **Relay** in Settings
-› Remote, or `gorex remote relay derp.example.com` (`gorex remote relay
-default` goes back); `gorex remote relay gorex` names the relay the team
-runs. Give a host name, with `:PORT` when not 443, and not
-an IP address: `derper` serves a certificate for its host name. The
-relay is Tailscale's `derper`, on any machine clients can reach:
-
-```sh
-derper --hostname=derp.example.com
-```
-
-with 443/TCP and 3478/UDP open. It sees
-keys and ciphertext only. Changing the relay changes the address (the
-keys stay), so clients need the new one; it is kept in `remote.json`.
-
-### Remote hosts
-
-Remote clients pair by name and keep their key and created/last-seen
-times; a client's hello names its principal, `gorex clients` lists the
-live attachments with their principal and age, and `gorex ls` shows the
-principal that owns each session. Settings › Server can share this
-window's layout read-only, and give the allowed clients all sessions or
-each only the sessions it opened; the shared layout is filtered to
-sessions that client may use; panes it may not use are shown as unavailable placeholders, and
-panes of other hosts are left out; `gorex -S HOST layout`
-reads it and `events` follows changes.
-
-A session attached by several clients takes the size of the one the
-user's focus is on, if that machine had input in the last minute; see
-[docs/REF-003-session-size.md](docs/REF-003-session-size.md).
-
-For a Linux service shared by several paired clients, see
-[docs/REF-004-shared-server.md](docs/REF-004-shared-server.md). Per-user isolation and
-PAM login are a separate proposal: [docs/NET-001-login-server-rfc.md](docs/NET-001-login-server-rfc.md).
-
-Settings › Remote Hosts connects this machine to other machines' session
-servers, whose sessions then open in tabs of the window beside its own.
-Add Remote Host… asks for the host's address (the one its Settings ›
-Remote shows; the field hides it), a name for it, and the name this
-machine pairs as (the computer's name, at first):
-
-1. On the host, turn remote access on and Start pairing.
-2. On this machine, Add Remote Host… with its address. A host that allows
-   this machine already is saved at once; otherwise GoRex asks to pair
-   and shows this machine's fingerprint.
-3. On the host, approve the request that shows the same fingerprint. The
-   sheet tries again every three seconds and saves the host once it is
-   let in.
-
-The hosts are kept in `hosts.json` beside the settings, readable by the
-user only, and not in `settings.json`: their addresses are secrets, which
-GoRex never logs nor shows. Each host's row shows its state (Connecting,
-Connected, Reconnecting (attempt N), or why it is not connected) with
-Retry, which tries at once, and Remove. Removing a host closes its tabs
-in the window and leaves its sessions running on the remote server.
-
-GoRex keeps a connection to each host and connects again when it drops,
-waiting longer after each failure, up to 30 seconds. New Tab opens on the
-active tab's host, and a split on its pane's; New Tab on a host (the
-command palette, or the + of a host's name in the sidebar) picks one.
-Closing a tab or a pane ends its session on its host, once connected
-again if it is not now. With hosts saved, the sidebar lists
-the tabs under their host's name, this machine's first, and tabs above
-show a host's name on its tabs. A pane whose host is away keeps its
-screen under "Reconnecting to …", drops what is typed meanwhile, and
-attaches again by itself; one whose session ended there closes. The
-window's layout keeps the host of each pane, so a host's tabs come back
-when GoRex opens again, attached once the host answers. Sessions the host
-lists that no tab shows (opened in the host's own window, or by another
-client) open last among the host's:
-one tab for each session, or, while the host shares its layout, one tab
-for each tab that layout shows, with its splits, so two panes side by
-side there are not two tabs here; a tab closed here ends its session as
-any other and does not come back.
-`go run ./tools/remotectl pair ADDRESS NAME` asks to pair from a machine
-without the app; with the IP address of a host's Reachable at in place of
-ADDRESS, it pairs by address: it prints a code to compare with the
-host's, and the host's addresses once approved.
-
-### Teleport
-
-Teleport to… (the pane's menu, or Teleport to a host in the command
-palette) moves a pane's work to a connected host: the Git work tree's
-commits, changes and untracked files, Claude Code's or omp's conversation, and the
-scrollback. The host makes a work tree of its clone of the repo,
-`.gorex/teleport/<id>` on a branch `teleport/<id>`, or, for work coming
-back to a directory it left untouched, takes it there again; and starts
-`claude --resume` or `omp --resume` there, or a shell; the pane then shows that session, in
-a tab of the host's, and its own session ends. Only a shell at its prompt
-or Claude Code or omp waiting for the user can go, from this machine;
-`gorex teleport PANE HOST` does the same from the command line. Dragging
-a tab of one pane onto another host's tabs, or its name in the sidebar,
-asks to teleport it there. See [docs/DSK-003-teleport.md](docs/DSK-003-teleport.md).
-
-## Importing a Rex session
-
-GoRex reads a Rex server and makes the same shape here: a Rex session
-becomes a project, a window a tab, and a block a pane. Each pane runs
-`gorex rex-mirror`, which draws what the Rex block shows and sends what
-is typed there to it, so the two show the same program.
-
-```sh
-gorex rex-import --session work            # one session, by label or ID
-gorex rex-import                           # every session
-gorex rex-import --shell                   # shells, not mirrors
-gorex rex-import --resize                  # mirrors give their blocks the pane's size
-```
-
-The window imports without a terminal: **Project ▸ Import from Rex**, or the
-command palette's *Import from Rex*, mirrors every session the record does
-not have yet and says how many it made in a notification; a failure opens a
-dialog. The Rex server defaults to `$REX_SERVER`, else `rex/server.sock` in
-the platform's data directory; `--rex` names another. What a run imported
-is recorded in `rex-import.json` in GoRex's data directory, so a second run
-leaves those sessions alone. The GoRex window must be open: it makes the
-projects, tabs and panes.
-
-A mirror is a view with input. The data stream starts with a snapshot in
-Ghostty's binary format, which only a Ghostty terminal restores, so the
-mirror draws the screen from the escape sequences Rex renders (`format`
-vt), reads past the snapshot by its record format, and passes the
-program's output on as it comes; Rex's own APC messages are dropped. Keys
-go to the block as text. What the block's program prints reaches the pane
-as it would reach a terminal itself: the mirror does not filter its
-escapes otherwise, as a terminal multiplexer would not.
-
-A tab keeps its window's label only when a person gave it one; Rex's own
-labels, such as `Window 2b63efe2`, are left out, and the tab follows its
-block's title, as the Rex window does. The tab's tile is the program the
-block runs — Claude Code, omp, a shell — which the mirror reports through
-the program status protocol (OSC 7501) along with the status Rex keeps for
-it, so a working or finished block shows as it does in Rex.
-
-A mirror's pane is a terminal of GoRex's, so what the Rex program writes
-reaches it, escape sequences and all. A layout's exact shape is not kept:
-the blocks are made in layout order, each split beside the one before, so a
-nested split's panes can sit in different halves than Rex put them, and
-ratios are not kept.
-
-## Rex's iPhone app
-
-Rex's own apps, the iPhone one among them, connect to GoRex as to a Rex
-server: the GoRex server serves Rex's API (revision 12), on the local
-network to the networks you allow (Settings › Server), and on the tailnet
-through a Tailscale device of its own. A project is
-a Rex session, a tab a window, a pane a block, and a floating pane a
-floating layer; terminals stream as Ghostty snapshots, as Rex's do. Setup,
-pairing, what differs from a Rex server, and troubleshooting:
-[docs/REF-005-rex-api.md](docs/REF-005-rex-api.md).
-
-## Develop and build
-
-GoRex needs [Go](https://go.dev/dl/) 1.27+ and MyGo 0.7.2, whose CLI
-`go.mod` pins as a tool:
-
-```sh
-go tool mygo dev     # GoRex Dev, rebuilt and restarted as the code changes
-go test ./...        # the server, and the view without a window
-go tool mygo build   # build/darwin-arm64/GoRex.app and a .dmg
-go run ./tools/mkicon      # rebuild the desktop, iOS and Web icons
-```
-
-`go tool mygo dev -background` starts the app and each rebuild without
-bringing it to the front, for runs that no one is watching.
-
-`go get -tool github.com/egoist/mygo/cmd/mygo@latest` updates MyGo and its
-CLI together.
-
-`go tool mygo build` signs the app with the Developer ID that
-`macos.signingIdentity` names, so macOS keeps its privacy answers (such as
-media library access, which programs in the terminal ask for as GoRex)
-from one build to the next; an ad-hoc signature changes with every build.
-Without that identity, pass `-sign -`. The Release workflow signs with the
-same identity, from the secrets `MACOS_DEVELOPER_ID_P12` (the identity's
-.p12, base64) and `MACOS_DEVELOPER_ID_P12_PASSWORD`, and notarizes the disk
-image with the App Store Connect API key `ASC_KEY_P8`.
-
-### Release
-
-Releases update installed apps, signed with a key that only the
-maintainer holds. Once, run `go tool mygo keygen` and put the contents of
-`mygo-update.pub` in `updates.publicKey` of `mygo.json`; keep
-`mygo-update.key` out of the repository. For each release, add a
-`## 0.1.0` section (the version of `mygo.json`) to `CHANGELOG.md`, which
-becomes the release notes, then run the Release workflow on `main`, which
-builds every platform, signs the updates with the repository secret
-`MYGO_UPDATER_PRIVATE_KEY` (the contents of `mygo-update.key`) and uploads
-them to a draft GitHub release, and publish the draft:
-
-```sh
-gh workflow run release.yml -R si-mods/gorex
-```
-
-Development builds and apps that cannot write where they are installed
-do not update; "Check for Updates…" is in the Shell menu and the command
-palette.
-
-The app keeps its state in its data directory: the server's socket and
-log, the app's own log `app.log` (kept as `app.log.1` at the next start
-once it passes 1 MiB), `layout.json` and `settings.json`, in
-`~/Library/Application Support/GoRex` for the built app and `GoRex Dev` for `mygo dev`'s, so
-that developing never touches the sessions of the app you use
-(`GOREX_DIR` names another directory). `layout.jsonl` beside the layout
-is a journal of every layout the app sent, and of each run's start and
-stop: a server that starts after one that left no stop record — a crash,
-a kill, a reboot — starts the sessions of the last layout again, the same
-ids in the same directories, so the windows attach to them as they were.
-A pane whose session is lost keeps what ran there: a strip above its shell
-names the program and runs it again on a click, as the command the shell
-would take, and for Claude Code, Codex, omp or Pi continues its last
-conversation in the pane's directory, which the agent itself finds, so no
-conversation id has to be kept; the process itself does not survive a
-reboot.
-A run that stops says why and what it held, and the server after it
-starts nothing. The sessions outlive the app, and
-a new build: on macOS and Linux, a build that finds a server an older
-build started has it run the new build in its place. For a headless
-server, run `gorex server upgrade` with the new executable and the
-existing server's data directory (`GOREX_DIR`). The server continues in the same
-process, its shells still running and their screens kept. On Windows a
-development build replaces such a server, ending its sessions, which
-then start again in the same directories, and the built app keeps it.
-
-### Windows
-
-GoRex runs on Windows 10 1809 or later, whose ConPTY runs the shells; its
-data directory is `%AppData%\GoRex`. Panes run `$SHELL` when it names a
-Windows program (`nu`, `C:\Program Files\Git\bin\bash.exe`), else
-PowerShell (`pwsh`, then `powershell`), else `cmd`. PowerShell's `cd`
-leaves its process's directory where it was, so GoRex starts it with a
-prompt that sets it, wrapping the profile's own prompt: the header then
-follows it, and new panes open there. The window's title bar is hidden
-and the system's buttons with it: the title bar draws minimize, maximize and
-close with the other buttons, and the window still resizes from every edge,
-its top included.
-
-A ConPTY's input drops the OSC that a terminal's paste event is, so a
-program there that reads the clipboard itself, as agents do, is never told
-of a paste. GoRex writes the paste to the session as text instead, through
-the session's server, which brackets it when the program asked for
-bracketed pastes (`gorex paste`); a pane of a remote client pastes the same
-in a Windows session. An image alone has no text to write: on Windows an
-image reaches a program as a file it opens, not as clipboard data.
-
-## Layout
-
-| | |
+| Path | Responsibility |
 |---|---|
-| `main.go` | the app, its window, and `-server` |
-| `state.go` | tabs, the tree of splits, panes, saving and restoring the layout |
-| `app.go`, `float.go`, `browser.go` | the window's state and its posted changes; floating panes and how a throw comes to rest; the browser pane and its URLs |
-| `workspace.go`, `workspaceview.go`, `space.go` | projects of tabs (workspaces in the code) and the windows showing them; the project chip, its list, Close Project's question, and the palette of project colors |
-| `view.go`, `tabs.go`, `sidebar.go`, `host.go`, `commands.go` | the interface: title bar, tabs and their sidebar, panes, host popover, menus and palette |
-| `programs.go` | how programs show: names, glyphs, tile colors |
-| `style.go`, `settings.go` | colors, fonts, terminal themes; appearance, text size and the user's choices over Ghostty's |
-| `settingsview.go`, `remoteview.go` | the Settings window, and its Server page's remote access |
-| `locales` | the messages of the interface, `en.json` and `zh-Hans.json`, and `catalog_gen.go` (written by `go tool mygo generate`; commit it with the catalogs) |
-| `tools/remotectl` | acts as a remote client without the app: pubkey, regenerate, pair, probe over tailcat |
-| `CHANGELOG.md` | release notes: a `## <version>` section per release |
-| `internal/rex` | the session server and its client: PTYs, foreground processes, headless screens, the socket protocol |
-| `internal/hosts` | `hosts.json`: the hosts' schema, load, and atomic save, shared by the app, the CLI and the server |
-| `internal/rexapi` | `GoRex rexapi`, the gateway that serves Rex's API to Rex clients from the server the app runs |
-| `internal/rexpeer`, `internal/reximp` | Rex's API as a client, and importing a Rex session into GoRex as spaces, tabs and panes that mirror its blocks |
-| `internal/testrex` | a Rex server for tests, over GoRex's own session server, so the client and the importer have one to talk to |
+| `main.go` | Desktop app entry point, CLI subcommands, and `-server` mode |
+| `ios/GoRex/GoRexApp.swift` | iOS / iPadOS SwiftUI app, Ghostty Metal terminal, Live Activities, and Widgets |
+| `cmd/windrex-relay/main.go` | Standalone stateless TLS reverse-proxy relay for hosts behind NAT |
+| `internal/rex` | Persistent session server: PTYs, headless `libghostty-vt`, OSC 7501 status, socket protocol |
+| `internal/rexapi` | Rex API gateway (revision 12), Direct TLS listener, outbound relay client, LAN/Tailscale/Tailcat admission |
+| `internal/directrelay` | Binary WebSocket stream multiplexer (`OPEN`/`DATA`/`CLOSE`/`ACK`), relay server, self-signed cert pinning |
+| `web/src/main.ts` | Standalone multi-host Web client (`libghostty-vt` compiled to WASM) |
+| `locales/` | English (`en.json`) and Simplified Chinese (`zh-Hans.json`) UI catalogs |
 
-Icons: [Lucide](https://lucide.dev) (ISC) and [Simple Icons](https://simpleicons.org)
-(CC0). Font: [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (OFL).
+### Key Design &amp; Reference Docs
+
+- **Networking &amp; Remote Access**: [`NET-005-direct-relay.md`](docs/NET-005-direct-relay.md) (Direct TLS &amp; stateless relay) · [`REF-005-rex-api.md`](docs/REF-005-rex-api.md) (Rex API gateway &amp; pairing) · [`IOS-002-tailcat.md`](docs/IOS-002-tailcat.md) (Tailcat) · [`NET-003-push-relay.md`](docs/NET-003-push-relay.md) (Live Activity push relay)
+- **Session Server &amp; CLI**: [`REF-006-session-server.md`](docs/REF-006-session-server.md) (headless terminal &amp; recovery) · [`REF-001-cli.md`](docs/REF-001-cli.md) (CLI &amp; agent skill hooks) · [`REF-004-shared-server.md`](docs/REF-004-shared-server.md) (shared Linux systemd server) · [`REF-003-session-size.md`](docs/REF-003-session-size.md) (multi-client sizing)
+- **Workspace &amp; Clients**: [`MOD-002-projects.md`](docs/MOD-002-projects.md) (spaces, hosts &amp; projects) · [`MOD-001-osc-7501.md`](docs/MOD-001-osc-7501.md) (program status protocol) · [`DSK-003-teleport.md`](docs/DSK-003-teleport.md) (pane Teleport) · [`DSK-009-terminal-settings.md`](docs/DSK-009-terminal-settings.md) (Ghostty &amp; terminal settings) · [`REF-007-web-client.md`](docs/REF-007-web-client.md) (Web client)
+- **iOS Experience &amp; Design**: [`IOS-006-live-activities.md`](docs/IOS-006-live-activities.md) · [`IOS-010-widgets.md`](docs/IOS-010-widgets.md) · [`IOS-012-background-and-network-changes.md`](docs/IOS-012-background-and-network-changes.md) · [`DESIGN.md`](DESIGN.md)
+
+## Upstream Attribution &amp; Credits
+
+WindRex is derived from [GoRex](https://github.com/si-mods/gorex) (`v0.56.1`) and built with [MyGo](https://github.com/si-mods/mygo) and [Ghostty](https://ghostty.org/) (`libghostty-vt`).
+Icons: [Lucide](https://lucide.dev) (ISC) and [Simple Icons](https://simpleicons.org) (CC0). Font: [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (OFL).
