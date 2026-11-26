@@ -134,7 +134,7 @@ nonisolated struct TerminalActivity: ActivityAttributes, Hashable, Sendable {
         while j >= 0, bottom - j <= maxInput + 1, !rule(rows[j]) { j -= 1 }
         guard j >= 0, rule(rows[j]) else { return nil }
         let inside = (j + 1)..<bottom
-        guard inside.contains(where: { prompt(rows[$0]) }) || cursor.map { inside.contains($0) } == true else { return nil }
+        guard inside.contains(where: { prompt(rows[$0]) }) || cursor.map({ inside.contains($0) }) == true else { return nil }
         return j
     }
 

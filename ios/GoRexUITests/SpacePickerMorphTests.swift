@@ -3,7 +3,7 @@ import XCTest
 /// Drives the space picker for the screen recording in the PR: open the
 /// panel, pick Life, open again and tap beside it to close.
 final class SpacePickerMorphTests: XCTestCase {
-    func testSpacePanelMorph() throws {
+    @MainActor func testSpacePanelMorph() throws {
         let app = XCUIApplication()
         // A fresh install raises the notification-permission alert over the
         // launch; decline it so the first screen is reachable.

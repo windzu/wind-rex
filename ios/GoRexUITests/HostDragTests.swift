@@ -6,7 +6,7 @@ import XCTest
 /// seeded simulator it runs; seed `hosts` in the app's defaults with
 /// HostConfigs named alpha-laptop, bravo-desktop and charlie-server.
 final class HostDragTests: XCTestCase {
-    func testDragHostReorders() throws {
+    @MainActor func testDragHostReorders() throws {
         let app = XCUIApplication()
         addUIInterruptionMonitor(withDescription: "system alerts") { alert in
             for b in ["Don't Allow", "Allow", "OK"] where alert.buttons[b].exists {
@@ -41,7 +41,7 @@ final class HostDragTests: XCTestCase {
         XCTAssertGreaterThan(first.frame.midY, third.frame.midY)
     }
 
-    private func host(_ app: XCUIApplication, _ name: String) -> XCUIElement {
+    @MainActor private func host(_ app: XCUIApplication, _ name: String) -> XCUIElement {
         let b = app.buttons[name]
         return b.exists ? b : app.staticTexts[name]
     }

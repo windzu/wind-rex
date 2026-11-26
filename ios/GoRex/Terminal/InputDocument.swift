@@ -70,7 +70,7 @@ struct InputDocument {
     mutating func select(_ range: NSRange) -> Bool {
         guard range.location != NSNotFound, range.length >= 0, range.location >= 0,
               range.location + range.length <= count else { return false }
-        if let m = marked {
+        if marked != nil {
             let mStart = Self.a + typed.utf16.count
             guard range.location >= mStart else { return false }
             selected = NSRange(location: range.location - mStart, length: range.length)

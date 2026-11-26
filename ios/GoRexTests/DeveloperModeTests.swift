@@ -45,6 +45,24 @@ nonisolated final class DeveloperModeTests: XCTestCase {
         XCTAssertEqual(file.read(), [])
     }
 
+    func testConnectionLogFileOffMainActorAndTrim() async throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "gorex-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let url = dir.appending(path: "connection.log")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let file = ConnectionLog.File(url: url)
+        let total = 2501
+        await Task.detached {
+            for i in 1...total {
+                file.append(String(format: "01:02:03.%03d line %d", i % 1000, i))
+            }
+        }.value
+        let lines = file.read()
+        XCTAssertEqual(lines.count, 2000)
+        XCTAssertTrue(lines.first?.hasSuffix(" line 502") == true)
+        XCTAssertTrue(lines.last?.hasSuffix(" line 2501") == true)
+    }
+
     @MainActor func testNetworkSummaryLineVariants() {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         let now = base.addingTimeInterval(81.34)

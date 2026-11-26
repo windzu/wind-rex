@@ -61,10 +61,10 @@ enum ConnectionLog {
     /// of backups. Writes go on one serial queue: a caller of note() never
     /// waits on io, and an io error is reported once, then quiet — the log
     /// failing never breaks the app.
-    final class File {
+    nonisolated final class File: @unchecked Sendable {
         private let url: URL
         private let queue = DispatchQueue(label: "wiki.wind.windrex.connectionlog")
-        // The rest runs on queue.
+        // The rest runs exclusively on queue.
         private var handle: FileHandle?
         /// The lines the file holds, as read() counted and append() grew it.
         private var count = 0
@@ -110,6 +110,7 @@ enum ConnectionLog {
         /// The file's handle at its end, making the file and its directory
         /// as needed.
         private func writer() -> FileHandle? {
+            dispatchPrecondition(condition: .onQueue(queue))
             if let handle { return handle }
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -133,6 +134,7 @@ enum ConnectionLog {
 
         /// The file cut back to its last limit lines.
         private func trim() {
+            dispatchPrecondition(condition: .onQueue(queue))
             do {
                 try handle?.close()
                 handle = nil
@@ -145,17 +147,18 @@ enum ConnectionLog {
 
         /// An io error in the system log, once; the app never sees it.
         private func report(_ error: Error) {
+            dispatchPrecondition(condition: .onQueue(queue))
             guard !reported else { return }
             reported = true
             log.error("connection log file: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    private static let log = Logger(subsystem: "wiki.wind.windrex", category: "connection")
-    private static let limit = 2000
+    nonisolated private static let log = Logger(subsystem: "wiki.wind.windrex", category: "connection")
+    nonisolated private static let limit = 2000
     /// The lines the file may hold past the limit before it is rewritten to
     /// its tail: a rewrite per that many new ones, not one per line.
-    private static let slack = 500
+    nonisolated private static let slack = 500
     static let store = Store(lines: file.read())
     private static let file = File(url: URL.applicationSupportDirectory.appending(path: "connection.log"))
 

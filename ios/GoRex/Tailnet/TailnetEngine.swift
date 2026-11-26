@@ -250,7 +250,7 @@ final class TailnetEngine {
         let tailnetOn = TailnetSettings.isOn
         guard TailnetActivationPolicy.needsEngine(hosts: hosts, tailnetEnabled: tailnetOn),
               tailnetOn || hasTailcat || proxy != nil else { return }
-        guard let p = await Task.detached { try? Self.readProxy(run: 0) }.value else { return }
+        guard let p = await Task.detached(operation: { try? Self.readProxy(run: 0) }).value else { return }
         if hasTailcat { tailcatProxy = p }
         if let q = proxy {
             let r = LoopbackProxy(port: p.port, password: p.password, run: q.run)
