@@ -49,6 +49,7 @@ Rules an agent cannot read from the code. Keep each line one that prevents a rea
 ## iOS TestFlight
 
 - Dispatch TestFlight manually from `windzu/wind-rex` after its distribution variables and credentials are configured. See the README for the app and team identifiers.
+- Keep `MARKETING_VERSION: "1.1"` in `ios/project.yml` for WindRex's initial App Store submission track (align App Store Connect's record from `1.0` to `1.1` rather than reverting to `1.0`; see `docs/REL-001-release-pipelines.md`).
 - A PR that changes what a tester sees adds a bullet (≤ 200 characters) in their terms to each locale of `ios/WhatToTest.md`; CI checks it (`ios/scripts/test-notes check`).
 
 ## Maintenance
