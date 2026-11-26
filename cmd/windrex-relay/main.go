@@ -28,7 +28,7 @@ func main() {
 	certFile := flag.String("cert", "", "optional PEM certificate file (auto-generates self-signed cert when empty)")
 	keyFile := flag.String("key", "", "optional PEM private key file")
 	hosts := flag.String("hosts", "", "comma-separated public IP or DNS names to embed in self-signed cert SANs")
-	secret := flag.String("secret", os.Getenv("WINDREX_RELAY_SECRET"), "optional shared secret required for host registration")
+	secret := flag.String("secret", os.Getenv("WINDREX_RELAY_SECRET"), "optional shared secret (relay token) required for host registration and GET /api/hosts discovery (disabled when empty)")
 	plainHTTP := flag.Bool("http", false, "serve plain HTTP (only when running behind a TLS-terminating reverse proxy)")
 	flag.Parse()
 
@@ -73,16 +73,7 @@ func main() {
 		})
 	}
 
-	fmt.Fprintf(os.Stdout, "windrex-relay listening on %s://%s\n", scheme, ln.Addr())
-	if pin != "" && *certFile == "" {
-		fmt.Fprintf(os.Stdout, "self-signed TLS cert pin: %s\n", pin)
-		fmt.Fprintln(os.Stdout, "connect a host with:")
-		fmt.Fprintf(os.Stdout, "  gorex rexapi direct relay --url https://<your-public-host-or-ip>%s --pin %s", portSuffix(*listen), pin)
-		if *secret != "" {
-			fmt.Fprint(os.Stdout, " --secret <secret>")
-		}
-		fmt.Fprintln(os.Stdout)
-	}
+	_, _ = fmt.Fprint(os.Stdout, formatStartupInfo(scheme, ln.Addr().String(), *listen, pin, *certFile != "", *secret != ""))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -97,6 +88,26 @@ func main() {
 	if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("windrex-relay: serve: %v", err)
 	}
+}
+
+func formatStartupInfo(scheme, addr, listen, pin string, customCert, hasSecret bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "windrex-relay listening on %s://%s\n", scheme, addr)
+	if hasSecret {
+		b.WriteString("host discovery: enabled at GET /api/hosts (requires Authorization: Bearer <secret>)\n")
+	} else {
+		b.WriteString("host discovery: disabled (set -secret or WINDREX_RELAY_SECRET to enable GET /api/hosts)\n")
+	}
+	if pin != "" && !customCert {
+		fmt.Fprintf(&b, "self-signed TLS cert pin: %s\n", pin)
+		b.WriteString("connect a host with:\n")
+		fmt.Fprintf(&b, "  gorex rexapi direct relay --url https://<your-public-host-or-ip>%s --pin %s", portSuffix(listen), pin)
+		if hasSecret {
+			b.WriteString(" --secret <secret>")
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func portSuffix(listen string) string {
