@@ -46,7 +46,7 @@ extension TerminalView {
     @objc private func bigger() { flashSize { zoom(by: 1) } }
     @objc private func smaller() { flashSize { zoom(by: -1) } }
     /// Back to Settings' first size.
-    @objc private func actualSize() { flashSize { zoom(to: 12) } }
+    @objc private func actualSize() { flashSize { zoom(to: CGFloat(TerminalFont.defaultSize())) } }
 
     /// Zooms as a pinch does, the grid's size shown a moment.
     private func flashSize(_ zoom: () -> Void) {

@@ -306,7 +306,7 @@ private enum Fonts {
 /// The terminal's options: its font, font size, dictation and minimum
 /// contrast.
 private struct TerminalSettings: View {
-    @AppStorage("fontSize") private var fontSize = 12.0
+    @AppStorage(TerminalFont.sizeKey) private var fontSize = TerminalFont.defaultSize()
     @AppStorage("fontFamily") private var family = ""
     @AppStorage("fontLigatures") private var ligatures = true
     @AppStorage("minimumContrast") private var contrast = 0.0
@@ -337,7 +337,7 @@ private struct TerminalSettings: View {
 
     var body: some View {
         List {
-            Stepper(value: $fontSize, in: 8...24) {
+            Stepper(value: $fontSize, in: TerminalFont.range) {
                 LabeledContent("Font Size", value: String(localized: "\(Int(fontSize)) pt"))
             }
             .onChange(of: fontSize) { NotificationCenter.default.post(name: .terminalFont, object: nil) }

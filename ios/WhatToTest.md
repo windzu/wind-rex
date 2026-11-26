@@ -10,6 +10,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 `web` job of `.github/workflows/ci.yml` fails it.
 
 ## en-US
+- On iPhone, terminals now default to 10 pt instead of 12 pt so more columns fit on screen. Custom font sizes set in Settings or by pinching still apply.
 - You can now connect over cellular via a direct TLS host or self-hosted relay QR code, with faster recovery after locking your phone and lower typing delay.
 - Open a project to see its tabs indented under its folder. On iPad, the open tab is highlighted beside the terminal.
 - Look for the handwritten W on the Home Screen. In Settings, try the Forest and Paper variants.
@@ -142,6 +143,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 - With Developer Mode on, the floating connection bar at the top no longer covers the first row of the computer list.
 
 ## zh-Hans
+- iPhone 端终端默认字号从 12 pt 调整为 10 pt，单屏可显示更多列；你在设置里或通过双指捏合自定义的字号继续生效。
 - 现在支持扫描直连 TLS 或自建中继二维码在蜂窝网络下连接电脑，锁屏切回后恢复更快，连续打字延迟更低。
 - 展开项目后，标签页会缩进到文件夹下方。iPad 的侧栏会高亮当前打开的标签页。
 - 主屏幕换上了手写 W 图标。你也可以在设置里试用「森林绿」和「纸白」款。

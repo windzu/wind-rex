@@ -31,9 +31,9 @@ extension TerminalView {
     /// Sizes the font, within Settings' range.
     func zoom(to size: CGFloat) {
         guard let s = surface else { return }
-        let size = min(max(size, 8), 24), step = Int(size - Self.fontSize)
+        let size = TerminalFont.clamped(size), step = Int(size - Self.fontSize)
         guard step != 0 else { return }
-        UserDefaults.standard.set(Double(size), forKey: "fontSize")
+        UserDefaults.standard.set(Double(size), forKey: TerminalFont.sizeKey)
         let action = step > 0 ? "increase_font_size:\(step)" : "decrease_font_size:\(-step)"
         _ = ghostty_surface_binding_action(s, action, UInt(action.utf8.count))
         UIImpactFeedbackGenerator(style: .light, view: self).impactOccurred()

@@ -23,10 +23,7 @@ import UIKit
 final class TerminalView: UIView, TerminalOutput {
     let session: TerminalSession
     /// The font size chosen in Settings.
-    static var fontSize: CGFloat {
-        let v = UserDefaults.standard.double(forKey: "fontSize")
-        return v > 0 ? v : 12
-    }
+    static var fontSize: CGFloat { TerminalFont.size() }
     /// The font family chosen in Settings; "" is Ghostty's own, JetBrains Mono.
     static var fontFamily: String { family(UserDefaults.standard.string(forKey: "fontFamily") ?? "") }
     /// A stored family as it is used: Maple Mono, which each device
