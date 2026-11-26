@@ -137,7 +137,7 @@ func TestHostProjectsInWindow(t *testing.T) {
 }
 
 // TestProjectsSidebarSpaces: the sidebar lists the projects of the space
-// shown, in order of last use, and every space the tabs with no project;
+// shown, in their stored layout order, and every space the tabs with no project;
 // the picker shows another space; New Space adds one, empty; Move to
 // Space moves a project, on its host.
 func TestProjectsSidebarSpaces(t *testing.T) {
@@ -348,9 +348,9 @@ func TestAdoptionsOnConnect(t *testing.T) {
 // spaceOfStore is the workspace of ID id of s, nil for none.
 func spaceOfStore(s layout.Store, id string) *layout.Workspace { return s.Space(id) }
 
-// TestProjectsOrder: a host's projects of the space go by last use, the
-// latest first, and those not used for 30 days under Older; the window's
-// own stays in sight.
+// TestProjectsOrder: a host's projects of the space keep their stored layout
+// order regardless of Used timestamps, and those not used for 30 days stay
+// under Older even while selected in the window.
 func TestProjectsOrder(t *testing.T) {
 	now := time.Now()
 	mk := func(name string, used time.Time) *Workspace {
@@ -360,13 +360,155 @@ func TestProjectsOrder(t *testing.T) {
 	other.Space = "Life"
 	a := &App{st: &store{workspaces: []*Workspace{old, mid, last, other}}}
 	recent, older := a.projectsOf(nil, "Work")
-	if len(recent) != 2 || recent[0] != last || recent[1] != mid || len(older) != 1 || older[0] != old {
+	if len(recent) != 2 || recent[0] != mid || recent[1] != last || len(older) != 1 || older[0] != old {
 		t.Fatalf("recent %v, older %v", names(recent), names(older))
 	}
-	a.ws = old
-	if recent, older = a.projectsOf(nil, "Work"); len(older) != 0 || len(recent) != 3 {
-		t.Errorf("the window's own project went under Older: %v, %v", names(recent), names(older))
+	mid.Used = now.Add(time.Hour)
+	if recent, older = a.projectsOf(nil, "Work"); len(recent) != 2 || recent[0] != mid || recent[1] != last || len(older) != 1 || older[0] != old {
+		t.Fatalf("updating Used reordered projects: recent %v, older %v", names(recent), names(older))
 	}
+	a.ws = old
+	if recent, older = a.projectsOf(nil, "Work"); len(older) != 1 || older[0] != old || len(recent) != 2 {
+		t.Errorf("selecting an Older project moved it out of Older: %v, %v", names(recent), names(older))
+	}
+}
+
+// TestSidebarProjectOrderStableOnSelection verifies that selecting a project,
+// clicking a tab under another project, or selecting a project inside Older
+// switches focus without reordering projects in the desktop sidebar (#49).
+func TestSidebarProjectOrderStableOnSelection(t *testing.T) {
+	a, tt, _, _ := projectsApp(t)
+	tt.SetSize(1000, 760)
+	work := "Work"
+	mk := func(name string) *Workspace {
+		t.Helper()
+		res := clientCommand(a, rex.LayoutCommand{Op: "project.create", Dir: appTempDir(t, a), Name: name, SpaceName: &work})
+		if res.Code != "" {
+			t.Fatalf("project.create %s: %+v", name, res)
+		}
+		caughtUp(t, a, tt)
+		w := a.st.byID(res.Space)
+		if w == nil {
+			t.Fatalf("project %s did not arrive", name)
+		}
+		return w
+	}
+
+	p1 := mk("proj-one")
+	p2 := mk("proj-two")
+	p3 := mk("proj-three")
+	pOld := mk("proj-older")
+
+	// Give the projects distinct Used timestamps (newest last) and place pOld
+	// beyond olderAfter, while naming tabs so we can click inactive project tabs.
+	now := time.Now().UTC().Truncate(time.Second)
+	st := savedWorkspaces(t, a.client)
+	for i := range st.Sessions {
+		switch st.Sessions[i].ID {
+		case p1.ID:
+			st.Sessions[i].Used = now.Add(-3 * time.Hour)
+			st.Sessions[i].Tabs[0].Name = "one-tab"
+		case p2.ID:
+			st.Sessions[i].Used = now.Add(-2 * time.Hour)
+			st.Sessions[i].Tabs[0].Name = "two-tab"
+		case p3.ID:
+			st.Sessions[i].Used = now.Add(-time.Hour)
+			st.Sessions[i].Tabs[0].Name = "three-tab"
+		case pOld.ID:
+			st.Sessions[i].Used = now.Add(-40 * 24 * time.Hour)
+			st.Sessions[i].Tabs[0].Name = "older-tab"
+		}
+	}
+	raw, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.client.SetLayout(raw); err != nil {
+		t.Fatal(err)
+	}
+	a.st.out.follow(a.client)
+	caughtUp(t, a, tt)
+
+	prefs.Space = work
+	a.showWorkspace(p1)
+	waitFor(t, tt, "proj-one shown", func() bool { return a.ws == p1 && len(a.tabs) == 1 })
+	tt.Frame()
+
+	assertOrder := func(step string, labels ...string) {
+		t.Helper()
+		var prevY float32 = -1
+		var prevLabel string
+		for _, label := range labels {
+			r, ok := tt.Find(label)
+			if !ok {
+				t.Fatalf("%s: missing %q in sidebar: %q", step, label, tt.Texts())
+			}
+			if prevLabel != "" && r.Y <= prevY {
+				t.Fatalf("%s: %q (y=%v) is not below %q (y=%v); texts %q", step, label, r.Y, prevLabel, prevY, tt.Texts())
+			}
+			prevY, prevLabel = r.Y, label
+		}
+	}
+
+	// Criterion 1: click #3, then #2, then #1 -> relative visual order stays 1, 2, 3.
+	assertOrder("initial", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder())
+
+	click(t, tt, "proj-three")
+	waitFor(t, tt, "proj-three active", func() bool { return a.ws == p3 })
+	p3.Used = now.Add(time.Minute)
+	tt.Frame()
+	assertOrder("after clicking proj-three", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder())
+
+	click(t, tt, "proj-two")
+	waitFor(t, tt, "proj-two active", func() bool { return a.ws == p2 })
+	p2.Used = now.Add(2 * time.Minute)
+	tt.Frame()
+	assertOrder("after clicking proj-two", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder())
+
+	click(t, tt, "proj-one")
+	waitFor(t, tt, "proj-one active", func() bool { return a.ws == p1 })
+	p1.Used = now.Add(3 * time.Minute)
+	tt.Frame()
+	assertOrder("after clicking proj-one", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder())
+
+	// Criterion 2: click a tab under another project -> project order stays unchanged.
+	setRowOpen(openKey(nil, p3.ID), true)
+	tt.Frame()
+	click(t, tt, "three-tab ")
+	waitFor(t, tt, "proj-three active via tab click", func() bool { return a.ws == p3 })
+	tt.Frame()
+	assertOrder("after clicking tab in proj-three", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder())
+
+	// Criterion 3: select a project in the Older group -> it stays in place under Older.
+	if tt.HasText("proj-older") {
+		t.Fatalf("proj-older should start collapsed under Older: %q", tt.Texts())
+	}
+	click(t, tt, locales.ProjectsOlder())
+	tt.Frame()
+	assertOrder("after expanding Older", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder(), "proj-older")
+
+	click(t, tt, "proj-older")
+	waitFor(t, tt, "proj-older active", func() bool { return a.ws == pOld })
+	tt.Frame()
+	assertOrder("after selecting proj-older", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder(), "proj-older")
+
+	// Clicking a tab inside the Older project from another project also keeps it under Older.
+	click(t, tt, "proj-one")
+	waitFor(t, tt, "back to proj-one", func() bool { return a.ws == p1 })
+	setRowOpen(openKey(nil, pOld.ID), true)
+	tt.Frame()
+	click(t, tt, "older-tab ")
+	waitFor(t, tt, "proj-older active via tab click", func() bool { return a.ws == pOld })
+	tt.Frame()
+	assertOrder("after clicking tab in proj-older", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder(), "proj-older")
+
+	// Compact sidebar layout shares the same stable order on selection.
+	prefs.SidebarLayout = sidebarCompact
+	tt.Frame()
+	click(t, tt, "proj-two")
+	waitFor(t, tt, "proj-two active in compact layout", func() bool { return a.ws == p2 })
+	tt.Frame()
+	assertOrder("compact after clicking proj-two", "proj-one", "proj-two", "proj-three", locales.ProjectsOlder(), "proj-older")
 }
 
 func names(ws []*Workspace) []string {

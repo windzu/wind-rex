@@ -3,7 +3,7 @@ name: MOD-002
 description: "Projects are folders on each host, inside a space, and hosts own them. Use when you change spaces, projects or where layouts live."
 metadata:
   created: "2026-11-17"
-  updated: "2026-11-25"
+  updated: "2026-11-26"
 ---
 
 # MOD-002: Projects: folders on each host, inside a space
@@ -62,7 +62,7 @@ The user made these decisions on 2026-11-18, after a review of this design:
 11. **One "No Project" group for each host.** Every space shows it.
 12. **Projects that were homed on another host in v0.38.0** are made on that host when it connects, with the tabs that they held there. They start no new shell. The user chose this after the review of #773 (see Migration).
 13. **Clients cache the last projects of each host**, to show an offline host. The client only shows the cache. The client never changes it.
-14. **Projects are in order of last use**, as Codex lists them.
+14. **Projects are in order of last use**, as Codex lists them (later updated for the desktop sidebar in #49 so project selection and activity keep the stored order; see Desktop sidebar).
 
 The author of #771 made these decisions in the review of #773:
 
@@ -244,7 +244,7 @@ This sketch shows the context menu of a project:
 - Each project keeps its own open state, per client (`sidebarOpen`). Choosing another project, in any way, closes none.
 - The `+` of a project row opens a tab in the folder. It shows on the row under the pointer and on the chosen project. ⌘T does the same while the project is chosen.
 - The context menu of a project has these items: New Tab, Rename, Color, Move to Space, Reveal Folder (this host only) and Close Project.
-- The projects of a host are in order of last use (`Used`), the latest first. The projects that the user did not use for 30 days go under a collapsed **Older** row, at the level of the projects.
+- The desktop sidebar lists a host's projects in their stored layout order rather than re-sorting by last use (`Used`), decoupling project selection and focus from sidebar ordering (#49): clicking a project header or a tab inside another project switches focus without moving sibling projects. Projects not used for 30 days go under the collapsed **Older** row at the project level, in stored layout order, and selecting one keeps it in place under **Older** instead of promoting it to the top. (This is an intentional desktop divergence from the initial MRU sort kept by Rex Go and the web client.)
 - **No Project** (the tabs with no project) is a group shaped like a project (projectGroup), the same as on Rex Go. Its header row has the folder tile in the muted tint (no project color), the label (one line, cut with an ellipsis, never wrapped), the chevron, and a `+` after it under the pointer or while it is shown. Its tabs come under it in the columns of the tabs of a project, and fold open and shut with the same motion. It is open at first, unlike a project that the window does not show, and keeps its open state per client as a project does (no new setting). It is the last group of the host and shows in every space. With no tab, it does not show, unless the window shows it. While the window shows it, with its tabs open, it has the face and its active tab is lifted, as a project's. A click on its row shows it, and on the one shown opens or closes its tabs. A click on a tab shows its workspace on that tab. The row is a drop target for a tab of the host, which then leaves its project. It has New Tab in its context menu. No Project that an adoption waits for (Migration) shows with the same folder tile and name as a waiting project, greyed, with "Waiting for <host>".
 - New Project… at the foot of the sidebar is an icon, as Settings is. Its name is in its tooltip. The header of each host has its `+` too, and ⇧⌘N works.
 - The web client has the same rows (below, Web client).

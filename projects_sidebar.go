@@ -14,12 +14,12 @@ import (
 	"gorex/locales"
 )
 
-// The sidebar of projects (docs/MOD-002-projects.md, "Sidebar"): the space picker
-// atop, then each host the user added, with its PROJECTS of the space
-// shown, in order of last use, those older than olderAfter under a folded
-// Older, and its tabs with no project, which every space shows. A project
-// expands to its tabs; the window's project lists the window's own tabs,
-// which are chosen, dragged and renamed as tabs are.
+// The sidebar of projects (docs/MOD-002-projects.md, "Desktop sidebar"): the
+// space picker atop, then each host the user added, with its projects of the
+// space shown in their stored layout order, those older than olderAfter under
+// a folded Older, and its tabs with no project, which every space shows. A
+// project expands to its tabs; the window's project lists the window's own
+// tabs, which are chosen, dragged and renamed as tabs are.
 
 // olderAfter is how long a project goes unused before it goes under
 // Older.
@@ -70,17 +70,18 @@ func (a *App) hostShown(h *hostConn, space string) bool {
 	return len(a.st.waitingOn(h)) > 0
 }
 
-// projectsOf are host h's projects of space, in order of last use, and
-// apart those not used for olderAfter.
+// projectsOf returns host h's projects of space in their stored layout order,
+// split into recent projects and those not used for olderAfter. Selection does
+// not reorder projects or pull an older project out of Older.
 func (a *App) projectsOf(h *hostConn, space string) (recent, older []*Workspace) {
 	if a.st == nil {
 		return nil, nil
 	}
-	for _, w := range sortedWorkspaces(a.st.hostWorkspaces(h)) {
+	for _, w := range a.st.hostWorkspaces(h) {
 		if w.Dir == "" || w.Space != space {
 			continue
 		}
-		if !w.Used.IsZero() && time.Since(w.Used) > olderAfter && w != a.ws {
+		if !w.Used.IsZero() && time.Since(w.Used) > olderAfter {
 			older = append(older, w)
 		} else {
 			recent = append(recent, w)
