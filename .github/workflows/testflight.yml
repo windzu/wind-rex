@@ -1,7 +1,27 @@
 name: TestFlight
 
 on:
+  push:
+    tags:
+      - 'ios-v*'
   workflow_dispatch:
+    inputs:
+      destination:
+        description: 'upload to TestFlight or export a signed IPA locally to verify entitlements'
+        required: false
+        type: choice
+        options: [upload, export]
+        default: upload
+      build_number:
+        description: 'Optional CFBundleVersion override (blank = query App Store Connect for next build number)'
+        required: false
+        type: string
+        default: ''
+      skip_test_notes:
+        description: 'Skip syncing bilingual WhatToTest notes after upload'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,21 +37,48 @@ defaults:
 
 jobs:
   upload:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ios-v')
     runs-on: ${{ vars.WINDREX_TESTFLIGHT_RUNNER || 'xcode-27' }}
+    timeout-minutes: 60
     steps:
-      # The history, for What to Test.
+      # Full history is required so ios/scripts/test-notes can diff ios/WhatToTest.md.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Preflight release configuration
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          WINDREX_ASC_APP_ID: ${{ vars.WINDREX_ASC_APP_ID }}
+          WINDREX_APPLE_TEAM_ID: ${{ vars.WINDREX_APPLE_TEAM_ID }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          missing=0
+          [[ -n $ASC_KEY_P8 ]] || { echo "::error::Secret ASC_KEY_P8 is empty: set it to the App Store Connect API key (.p8)"; missing=1; }
+          [[ -n $ASC_KEY_ID ]] || { echo "::error::Variable ASC_KEY_ID is empty"; missing=1; }
+          [[ -n $ASC_ISSUER_ID ]] || { echo "::error::Variable ASC_ISSUER_ID is empty"; missing=1; }
+          [[ $WINDREX_ASC_APP_ID =~ ^[0-9]+$ ]] || { echo "::error::Variable WINDREX_ASC_APP_ID must be the numeric App Store Connect app ID"; missing=1; }
+          [[ $WINDREX_APPLE_TEAM_ID =~ ^[A-Z0-9]{10}$ ]] || { echo "::error::Variable WINDREX_APPLE_TEAM_ID must be the 10-character Apple Team ID"; missing=1; }
+          [[ $missing -eq 0 ]] || exit 1
+          marketing=$(sed -n 's/^ *MARKETING_VERSION: "\([0-9.]*\)"$/\1/p' ios/project.yml)
+          [[ -n $marketing ]] || { echo "::error::MARKETING_VERSION not found in ios/project.yml"; exit 1; }
+          if [[ $REF_TYPE == tag ]]; then
+            tag_ver=${REF_NAME#ios-v}
+            tag_base=${tag_ver%%-*}
+            if [[ $tag_base != "$marketing" && $tag_base != "$marketing".* ]]; then
+              echo "::warning::Tag $REF_NAME does not match MARKETING_VERSION $marketing in ios/project.yml"
+            fi
+          fi
       # The app icon uses features introduced in Icon Composer 2 (Xcode 27).
       - run: xcodebuild -version
       - run: for t in asc xcodegen; do command -v "$t" >/dev/null || brew install "$t"; done
       # ios/project.yml's minimumXcodeGenVersion: the Icon Composer icons
       # (.icon folders) need 2.45.1; an older xcodegen the Mac kept upgrades.
       - run: |
-          v=$(xcodegen --version | grep -Eo '[0-9]+(\.[0-9]+)+' | head -1)
-          [[ $(printf '%s\n' 2.45.1 "$v" | sort -V | head -1) == 2.45.1 ]] || brew upgrade xcodegen
+          v=$(xcodegen --version | grep -Eo '[0-9]+(\.[0-9]+)+' | awk 'NR == 1 { print }')
+          [[ $(printf '%s\n' 2.45.1 "$v" | sort -V | awk 'NR == 1 { print }') == 2.45.1 ]] || brew upgrade xcodegen
       # The script pins Ghostty's commit and Zig's version.
       - uses: actions/cache/restore@v6
         id: ghostty-vt
@@ -64,7 +111,7 @@ jobs:
         with:
           path: ios/Frameworks/Tailnet.xcframework
           key: ${{ steps.tailnet.outputs.cache-primary-key }}
-      - name: upload
+      - name: Build, verify entitlements, and upload
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
@@ -72,18 +119,47 @@ jobs:
           WINDREX_ASC_APP_ID: ${{ vars.WINDREX_ASC_APP_ID }}
           WINDREX_APPLE_TEAM_ID: ${{ vars.WINDREX_APPLE_TEAM_ID }}
           WINDREX_PUSH_RELAY_URL: ${{ vars.WINDREX_PUSH_RELAY_URL }}
+          WINDREX_RELEASE_SIGNING: cloud
+          DESTINATION: ${{ inputs.destination || 'upload' }}
+          BUILD: ${{ inputs.build_number || '' }}
+          SKIP_TEST_NOTES: ${{ inputs.skip_test_notes == true && 'true' || 'false' }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          [[ -n $ASC_KEY_P8 ]] || { echo "::error::The ASC_KEY_P8 secret is empty: set it to the App Store Connect API key (.p8)"; exit 1; }
           export ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
           (umask 077; printf '%s\n' "$ASC_KEY_P8" > "$ASC_KEY_PATH")
           ios/scripts/upload | tee "$RUNNER_TEMP/upload.log"
-          sed -n 's/^UPLOADED /Uploaded WindRex /p' "$RUNNER_TEMP/upload.log" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### WindRex iOS TestFlight ($DESTINATION)"
+            echo
+            grep -E '^(OK:|UPLOADED |EXPORTED )' "$RUNNER_TEMP/upload.log" || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ $DESTINATION != upload ]]; then
+            echo "Export-only verification completed; skipping TestFlight What to Test sync."
+            exit 0
+          fi
+          if [[ $SKIP_TEST_NOTES == true ]]; then
+            echo "Skipping What to Test sync (skip_test_notes=true)."
+            exit 0
+          fi
           # What to Test: what ios/WhatToTest.md gained since the last run
           # that uploaded. Notes that fail leave the upload as it is.
           read -r V B < <(sed -n 's/^UPLOADED \([0-9.]*\) (\([0-9]*\))$/\1 \2/p' "$RUNNER_TEMP/upload.log") || true
-          FROM=$(gh run list -R "$GITHUB_REPOSITORY" --workflow testflight.yml --branch main --status success -L 1 --json headSha -q '.[0].headSha' || true)
-          ios/scripts/test-notes "${V:-}" "${B:-}" "${FROM:-HEAD~1}" || echo "::warning::What to Test was not set for ${V:-?} (${B:-?})"
+          FROM=$(gh run list -R "$GITHUB_REPOSITORY" --workflow testflight.yml --status success -L 10 --json headSha \
+            -q "[.[] | select(.headSha != \"$GITHUB_SHA\")][0].headSha" || true)
+          if [[ -n $FROM ]] && ! git merge-base --is-ancestor "$FROM" HEAD 2>/dev/null; then
+            FROM=
+          fi
+          if ios/scripts/test-notes "${V:-}" "${B:-}" "${FROM:-HEAD~1}" | tee "$RUNNER_TEMP/notes.log"; then
+            {
+              echo
+              echo "#### Synced What to Test"
+              echo '```'
+              cat "$RUNNER_TEMP/notes.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::What to Test was not set for ${V:-?} (${B:-?})"
+          fi
       - if: always()
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
       - if: failure()

@@ -1,0 +1,368 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Desktop platforms to build'
+        required: false
+        type: choice
+        options: [all, macos, windows]
+        default: all
+      tag:
+        description: 'Release tag override (blank = desktop-v<mygo.json version>)'
+        required: false
+        type: string
+        default: ''
+      publish:
+        description: 'Create or update a draft GitHub Release (false = workflow artifacts only)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      tag_prefix: ${{ steps.ver.outputs.tag_prefix }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve and verify release version
+        id: ver
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          version=$(jq -r '.version // empty' mygo.json)
+          [[ -n $version ]] || { echo "::error::mygo.json has no version"; exit 1; }
+          if [[ $REF_TYPE == tag ]]; then
+            tag=$REF_NAME
+            if [[ $tag == desktop-v* ]]; then
+              prefix="desktop-v"
+            else
+              prefix="v"
+            fi
+            expected="${prefix}${version}"
+            if [[ $tag != "$expected" ]]; then
+              echo "::error::Tag $tag does not match mygo.json version $version (expected $expected)"
+              exit 1
+            fi
+          elif [[ -n $INPUT_TAG ]]; then
+            tag=$INPUT_TAG
+            if [[ $tag == desktop-v* ]]; then
+              prefix="desktop-v"
+            else
+              prefix="v"
+            fi
+          else
+            prefix="desktop-v"
+            tag="${prefix}${version}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag_prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "Resolved desktop release: version=$version tag=$tag prefix=$prefix"
+
+  macos:
+    needs: validate
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos'
+    runs-on: ${{ vars.WINDREX_DESKTOP_MACOS_RUNNER || 'macos-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Configure optional signing, notarization, and updater metadata
+        id: sign
+        env:
+          P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.WINDREX_APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          UPDATER_PUBLIC_KEY: ${{ vars.WINDREX_UPDATER_PUBLIC_KEY }}
+          UPDATER_TAG_PREFIX: ${{ vars.WINDREX_UPDATER_TAG_PREFIX || needs.validate.outputs.tag_prefix }}
+        run: |
+          if [[ -n $P12 && -n $P12_PASSWORD && -n $SIGNING_IDENTITY ]]; then
+            kc="$RUNNER_TEMP/signing.keychain-db"
+            pw=$(uuidgen)
+            security create-keychain -p "$pw" "$kc"
+            security set-keychain-settings -lut 21600 "$kc"
+            security unlock-keychain -p "$pw" "$kc"
+            (umask 077; printf '%s' "$P12" | base64 -D > "$RUNNER_TEMP/id.p12")
+            security import "$RUNNER_TEMP/id.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+            rm -f "$RUNNER_TEMP/id.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$pw" "$kc" >/dev/null
+            existing=()
+            while IFS= read -r line; do
+              cleaned=$(printf '%s' "$line" | tr -d '"' | awk '{$1=$1; print}')
+              [[ -z $cleaned ]] || existing+=("$cleaned")
+            done < <(security list-keychains -d user)
+            security list-keychains -d user -s "$kc" "${existing[@]}"
+            jq --arg id "$SIGNING_IDENTITY" '.macos.signingIdentity = $id' mygo.json > "$RUNNER_TEMP/mygo.json"
+            mv "$RUNNER_TEMP/mygo.json" mygo.json
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+
+            if [[ -n $ASC_KEY_P8 && -n $ASC_KEY_ID && -n $ASC_ISSUER_ID ]]; then
+              (umask 077; printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8")
+              xcrun notarytool store-credentials windrex-notary --keychain "$kc" \
+                --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID"
+              rm -f "$RUNNER_TEMP/AuthKey.p8"
+              jq --arg kc "$kc" '.macos.notarize = {keychainProfile: "windrex-notary", keychain: $kc}' mygo.json > "$RUNNER_TEMP/mygo.json"
+              mv "$RUNNER_TEMP/mygo.json" mygo.json
+              echo "notarized=true" >> "$GITHUB_OUTPUT"
+            elif [[ -n $APPLE_ID && -n $APPLE_TEAM_ID && -n $APPLE_APP_PASSWORD ]]; then
+              xcrun notarytool store-credentials windrex-notary --keychain "$kc" \
+                --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+              jq --arg kc "$kc" '.macos.notarize = {keychainProfile: "windrex-notary", keychain: $kc}' mygo.json > "$RUNNER_TEMP/mygo.json"
+              mv "$RUNNER_TEMP/mygo.json" mygo.json
+              echo "notarized=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::macOS notarization credentials not configured; building Developer ID signed DMG without notarization."
+              echo "notarized=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::notice::macOS Developer ID secrets not configured; building ad-hoc signed app and DMG."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "notarized=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          has_updates=$(jq -r '.updates.publicKey // empty' mygo.json)
+          if [[ -z $has_updates && -n $UPDATER_PUBLIC_KEY ]]; then
+            jq --arg repo "$GITHUB_REPOSITORY" --arg pub "$UPDATER_PUBLIC_KEY" --arg prefix "$UPDATER_TAG_PREFIX" \
+              '.updates = {github: $repo, publicKey: $pub, tagPrefix: $prefix}' mygo.json > "$RUNNER_TEMP/mygo.json"
+            mv "$RUNNER_TEMP/mygo.json" mygo.json
+          fi
+      - name: Build macOS darwin/arm64
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          SIGNED: ${{ steps.sign.outputs.signed }}
+          NOTARIZED: ${{ steps.sign.outputs.notarized }}
+        run: |
+          args=(-platform darwin/arm64)
+          if [[ $SIGNED != true ]]; then
+            args+=(-sign - -skip-notarize)
+          elif [[ $NOTARIZED != true ]]; then
+            args+=(-skip-notarize)
+          fi
+          go tool mygo build "${args[@]}"
+      - name: Stage macOS release artifacts
+        run: |
+          mkdir -p dist/macos
+          shopt -s nullglob
+          for f in build/darwin-arm64/*.dmg build/darwin-arm64/*.tar.gz build/darwin-arm64/*.delta build/darwin-arm64/update-*.json build/darwin-arm64/install.sh; do
+            cp "$f" dist/macos/
+          done
+          ls -lh dist/macos/
+          dmgs=(dist/macos/*.dmg)
+          [[ ${#dmgs[@]} -gt 0 ]] || { echo "::error::No macOS DMG produced"; exit 1; }
+      - if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/id.p12" "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/mygo.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-darwin-arm64
+          path: dist/macos/*
+          if-no-files-found: error
+
+  windows:
+    needs: validate
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'windows'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install NSIS and osslsigncode
+        run: sudo apt-get update && sudo apt-get install -y nsis osslsigncode
+      - name: Configure optional Authenticode signing and updater metadata
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          UPDATER_PUBLIC_KEY: ${{ vars.WINDREX_UPDATER_PUBLIC_KEY }}
+          UPDATER_TAG_PREFIX: ${{ vars.WINDREX_UPDATER_TAG_PREFIX || needs.validate.outputs.tag_prefix }}
+        run: |
+          if [[ -n $PFX_B64 ]]; then
+            pfx="$RUNNER_TEMP/code-signing.pfx"
+            (umask 077; printf '%s' "$PFX_B64" | base64 -d > "$pfx")
+            jq --arg cert "$pfx" '.windows.certificate = $cert' mygo.json > "$RUNNER_TEMP/mygo.json"
+            mv "$RUNNER_TEMP/mygo.json" mygo.json
+          else
+            echo "::notice::Windows code signing certificate secret not configured; building unsigned binary and NSIS installer."
+          fi
+
+          has_updates=$(jq -r '.updates.publicKey // empty' mygo.json)
+          if [[ -z $has_updates && -n $UPDATER_PUBLIC_KEY ]]; then
+            jq --arg repo "$GITHUB_REPOSITORY" --arg pub "$UPDATER_PUBLIC_KEY" --arg prefix "$UPDATER_TAG_PREFIX" \
+              '.updates = {github: $repo, publicKey: $pub, tagPrefix: $prefix}' mygo.json > "$RUNNER_TEMP/mygo.json"
+            mv "$RUNNER_TEMP/mygo.json" mygo.json
+          fi
+      - name: Build Windows windows/amd64
+        env:
+          MYGO_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: go tool mygo build -platform windows/amd64
+      - name: Stage Windows release artifacts
+        run: |
+          mkdir -p dist/windows
+          shopt -s nullglob
+          for f in build/windows-amd64/*-setup-*.exe build/windows-amd64/*.tar.gz build/windows-amd64/*.delta build/windows-amd64/update-*.json build/windows-amd64/install.ps1; do
+            cp "$f" dist/windows/
+          done
+          ls -lh dist/windows/
+          setups=(dist/windows/*-setup-*.exe)
+          [[ ${#setups[@]} -gt 0 ]] || { echo "::error::No Windows NSIS installer produced"; exit 1; }
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/code-signing.pfx" "$RUNNER_TEMP/mygo.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows-amd64
+          path: dist/windows/*
+          if-no-files-found: error
+
+  release:
+    needs: [validate, macos, windows]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      (needs.macos.result == 'success' || needs.windows.result == 'success') &&
+      needs.macos.result != 'failure' &&
+      needs.windows.result != 'failure' &&
+      needs.macos.result != 'cancelled' &&
+      needs.windows.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+      - name: Generate and verify SHA256SUMS
+        working-directory: release-assets
+        run: |
+          shopt -s nullglob
+          files=()
+          for f in *.dmg *-setup-*.exe *.tar.gz *.delta install.sh install.ps1; do
+            files+=("$f")
+          done
+          [[ ${#files[@]} -gt 0 ]] || { echo "::error::No release files found to checksum"; exit 1; }
+          printf '%s\n' "${files[@]}" | LC_ALL=C sort -u | while IFS= read -r name; do
+            sha256sum "$name"
+          done > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          {
+            echo "### WindRex Desktop Release (${{ needs.validate.outputs.tag }})"
+            echo
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-release-checksums
+          path: release-assets/SHA256SUMS
+          if-no-files-found: error
+      - name: Publish draft GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          TAG_PREFIX: ${{ needs.validate.outputs.tag_prefix }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          notes=""
+          if [[ -f CHANGELOG.md ]]; then
+            notes=$(tr -d '\r' < CHANGELOG.md | awk -v v="$VERSION" '
+              done { next }
+              /^## / {
+                if (in_section) { done = 1; next }
+                split(substr($0, 4), f, /[ \t]+/)
+                h = f[1]
+                if (h == "") h = f[2]
+                if (substr(h, 1, 1) == "[") { h = substr(h, 2); sub(/\].*/, "", h) }
+                sub(/^v/, "", h)
+                in_section = (h == v)
+                next
+              }
+              in_section { print }
+            ')
+          fi
+          if [[ -z ${notes//[[:space:]]/} ]]; then
+            notes="WindRex desktop release ${TAG} (macOS darwin/arm64 DMG and Windows windows/amd64 NSIS installer, with SHA256SUMS)."
+          fi
+
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ $draft == true ]]; then
+              gh release edit "$TAG" --target "$COMMIT_SHA" >/dev/null
+            fi
+            # Preserve checksums from other platforms or server-v*/v* jobs already on this release.
+            if gh release download "$TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP/prev-sums" 2>/dev/null && [[ -f "$RUNNER_TEMP/prev-sums/SHA256SUMS" ]]; then
+              python3 -I -c '
+          import pathlib, sys
+          prev_p, cur_p = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          entries = {}
+          for p in (prev_p, cur_p):
+              for line in p.read_text(encoding="utf-8").splitlines():
+                  parts = line.split(None, 1)
+                  if len(parts) == 2:
+                      entries[parts[1].strip()] = parts[0].strip()
+          cur_p.write_text("".join(f"{entries[k]}  {k}\n" for k in sorted(entries)), encoding="utf-8")
+          ' "$RUNNER_TEMP/prev-sums/SHA256SUMS" release-assets/SHA256SUMS
+              rm -rf "$RUNNER_TEMP/prev-sums"
+            fi
+          else
+            create_args=(release create "$TAG" --draft --target "$COMMIT_SHA" --title "WindRex Desktop ${TAG}" --notes "$notes")
+            if [[ $TAG_PREFIX != v ]]; then
+              create_args+=(--latest=false)
+            fi
+            if [[ $VERSION == *-* ]]; then
+              create_args+=(--prerelease)
+            fi
+            gh "${create_args[@]}"
+          fi
+
+          shopt -s nullglob
+          primary=(release-assets/*.dmg release-assets/*-setup-*.exe release-assets/*.tar.gz release-assets/*.delta release-assets/install.sh release-assets/install.ps1 release-assets/SHA256SUMS)
+          manifests=(release-assets/update-*.json)
+          if [[ ${#primary[@]} -gt 0 ]]; then
+            gh release upload "$TAG" "${primary[@]}" --clobber
+          fi
+          # Upload update manifests last so installed apps never observe a manifest pointing at missing assets.
+          if [[ ${#manifests[@]} -gt 0 ]]; then
+            gh release upload "$TAG" "${manifests[@]}" --clobber
+          fi

@@ -1,14 +1,20 @@
 {
   "name": "WindRex",
+  "slug": "windrex",
   "identifier": "wiki.wind.windrex.desktop",
   "version": "0.56.1",
-  "copyright": "A replica of Superlogical's Rex, built with MyGo",
+  "publisher": "WindRex",
+  "copyright": "Copyright © 2026 WindRex",
   "out": "build",
   "macos": {
     "minimumSystemVersion": "13.0",
+    "dmgTitle": "WindRex",
     "infoPlist": {
       "NSLocalNetworkUsageDescription": "This allows shells and programs run in WindRex tabs, such as ssh, git and curl, to reach devices and services on your local network."
     }
+  },
+  "windows": {
+    "displayName": "WindRex"
   },
   "linux": {
     "command": "wind-rex"
