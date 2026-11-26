@@ -3,7 +3,7 @@ import XCTest
 /// The URL a port opens (docs/IOS-014-pane-ports.md).
 nonisolated final class PortsTests: XCTestCase {
     @MainActor private func port(_ address: String, _ number: Int = 5173) -> Ports.Port {
-        Ports.Port(port: number, address: address, `protocol`: "tcp", first_seen_at: nil, pid: nil)
+        Ports.Port(port: number, address: address, protocol: "tcp", first_seen_at: nil, pid: nil)
     }
 
     @MainActor func testReachableAddressesOpen() {

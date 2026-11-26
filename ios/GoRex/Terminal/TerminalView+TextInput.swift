@@ -186,12 +186,12 @@ extension TerminalView: UITextInput {
 }
 
 /// A place in the InputDocument, in UTF-16 units.
-nonisolated final class TextPosition: UITextPosition {
+final class TextPosition: UITextPosition {
     let offset: Int
     init(_ offset: Int) { self.offset = offset }
 }
 
-nonisolated final class TextRange: UITextRange {
+final class TextRange: UITextRange {
     let range: NSRange
     init(_ range: NSRange) { self.range = range }
     override var start: UITextPosition { TextPosition(range.location) }

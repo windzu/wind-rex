@@ -77,7 +77,7 @@ struct LoopbackProxy: Equatable {
     /// the hosts' names on the tailnet itself.
     func session() -> URLSession {
         let c = URLSessionConfiguration.default
-        var p = ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(integerLiteral: UInt16(port))))
+        let p = ProxyConfiguration(socksv5Proxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(integerLiteral: UInt16(port))))
         p.applyCredential(username: "tsnet", password: password)
         c.proxyConfigurations = [p]
         return URLSession(configuration: c)
@@ -944,7 +944,7 @@ final class Host: Identifiable {
         case "session_destroyed":
             let id = e.payload["session_id"] as? String ?? e.sessionID
             sessions.removeAll { $0.id == id }
-            id.map { reread.remove($0) }
+            if let id { reread.remove(id) }
             prune()
         case "session_label_changed":
             if let i = sessions.firstIndex(where: { $0.id == e.sessionID }) {

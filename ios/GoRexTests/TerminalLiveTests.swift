@@ -509,12 +509,15 @@ nonisolated final class TerminalLiveTests: XCTestCase {
     @MainActor func testActivitySeenReportsOnceEach() {
         let d = FakeDriver(), w = Waits(), t = Tasks()
         let l = live(d, w, t) { Date(timeIntervalSince1970: 1_800_000_000) }
-        var seen: [(host: UUID, session: String, block: String, records: [String])] = []
-        var reach = true
+        @MainActor final class Probe {
+            var seen: [(host: UUID, session: String, block: String, records: [String])] = []
+            var reach = true
+        }
+        let probe = Probe()
         let was = TerminalLive.seen
         TerminalLive.seen = { h, s, b, ids in
-            if reach { seen.append((h, s, b, ids)) }
-            return reach
+            if probe.reach { probe.seen.append((h, s, b, ids)) }
+            return probe.reach
         }
         defer { TerminalLive.seen = was }
         var record: TerminalActivity.Record?
@@ -527,38 +530,38 @@ nonisolated final class TerminalLiveTests: XCTestCase {
         l.changed()
         w.run()
         l.active()
-        XCTAssertTrue(seen.isEmpty)
+        XCTAssertTrue(probe.seen.isEmpty)
 
         // Done: reported once, not again.
         record = .init(id: "d1", state: "done", updated: Date(timeIntervalSince1970: 20))
         l.changed()
         w.run()
         l.active()
-        XCTAssertEqual(seen.count, 1)
-        XCTAssertEqual(seen.last?.records, ["d1"])
-        XCTAssertEqual(seen.last?.session, "s1")
-        XCTAssertEqual(seen.last?.block, "b1")
+        XCTAssertEqual(probe.seen.count, 1)
+        XCTAssertEqual(probe.seen.last?.records, ["d1"])
+        XCTAssertEqual(probe.seen.last?.session, "s1")
+        XCTAssertEqual(probe.seen.last?.block, "b1")
         l.active()
-        XCTAssertEqual(seen.count, 1, "the same record reports once")
+        XCTAssertEqual(probe.seen.count, 1, "the same record reports once")
 
         // A changed record reports again; a host it does not reach, not yet.
         record?.updated = Date(timeIntervalSince1970: 30)
         l.changed()
         w.run()
-        reach = false
+        probe.reach = false
         l.active()
-        XCTAssertEqual(seen.count, 1, "offline: nothing sent, nothing marked")
-        reach = true
+        XCTAssertEqual(probe.seen.count, 1, "offline: nothing sent, nothing marked")
+        probe.reach = true
         l.reportSeen(host: s.attributes.host)
-        XCTAssertEqual(seen.count, 2, "it reports when the host can take it")
-        XCTAssertEqual(seen.last?.records, ["d1"])
+        XCTAssertEqual(probe.seen.count, 2, "it reports when the host can take it")
+        XCTAssertEqual(probe.seen.last?.records, ["d1"])
 
         // And as the activity ends.
         record = .init(id: "e1", state: "error", updated: Date(timeIntervalSince1970: 40))
         l.changed()
         w.run()
         l.close(owner: o)
-        XCTAssertEqual(seen.map(\.records), [["d1"], ["d1"], ["e1"]])
+        XCTAssertEqual(probe.seen.map(\.records), [["d1"], ["d1"], ["e1"]])
         XCTAssertNil(d.shown)
     }
 

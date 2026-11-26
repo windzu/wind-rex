@@ -4,7 +4,7 @@ import XCTest
 /// is off, so a fresh install already carries the suggested
 /// <model>-rex-xxxx before the first registration.
 final class TailscaleSettingsTests: XCTestCase {
-    func testDeviceNameWhileOff() throws {
+    @MainActor func testDeviceNameWhileOff() throws {
         let app = XCUIApplication()
         // A fresh install raises the notification-permission alert over the
         // launch; decline it so the first screen is reachable.

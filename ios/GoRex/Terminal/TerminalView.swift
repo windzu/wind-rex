@@ -289,11 +289,12 @@ final class TerminalView: UIView, TerminalOutput {
     /// holds its view unretained, which lives until then and goes on the
     /// main thread.
     nonisolated private static func free(_ s: ghostty_surface_t, _ c: ghostty_config_t?, of view: TerminalView, after reading: DispatchGroup, _ writes: DispatchQueue) {
-        nonisolated(unsafe) let (surface, config, view) = (s, c, Unmanaged.passRetained(view))
+        nonisolated(unsafe) let (surface, config) = (s, c)
+        let retained = Unmanaged.passRetained(view)
         reading.notify(queue: writes) {
             ghostty_surface_free(surface)
             if let config { ghostty_config_free(config) }
-            DispatchQueue.main.async { view.release() }
+            DispatchQueue.main.async { retained.release() }
         }
     }
 

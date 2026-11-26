@@ -4,7 +4,7 @@ import XCTest
 /// opens the spaces, and the choice shows on the row (the bug it fixes
 /// left the row a label that no tap answered).
 final class ProjectSheetTests: XCTestCase {
-    func testSpacePicker() throws {
+    @MainActor func testSpacePicker() throws {
         let app = XCUIApplication()
         // A fresh install raises the notification-permission alert over the
         // launch; decline it so the first screen is reachable.
