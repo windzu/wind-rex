@@ -180,6 +180,7 @@ targets:
       - GoRex/Gallery/GalleryStore.swift
       - GoRex/Gallery/PaneGallery.swift
       - GoRex/Terminal/Dictation.swift
+      - GoRex/Terminal/VoiceBarState.swift
       - GoRex/Terminal/Polish.swift
       - GoRex/Tailnet/TailnetSettings.swift
       - GoRex/Views/ProgramTile.swift

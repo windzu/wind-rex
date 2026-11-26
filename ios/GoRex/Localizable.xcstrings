@@ -300,6 +300,36 @@
         }
       }
     },
+    "Hold to Talk · Tap to Type": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话 · 轻点打字"
+          }
+        }
+      }
+    },
+    "Hold to Talk, Tap to Type": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话，轻点打字"
+          }
+        }
+      }
+    },
+    "Listening…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在聆听…"
+          }
+        }
+      }
+    },
     "Paper": {
       "localizations": {
         "zh-Hans": {
@@ -426,6 +456,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开这个文件？"
+          }
+        }
+      }
+    },
+    "Release to Cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开取消"
+          }
+        }
+      }
+    },
+    "Release to Send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开发送"
+          }
+        }
+      }
+    },
+    "Slide Up to Cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上滑取消"
+          }
+        }
+      }
+    },
+    "Terminal Keys": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端快捷键"
+          }
+        }
+      }
+    },
+    "Voice Bar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音条"
           }
         }
       }

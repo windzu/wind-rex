@@ -42,6 +42,10 @@ struct TerminalScreen: View {
     /// What is said while the mic is on, and whether it is finishing.
     @State private var said: Dictation.Said?
     @State private var busy = false
+    /// Active hold-to-talk / slide-cancel phase of the iPhone Voice Bar.
+    @State private var voicePhase: VoicePressPhase = .idle
+    /// Measured height of the floating live transcript preview above `KeyBar`.
+    @State private var voicePreviewHeight: CGFloat = 0
     /// Whether the mic asks to stop an Apple Speech asset download.
     @State private var stopping = false
     /// Whether the terminal has the key bar, which holds the mic.
@@ -103,11 +107,36 @@ struct TerminalScreen: View {
             ForEach(pages) { pane in
                 let current = pane.session === session
                 // Under the fingers too, layout snaps.
-                TerminalRepresentable(session: pane.session, newTab: newTab, closeTab: closeTab, newSplit: newSplit, mic: mic, voice: voiceCapsule, dictating: said != nil && current, snaps: switching > 0 || paneDrag != nil,
-                                      paneInset: paneCount > 1 ? PaneBar.height + 20 : 0,
-                                      onPage: !pane.kept, current: current,
-                                      onPaneDrag: { dragPane($0, $1, $2) },
-                                      canSwipe: { switching == 0 && incoming == paneDrag?.pane && (terminal?.paneSwipeAllowed ?? false) })
+                TerminalRepresentable(
+                    session: pane.session,
+                    newTab: newTab,
+                    closeTab: closeTab,
+                    newSplit: newSplit,
+                    voiceFace: voiceBarFace,
+                    voiceState: VoiceBarFaceState(
+                        phase: current ? voicePhase : .idle,
+                        said: current ? said : nil,
+                        busy: current && busy
+                    ),
+                    light: bg.light,
+                    snaps: switching > 0 || paneDrag != nil,
+                    paneInset: paneCount > 1 ? PaneBar.height + 20 : 0,
+                    overlayCover: current && showVoicePreview ? (voicePreviewHeight > 0 ? voicePreviewHeight + 10 : 72) : 0,
+                    onPage: !pane.kept,
+                    current: current,
+                    onPaneDrag: { dragPane($0, $1, $2) },
+                    canSwipe: { switching == 0 && incoming == paneDrag?.pane && (terminal?.paneSwipeAllowed ?? false) },
+                    onStartDictation: { startDictation() },
+                    onCommitDictation: { commitDictation() },
+                    onCancelDictation: { cancelDictation() },
+                    onVoicePhaseChanged: { phase in
+                        voicePhase = phase
+                    },
+                    isVoiceBusy: { busy },
+                    isDownloadingAssets: { Dictation.shared.progress != nil },
+                    onStopDownloadTapped: { stopping = true },
+                    onVoiceOverToggleDictation: { toggleVoiceOverDictation() }
+                )
                     .offset(x: pane.x * pageSize.width, y: pane.y * pageSize.height)
                     // A pane kept off the page is hidden, and so is off the
                     // page before the page's size is known.
@@ -150,13 +179,18 @@ struct TerminalScreen: View {
             // On iPad or with a hardware keyboard (no KeyBar), show the floating preview.
             .overlay(alignment: .bottom) { if !hasBar, let said { Heard(said: said) { terminal?.stopDictating() } } }
             .overlay { status }
-            // The reconnect's note and the window's panes, above the key
-            // bar; they ride the keyboard too.
+            // The reconnect's note, floating live voice preview, and the window's panes,
+            // above the key bar; they ride the keyboard too.
             .overlay(alignment: .bottom) {
                 VStack(spacing: 10) {
                     if stalled, let session {
                         Reconnecting(waitingToSend: session.waitingToSend)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .transition(still ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if showVoicePreview {
+                        VoicePreview(said: said, phase: voicePhase, busy: busy)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { voicePreviewHeight = $0 }
+                            .transition(still ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
                     if paneCount > 1 {
                         // The panes' names and records are read in the bar's
@@ -164,10 +198,14 @@ struct TerminalScreen: View {
                         OwnBody {
                             PaneBar(cells: paneCellList, current: currentTarget.block, program: { .of(host.blocks[$0]?.program) }, select: selectPane, newSplit: newSplit, close: closePane)
                         }
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(still ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .padding(.bottom, hasBar ? KeyBar.height + 10 : 10)
+            }
+            .animation(still ? .easeInOut(duration: 0.15) : .snappy(duration: 0.22), value: showVoicePreview)
+            .onChange(of: showVoicePreview) { _, visible in
+                if !visible { voicePreviewHeight = 0 }
             }
             // The layout, floating under the toolbar's right side for a
             // moment after a switch, as WindRex shows it.
@@ -398,15 +436,42 @@ struct TerminalScreen: View {
 
     private var mic: Mic { Mic(terminal: { terminal }, said: $said, busy: $busy, stopping: $stopping) }
 
-    private var voiceCapsule: VoiceCapsule {
-        VoiceCapsule(said: said, busy: $busy, cancel: { terminal?.stopDictating() }, finish: {
-            guard !busy else { return }
-            busy = true
-            Task {
-                await terminal?.typeDictation()
-                busy = false
-            }
-        })
+    private var showVoicePreview: Bool {
+        hasBar && (voicePhase == .speaking || voicePhase == .cancelling || said != nil)
+    }
+
+    private var voiceBarFace: VoiceBarFace {
+        VoiceBarFace(phase: voicePhase, said: said, busy: busy)
+    }
+
+    private func startDictation() -> Bool {
+        guard !busy, Dictation.shared.progress == nil else { return false }
+        return terminal?.dictate { said = $0 } ?? false
+    }
+
+    private func commitDictation() {
+        guard !busy else { return }
+        busy = true
+        Task {
+            await terminal?.typeDictation()
+            busy = false
+        }
+    }
+
+    private func cancelDictation() {
+        terminal?.stopDictating()
+        voicePhase = .idle
+    }
+
+    private func toggleVoiceOverDictation() {
+        guard !busy else { return }
+        if Dictation.shared.progress != nil {
+            stopping = true
+        } else if said != nil {
+            commitDictation()
+        } else {
+            _ = startDictation()
+        }
     }
 
     /// Keeps the bar's ports button current: the pane's ports, every five
@@ -1260,84 +1325,184 @@ private struct TopEdge: UIViewControllerRepresentable {
     }
 }
 
-/// What is said while the mic is on inside the key bar's horizontal voice
-/// capsule: waveform/sparkles, single-line trailing-scrolled text, cancel, and
-/// the red recording dot to finish and type into the terminal.
-///
-/// In the key bar it is given again only as what is said, or busy, changes
-/// (DictationShown): an input it shows besides those goes in there too.
-private struct VoiceCapsule: View {
+/// Content rendered inside the iPhone Voice Bar's center wide capsule:
+/// idle prompt ("Hold to Talk · Tap to Type"), active speaking waveform
+/// ("Release to Send"), upward-drag cancel highlight ("Release to Cancel"),
+/// OS speech asset download progress, or finalization/polishing spinner.
+private struct VoiceBarFace: View {
+    let phase: VoicePressPhase
     let said: Dictation.Said?
-    @Binding var busy: Bool
-    let cancel: () -> Void
-    let finish: () -> Void
+    let busy: Bool
+    private let dictation = Dictation.shared
+    @Environment(\.accessibilityReduceMotion) private var still
+
+    var body: some View {
+        ZStack {
+            Capsule()
+                .fill(backgroundTint)
+            HStack(spacing: 8) {
+                if let p = dictation.progress {
+                    Circle().stroke(.secondary.opacity(0.3), lineWidth: 2.5)
+                        .overlay {
+                            Circle()
+                                .trim(from: 0, to: p)
+                                .stroke(.primary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                        }
+                        .frame(width: 16, height: 16)
+                    Text("Downloading Speech Assets")
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                } else if busy {
+                    if said?.polishing == true {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(.secondary)
+                            .symbolEffect(.pulse, isActive: !still)
+                        Text("Polishing")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Recognising")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                } else {
+                    switch phase {
+                    case .cancelling:
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.red)
+                        Text("Release to Cancel")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.red)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    case .speaking:
+                        Level()
+                            .foregroundStyle(.tint)
+                        Text("Release to Send")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    case .idle, .pressing:
+                        Image(systemName: "mic.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Text("Hold to Talk · Tap to Type")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .scaleEffect(phase == .pressing && !still ? 0.98 : 1)
+        .animation(still ? .easeInOut(duration: 0.12) : .snappy(duration: 0.16), value: phase)
+    }
+
+    private var backgroundTint: Color {
+        switch phase {
+        case .idle:
+            .clear
+        case .pressing:
+            Color.primary.opacity(0.08)
+        case .speaking:
+            Color.accentColor.opacity(0.18)
+        case .cancelling:
+            Color.red.opacity(0.22)
+        }
+    }
+}
+
+/// Floating live recognition preview displayed above the iPhone Voice Bar
+/// while holding to speak, sliding up to cancel, or polishing. Non-interactive
+/// so it never interrupts the upward slide gesture.
+private struct VoicePreview: View {
+    let said: Dictation.Said?
+    let phase: VoicePressPhase
+    let busy: Bool
+    @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
         let settled = (said?.polishing == true ? "" : said?.settled) ?? ""
         let full = said?.text ?? ""
         var open = AttributedString(full.dropFirst(min(settled.count, full.count)))
         open.foregroundColor = .secondary
-        let text = Text(AttributedString(settled) + open).font(.callout)
-        return HStack(spacing: 8) {
-            if said?.polishing == true {
-                Image(systemName: "sparkles").foregroundStyle(.secondary).symbolEffect(.pulse).frame(height: 18).accessibilityLabel("Polishing")
-            } else {
-                Level()
-            }
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 0) {
-                        text.lineLimit(1)
-                        Color.clear.frame(width: 1, height: 1).id("end")
+        let transcript = Text(AttributedString(settled) + open).font(.callout)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                if phase == .cancelling {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.red)
+                } else if said?.polishing == true {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.secondary)
+                        .symbolEffect(.pulse, isActive: !still)
+                        .frame(height: 18)
+                } else if busy && phase == .idle {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Level()
+                        .foregroundStyle(.tint)
+                }
+
+                if full.isEmpty {
+                    Text(phase == .cancelling ? "Release to Cancel" : "Listening…")
+                        .font(.callout.weight(phase == .cancelling ? .semibold : .regular))
+                        .foregroundStyle(phase == .cancelling ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ViewThatFits(in: .vertical) {
+                        transcript
+                        ScrollView { transcript }
+                            .defaultScrollAnchor(.bottom)
+                            .scrollIndicators(.hidden)
                     }
-                }
-                .scrollIndicators(.hidden)
-                .defaultScrollAnchor(.trailing)
-                .onChange(of: full) { _, _ in
-                    proxy.scrollTo("end", anchor: .trailing)
+                    .frame(maxWidth: .infinity, maxHeight: 64, alignment: .leading)
+                    .opacity(phase == .cancelling ? 0.55 : 1)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .mask {
-                LinearGradient(stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: 0.06),
-                    .init(color: .black, location: 1),
-                ], startPoint: .leading, endPoint: .trailing)
-            }
-            Button {
-                Haptics.tapped()
-                cancel()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(.circle)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Cancel")
-            Button {
-                Haptics.tapped()
-                finish()
-            } label: {
-                Group {
-                    if busy {
-                        ProgressView().accessibilityLabel("Recognising")
-                    } else {
-                        Image(systemName: "circle.fill")
-                            .foregroundStyle(.red)
-                            .accessibilityLabel("Finish Dictation")
-                    }
+
+            if phase == .speaking || phase == .cancelling {
+                HStack(spacing: 4) {
+                    Image(systemName: phase == .cancelling ? "xmark" : "chevron.up")
+                        .font(.caption2.weight(.semibold))
+                    Text(phase == .cancelling ? "Release to Cancel" : "Slide Up to Cancel")
+                        .font(.caption.weight(phase == .cancelling ? .semibold : .regular))
                 }
-                .frame(width: 34, height: 34)
-                .contentShape(.circle)
+                .foregroundStyle(phase == .cancelling ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .buttonStyle(.plain)
-            .disabled(busy)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background {
+            if phase == .cancelling {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.red.opacity(0.14))
+            }
+        }
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .overlay {
+            if phase == .cancelling {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.55), lineWidth: 1)
+            }
+        }
+        .padding(.horizontal, 16)
+        .allowsHitTesting(false)
+        .animation(still ? .easeInOut(duration: 0.12) : .snappy(duration: 0.16), value: phase)
     }
 }
 
@@ -1372,9 +1537,10 @@ private struct TitledGalleryCover: ViewModifier {
     }
 }
 
-/// What the mic and the voice capsule in the key bar show of the screen's
-/// state: their views are given again only when it changes.
-private struct DictationShown: Equatable {
+/// What the Voice Bar face shows of the screen's dictation state: its view is
+/// updated only when this snapshot changes.
+private struct VoiceBarFaceState: Equatable {
+    let phase: VoicePressPhase
     let said: Dictation.Said?
     let busy: Bool
 }
@@ -1384,13 +1550,15 @@ private struct TerminalRepresentable: UIViewRepresentable {
     let newTab: () -> Void
     let closeTab: () -> Void
     let newSplit: () -> Void
-    let mic: Mic
-    let voice: VoiceCapsule
-    let dictating: Bool
+    let voiceFace: VoiceBarFace
+    let voiceState: VoiceBarFaceState
+    let light: Bool
     let snaps: Bool
     /// How far the pane bar reaches over the terminal, for the cursor to
     /// stay above it; 0 when the bar is away.
     let paneInset: CGFloat
+    /// Transient floating overlay height above `KeyBar` (live voice transcript preview).
+    let overlayCover: CGFloat
     /// Whether the terminal shows: one kept off the page draws nothing.
     let onPage: Bool
     /// Whether it is the pane shown, the one that takes touches.
@@ -1401,45 +1569,45 @@ private struct TerminalRepresentable: UIViewRepresentable {
     /// Whether a drag may switch now: no other switch under way, no
     /// selection, no full-screen program with the mouse, no pinch.
     let canSwipe: () -> Bool
+    let onStartDictation: () -> Bool
+    let onCommitDictation: () -> Void
+    let onCancelDictation: () -> Void
+    let onVoicePhaseChanged: (VoicePressPhase) -> Void
+    let isVoiceBusy: () -> Bool
+    let isDownloadingAssets: () -> Bool
+    let onStopDownloadTapped: () -> Void
+    let onVoiceOverToggleDictation: () -> Void
 
     final class Coordinator {
-        let mic: UIHostingController<Mic>
-        let voice: UIHostingController<VoiceCapsule>
-        /// What the two were last given to show. Each update of the screen,
-        /// as a frame of a two-finger drag, makes them again; given again
-        /// only on a change, they do not lay out for nothing. Their
-        /// closures and bindings reach the screen's state, which they read
-        /// as they run, so the ones first given stay right.
-        var shown: ChangeGate<DictationShown>
+        let voiceFace: UIHostingController<VoiceBarFace>
+        /// What the Voice Bar face was last given to show. Each update of the screen,
+        /// as a frame of a two-finger drag, makes it again; given again
+        /// only on a change, it does not lay out for nothing.
+        var shown: ChangeGate<VoiceBarFaceState>
 
-        init(mic: UIHostingController<Mic>, voice: UIHostingController<VoiceCapsule>, shown: DictationShown) {
-            self.mic = mic
-            self.voice = voice
+        init(voiceFace: UIHostingController<VoiceBarFace>, shown: VoiceBarFaceState) {
+            self.voiceFace = voiceFace
             self.shown = ChangeGate(shown)
         }
     }
 
-    /// The mic and the voice capsule in the key bar.
+    /// The center Voice Bar capsule face in the key bar.
     func makeCoordinator() -> Coordinator {
-        let m = UIHostingController(rootView: mic)
-        m.safeAreaRegions = []
-        m.view.backgroundColor = .clear
-        let v = UIHostingController(rootView: voice)
+        let v = UIHostingController(rootView: voiceFace)
         v.safeAreaRegions = []
         v.view.backgroundColor = .clear
-        return Coordinator(mic: m, voice: v, shown: DictationShown(said: voice.said, busy: voice.busy))
+        return Coordinator(voiceFace: v, shown: voiceState)
     }
 
     /// The view lands without the keyboard, and on a phone with its key
     /// bar: a tap gives it the keyboard, as one does in the terminal.
     func makeUIView(context: Context) -> TerminalHost {
         let host = TerminalHost(TerminalView(session: session))
-        for (sub, container) in [(context.coordinator.mic.view!, host.terminal.bar.mic),
-                                 (context.coordinator.voice.view!, host.terminal.bar.voice)] {
-            sub.frame = container.bounds
-            sub.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            container.addSubview(sub)
-        }
+        let sub = context.coordinator.voiceFace.view!
+        let container = host.terminal.bar.voiceFace
+        sub.frame = container.bounds
+        sub.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(sub)
         updateUIView(host, context: context)
         return host
     }
@@ -1450,6 +1618,7 @@ private struct TerminalRepresentable: UIViewRepresentable {
         v.terminal.closeTab = closeTab
         v.terminal.newSplit = newSplit
         v.terminal.paneInset = paneInset
+        v.terminal.overlayCover = overlayCover
         v.aboveBar = paneInset
         v.terminal.onPage = onPage
         // A pane switched away from gives up the keyboard itself: left to
@@ -1464,11 +1633,24 @@ private struct TerminalRepresentable: UIViewRepresentable {
         v.onPaneDrag = onPaneDrag
         v.canSwipe = canSwipe
         v.setBottomEdgeColor(UIColor(cgColor: (session.background ?? .black).cgColor))
-        if context.coordinator.shown.update(DictationShown(said: voice.said, busy: voice.busy)) {
-            context.coordinator.mic.rootView = mic
-            context.coordinator.voice.rootView = voice
+        v.terminal.keyboardAppearance = light ? .light : .dark
+        v.terminal.bar.applyAppearance(light: light)
+        v.terminal.bar.onStartDictation = onStartDictation
+        v.terminal.bar.onCommitDictation = onCommitDictation
+        v.terminal.bar.onCancelDictation = onCancelDictation
+        v.terminal.bar.onVoicePhaseChanged = onVoicePhaseChanged
+        v.terminal.bar.isVoiceBusy = isVoiceBusy
+        v.terminal.bar.isDownloadingAssets = isDownloadingAssets
+        v.terminal.bar.onStopDownloadTapped = onStopDownloadTapped
+        v.terminal.bar.onVoiceOverToggleDictation = onVoiceOverToggleDictation
+        if context.coordinator.shown.update(voiceState) {
+            context.coordinator.voiceFace.rootView = voiceFace
         }
-        v.terminal.bar.setVoice(active: dictating)
+        v.terminal.bar.updateVoiceAccessibility(
+            phase: voiceState.phase,
+            downloading: isDownloadingAssets(),
+            busy: voiceState.busy
+        )
     }
 
     static func dismantleUIView(_ v: TerminalHost, coordinator: Coordinator) { v.terminal.close() }
