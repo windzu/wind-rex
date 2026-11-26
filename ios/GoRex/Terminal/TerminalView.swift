@@ -189,7 +189,7 @@ final class TerminalView: UIView, TerminalOutput {
     private typealias Dictating = (recording: Recording, listening: any DictationSession, said: (Dictation.Said?) -> Void, told: Task<Void, Never>,
                                    level: Task<Void, Never>)
     /// An in-flight permission check or Apple Speech asset/analyzer startup.
-    private var preparingDictation: Task<Void, Never>?
+    private var preparingDictation: (id: UUID, task: Task<Void, Never>)?
     /// The dictation being finished (recognising its last phrase or polishing),
     /// so stopDictating can cancel it too.
     private var finishing: (task: Task<Void, Never>, listening: any DictationSession, said: (Dictation.Said?) -> Void)?
@@ -711,15 +711,18 @@ final class TerminalView: UIView, TerminalOutput {
     @discardableResult
     func dictate(said: @escaping (Dictation.Said?) -> Void) -> Bool {
         guard dictating == nil, preparingDictation == nil else { return false }
+        let id = UUID()
         let vocabulary = Dictation.contextualVocabulary(
             screen: screen,
             program: session.host.blocks[session.block]?.program
         )
-        preparingDictation = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self else { return }
-            defer { self.preparingDictation = nil }
+            defer {
+                if self.preparingDictation?.id == id { self.preparingDictation = nil }
+            }
             let access = await Dictation.shared.requestAccess()
-            guard !Task.isCancelled else { return }
+            guard self.preparingDictation?.id == id, !Task.isCancelled else { return }
             switch access {
             case .granted:
                 break
@@ -735,13 +738,13 @@ final class TerminalView: UIView, TerminalOutput {
             } catch is CancellationError {
                 return
             } catch {
-                if !Task.isCancelled {
+                if self.preparingDictation?.id == id, !Task.isCancelled {
                     self.alert(String(localized: "Can't Recognise Speech"), error.localizedDescription)
                 }
                 return
             }
             guard let prepared else { return }
-            if Task.isCancelled {
+            guard self.preparingDictation?.id == id, !Task.isCancelled else {
                 prepared.session.cancel()
                 return
             }
@@ -766,6 +769,7 @@ final class TerminalView: UIView, TerminalOutput {
                 self?.started(listening, r)
             })
         }
+        preparingDictation = (id, task)
         return true
     }
 
@@ -814,8 +818,10 @@ final class TerminalView: UIView, TerminalOutput {
     /// Turns the mic off, typing nothing; cancels an in-flight startup, finish,
     /// or polish too.
     func stopDictating() {
-        preparingDictation?.cancel()
-        preparingDictation = nil
+        if let p = preparingDictation {
+            preparingDictation = nil
+            p.task.cancel()
+        }
         if let f = finishing {
             finishing = nil
             f.task.cancel()

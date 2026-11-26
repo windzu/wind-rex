@@ -253,13 +253,18 @@ import os
                 progress = nil
             }
             do {
-                return try await work.value
+                return try await withTaskCancellationHandler {
+                    try await work.value
+                } onCancel: {
+                    request.progress.cancel()
+                    work.cancel()
+                }
             } catch is CancellationError {
                 return false
             } catch {
                 if request.progress.isCancelled || Task.isCancelled { return false }
                 self.error = error.localizedDescription
-                throw error
+                return false
             }
         @unknown default:
             return true
