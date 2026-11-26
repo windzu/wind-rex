@@ -176,6 +176,7 @@ targets:
       - GoRex/Terminal/KeyEvent.swift
       - GoRex/Terminal/InputDocument.swift
       - GoRex/Terminal/InputTrace.swift
+      - GoRex/Terminal/TerminalFont.swift
       - GoRex/Terminal/TerminalTheme.swift
       - GoRex/Terminal/TerminalNotifications.swift
       - GoRex/Terminal/TerminalSession.swift
