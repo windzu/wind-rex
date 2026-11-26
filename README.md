@@ -30,7 +30,7 @@ WindRex is an independently developed fork of [GoRex](https://github.com/si-mods
 - **Persistent session server with in-place upgrade** — Shells run inside a background session server (`-server`) backed by headless `libghostty-vt`. Closing the app never kills your processes, full-screen TUIs (`vim`, `lazygit`, `htop`) restore from live snapshots, and `server upgrade` upgrades the server binary in place without dropping shells ([`REF-006`](docs/REF-006-session-server.md)).
 - **Direct TLS &amp; Stateless Relay for cellular (`NET-005`)** — Reach your host directly over native TLS 1.3 (with CA certificates or self-signed leaf SHA-256 pinning) or through a self-hosted stateless [`windrex-relay`](cmd/windrex-relay/main.go) binary. No user accounts, no coordination server, and no iOS VPN slot required. Includes 1.5s foreground liveness probes and pipelined ordered writes for responsive typing on high-RTT mobile links ([`NET-005`](docs/NET-005-direct-relay.md)).
 - **Mac + iPhone pairing &amp; live host status** — Organize work by **Spaces → Hosts → Projects → Tabs → Split Panes** with compact project sidebars on desktop and iOS, real-time green online indicators for connected hosts, QR code pairing, **Live Activities** (Dynamic Island &amp; Lock Screen), and Home Screen **Widgets** ([`MOD-002`](docs/MOD-002-projects.md), [`IOS-006`](docs/IOS-006-live-activities.md), [`IOS-010`](docs/IOS-010-widgets.md)).
-- **Agent-friendly terminal workflows** — Automatic foreground process detection and OSC 7501 status tracking (`working`, `blocked`, `done`, `error`), `gorex skill setup` for Claude Code, Codex, Antigravity CLI, Devin, OpenCode, and Pi, full CLI automation (`ls`, `new`, `split`, `send`, `capture`, `wait`, `run`), pane **Teleport** across hosts ([`DSK-003`](docs/DSK-003-teleport.md)), Ghostty config/theme compatibility, plus local Browser and Markdown Note panes.
+- **Agent-friendly terminal workflows** — Automatic foreground process detection and OSC 7501 status tracking (`working`, `blocked`, `done`, `error`), `gorex skill setup` for Claude Code, Codex, Antigravity CLI, Devin, OpenCode, and Pi, full CLI automation (`ls`, `new`, `split`, `send`, `capture`, `wait`, `run`), pane **Teleport** across hosts ([`DSK-003`](docs/DSK-003-teleport.md)), Ghostty config/theme compatibility, plus local Markdown Note panes.
 
 ## Platform Support &amp; Current Status
 
@@ -38,11 +38,11 @@ WindRex is an independently developed fork of [GoRex](https://github.com/si-mods
 
 | Platform | Role | Capabilities | Availability |
 |---|---|---|---|
-| **macOS** (13.0+) | Desktop client + local host | Persistent tabs/splits, compact project sidebar, Ghostty themes/config, remote hosts, browser &amp; note panes, Teleport | Build from source (`go tool mygo build` / `dev`) · Signed `.dmg` pending |
+| **macOS** (13.0+) | Desktop client + local host | Persistent tabs/splits, compact project sidebar, Ghostty themes/config, remote hosts, Markdown note panes, Teleport | Build from source (`go tool mygo build` / `dev`) · Signed `.dmg` pending |
 | **iOS / iPadOS** | Remote mobile client | Native Ghostty Metal terminal, Direct TLS &amp; Relay over cellular, QR pairing, Live Activities, Widgets, compact project &amp; session lists | Build with Xcode (`ios/GoRex.xcodeproj`) · TestFlight onboarding in progress |
 | **Linux** | Headless host + desktop | Persistent session server (`-server`), in-place upgrades, Direct TLS / relay host, shared systemd service, desktop GUI | Build from source (`go build`) · Packages pending |
 | **Windows** (10 1809+) | Desktop client + local host | ConPTY session server, custom title bar, remote hosts, Ghostty config | Build from source (`go tool mygo build`) · Installer pending |
-| **Web (`web/`)** | Standalone remote client (prototype) | Multi-host browser terminal powered by `libghostty-vt` WASM, split panes, themes, no local daemon required | Run locally (`npm run dev`) or self-host static build · No public URL yet |
+| **Web (`web/`)** | Optional local / self-hosted remote client | Multi-host browser terminal powered by `libghostty-vt` WASM, split panes, themes, no local daemon required (no hosted service or PWA shell; see [`DSK-010`](docs/DSK-010-trim-browser-and-web.md)) | Run locally (`npm run dev`) or self-host static `npm run build` |
 | **`windrex-relay`** | Stateless reverse-proxy relay | Bridges hosts behind NAT to iOS/remote clients over a single outbound TLS WebSocket with zero stored state | Build from source (`go build ./cmd/windrex-relay`) |
 
 ## Interface Preview &amp; Architecture
@@ -77,7 +77,7 @@ flowchart LR
 
 | Surface | Key UI Elements | Preview Status |
 |---|---|---|
-| **Desktop (macOS / Linux / Windows)** | Compact project sidebar, green host online dots, split terminal/browser/note cards, command palette (`⇧⌘P`), light/dark Ghostty themes | WindRex screenshots will be published alongside the first tagged release (captured via the `GOREX_DEBUG` hook with sample data). |
+| **Desktop (macOS / Linux / Windows)** | Compact project sidebar, green host online dots, split terminal and Markdown note cards, command palette (`⇧⌘P`), light/dark Ghostty themes | WindRex screenshots will be published alongside the first tagged release (captured via the `GOREX_DEBUG` hook with sample data). |
 | **iOS / iPadOS** | Compact project &amp; session list, Metal terminal surface, custom key bar, Dynamic Island &amp; Lock Screen Live Activities | WindRex iOS screenshots will be published with the first TestFlight build. |
 | **Web (`web/`)** | Multi-host sidebar with live connection dots, split panes, Settings dialog (`npm run dev` in `web/`) | Preview locally via `cd web && npm ci && npm run dev`. |
 

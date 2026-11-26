@@ -69,7 +69,7 @@ type Node struct {
 }
 
 // Pane is a terminal attached to a session of the server, or of a remote
-// host's, or a browser that shows a page.
+// host's, or a local Markdown note.
 type Pane struct {
 	ID  int
 	SID string
@@ -83,8 +83,6 @@ type Pane struct {
 	// stream is the Conn of a pane of this machine, nil for a pane of a
 	// host, whose is remote; it attaches again when its connection drops.
 	stream *paneStream
-	// browser is the state of a browser pane, nil for a terminal.
-	browser *browserPane
 	// note is the state of a note pane, nil for any other.
 	note *notePane
 	// host is the remote host the session lives on, nil for this machine;
@@ -390,110 +388,6 @@ func (a *App) newPaneIn(h *hostConn, o rex.CreateOptions, place func(*Pane) bool
 			}
 		})
 	}()
-}
-
-// newBrowserPane makes a pane that shows url in a web view of the
-// window's, with the address field given the keyboard.
-func (a *App) newBrowserPane(url string) *Pane {
-	if url = browserURL(url); url == "" {
-		url = browserStart
-	}
-	addr := url
-	if url == browserStart {
-		addr = "" // the field says its placeholder, and the URL is typed
-	}
-	p := &Pane{ID: a.id(), browser: &browserPane{url: url, addr: addr, id: layout.NewTabID(), auto: true}}
-	if a.win == nil {
-		// A view without a window, as in tests: the pane keeps its URL,
-		// and shows no page.
-		return p
-	}
-	v, err := a.win.NewWebView(mygo.WebViewOptions{
-		URL:             url,
-		BackgroundColor: "light-dark(#ffffff, #1e1e24)",
-		// A page is someone else's, whatever its URL: it calls no Go
-		// method, asks no permission, opens no window of its own and
-		// downloads nothing. The handler below decides where it may go.
-		Page: mygo.PageOptions{Untrusted: true, SwipeNavigation: true, PinchZoom: true},
-	})
-	if err != nil {
-		log.Printf("browser pane: %v", err)
-		a.err, a.errMsg = err.Error(), nil
-		return p
-	}
-	p.browser.web = v
-	update := func(fn func()) {
-		if a.win != nil {
-			a.win.Update(fn)
-		}
-	}
-	page := v.Page()
-	// An untrusted page may not go to another origin unless this decides:
-	// a browser pane follows the web, and nothing else.
-	page.OnWillNavigate(func(e *mygo.NavigateEvent) {
-		if browserURL(e.URL) == "" {
-			e.PreventDefault()
-		}
-	})
-	page.OnDidNavigate(func(u string) {
-		u = browserCleanURL(u)
-		update(func() {
-			if p.closed || p.browser == nil {
-				return
-			}
-			p.browser.url = u
-			// The page's title is the new document's, until it says one.
-			p.title = ""
-			// A new pane's first page, about:blank, leaves the field
-			// saying its placeholder, for the URL to type; and a page that
-			// goes on by itself leaves the URL being typed.
-			if !p.browser.editing && (p.browser.addr != "" || u != browserStart) {
-				p.browser.addr = u
-			}
-			a.changed()
-		})
-	})
-	page.OnPageTitleUpdated(func(e *mygo.TitleEvent) {
-		update(func() {
-			if p.closed || p.browser == nil {
-				return
-			}
-			p.title = strings.TrimSpace(e.Title)
-		})
-	})
-	// A page that asks for a window shows it in this pane: GoRex has no
-	// other window to give a site, and a script's pop-up is not wanted.
-	// The URL is the pane's to load, not the page's to choose.
-	page.SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions {
-		if u := browserURL(req.URL); req.UserInitiated && u != "" {
-			page.LoadURL(u)
-		}
-		return nil
-	})
-	return p
-}
-
-// navigateBrowser loads the URL in a browser pane's address field.
-func (a *App) navigateBrowser(p *Pane, text string) {
-	b := p.browser
-	if b == nil {
-		return
-	}
-	u := browserURL(text)
-	if u == "" {
-		a.err, a.errMsg = "", locales.Messages.BrowserOnlyWeb
-		return
-	}
-	a.err, a.errMsg = "", nil
-	// The page keeps what was typed, credentials and all; the field and
-	// the layout keep it without them.
-	b.addr, b.url = browserCleanURL(u), browserCleanURL(u)
-	if b.web == nil {
-		return
-	}
-	if err := b.web.Page().LoadURL(u); err != nil {
-		a.err, a.errMsg = err.Error(), nil
-	}
 }
 
 // attach makes the pane's terminal, attached to its session.
@@ -1066,10 +960,6 @@ func (a *App) newTabAfterIn(h *hostConn, dir string, strict bool, after *Tab, co
 	return t
 }
 
-// newBrowserTab opens a tab of a browser pane after the active tab, and
-// shows it.
-func (a *App) newBrowserTab() *Tab { return a.newPaneTab(a.newBrowserPane(browserStart)) }
-
 // newNoteTab opens a tab of a note pane after the active tab, and shows it.
 func (a *App) newNoteTab() *Tab { return a.newPaneTab(a.newNotePane("")) }
 
@@ -1214,12 +1104,6 @@ func (a *App) splitPaneRun(old *Pane, vertical bool, dir string, command []strin
 		return true
 	})
 	return nil
-}
-
-// splitBrowser splits the focused pane with a browser pane, right of it or
-// below it.
-func (a *App) splitBrowser(vertical bool) {
-	a.splitLocal(vertical, func() *Pane { return a.newBrowserPane(browserStart) })
 }
 
 // splitNote splits the focused pane with a note pane, right of it or
@@ -1442,7 +1326,6 @@ func (a *App) disposePane(p *Pane, kill bool) {
 		a.paneRenaming, a.paneNameFocus = nil, false
 	}
 	p.end()
-	p.browser.destroy()
 	if kill {
 		p.note.destroy()
 		killOn(p.host, p.SID)
@@ -2217,9 +2100,6 @@ func (a *App) promoteFloat(t *Tab) bool {
 // status protocol when it did, else a shell at its prompt, else the
 // executable.
 func (p *Pane) program() program {
-	if p.browser != nil {
-		return browserProgram
-	}
 	if p.note != nil {
 		return noteProgram
 	}
@@ -2242,16 +2122,6 @@ func (p *Pane) program() program {
 // label returns how a pane names itself: its program, or the title the
 // program set, and the directory it works in.
 func (p *Pane) label() (name, detail string) {
-	if p.browser != nil {
-		name = p.Name
-		if name == "" {
-			name = strings.TrimSpace(p.title)
-		}
-		if name == "" {
-			name = locales.BrowserName()
-		}
-		return name, browserHost(p.browser.url)
-	}
 	if p.note != nil {
 		name = p.Name
 		if name == "" {
@@ -2414,9 +2284,6 @@ func (a *App) savedTab(t *Tab) savedTab {
 			return nil
 		}
 		if p := n.Pane; p != nil {
-			if b := p.browser; b != nil {
-				return &savedNode{Name: p.Name, URL: b.url, ID: b.id}
-			}
 			if p.note != nil {
 				return &savedNode{Name: p.Name, Kind: noteKind, Note: p.note.id, NoteSize: p.note.size, NotePreview: p.note.preview}
 			}
@@ -2571,14 +2438,6 @@ func (a *App) reconcile(l savedLayout) bool {
 				if p.note != nil {
 					p.note.size, p.note.preview = clampNoteSize(s.NoteSize), s.NotePreview
 				}
-				// Another client's page; the window's own navigation since
-				// it last wrote the layout stays.
-				if b := p.browser; b != nil && s.URL != b.synced {
-					b.url, b.addr, b.synced = s.URL, s.URL, s.URL
-					if b.web != nil {
-						b.web.Page().LoadURL(s.URL)
-					}
-				}
 				n := p.Node
 				if n == nil {
 					n = &Node{ID: a.id()}
@@ -2600,12 +2459,10 @@ func (a *App) reconcile(l savedLayout) bool {
 				p.Name = s.Name
 				p.note.size, p.note.preview = clampNoteSize(s.NoteSize), s.NotePreview
 			case s.URL != "":
-				p = a.newBrowserPane(s.URL)
-				p.Name = s.Name
-				p.browser.auto, p.browser.synced = false, s.URL
-				if s.ID != "" && index[paneKey(s)] == nil {
-					p.browser.id = s.ID
-				}
+				// Legacy embedded browser panes are no longer supported; drop
+				// them so sibling terminal and note panes in the same split or
+				// tab restore cleanly (docs/DSK-010-trim-browser-and-web.md).
+				return nil
 			case s.Host != "":
 				h := a.hostByID(s.Host)
 				if h == nil || s.SID == "" {
@@ -2790,17 +2647,11 @@ func (a *App) reconcile(l savedLayout) bool {
 }
 
 // paneKey names a pane of a layout for as long as the pane lasts: by its
-// session and the session's host, its note, or its browser's ID; "" for
-// none.
+// session and the session's host, or its note; "" for none.
 func paneKey(s *savedNode) string {
 	switch {
 	case s.Kind == noteKind && s.Note != "":
 		return "note:" + s.Note
-	case s.URL != "":
-		if s.ID == "" {
-			return ""
-		}
-		return "web:" + s.ID
 	case s.SID != "":
 		return s.Host + "/" + s.SID
 	}
@@ -2812,9 +2663,6 @@ func (p *Pane) key() string {
 	n := savedNode{SID: p.SID}
 	if p.host != nil {
 		n.Host = p.host.ID
-	}
-	if p.browser != nil {
-		n.URL, n.ID = p.browser.url, p.browser.id
 	}
 	if p.note != nil {
 		n.Kind, n.Note = noteKind, p.note.id
@@ -3483,10 +3331,6 @@ func (a *App) movePaneToWindow(p *Pane, target *App) {
 	if isNote {
 		noteID, noteSize, notePreview = p.note.id, p.note.size, p.note.preview
 	}
-	pageURL, isBrowser := "", p.browser != nil
-	if isBrowser {
-		pageURL = p.browser.url
-	}
 	src := p.Tab
 	a.disposePane(p, false)
 	a.detachPane(p)
@@ -3501,10 +3345,6 @@ func (a *App) movePaneToWindow(p *Pane, target *App) {
 		np = target.newNotePane(noteID)
 		np.Name = p.Name
 		np.note.size, np.note.preview = noteSize, notePreview
-	} else if isBrowser {
-		np = target.newBrowserPane(pageURL)
-		np.Name = p.Name
-		np.browser.auto = false
 	} else {
 		np = &Pane{ID: target.id(), SID: p.SID, Name: p.Name, info: p.info, title: p.title, startDir: p.startDir, host: h}
 		target.attach(np, cols, rows)

@@ -349,7 +349,6 @@ func drawIconButton(c *ui.Context, k *colors, name, label string, size, iconSize
 // them over the cells: all of them in one parent, so that the panes move
 // to their new places as the layout changes, and open and close there.
 func (a *App) tabContent(c *ui.Context, k *colors, t *Tab) {
-	a.contentFocus, a.pageHover = false, nil
 	a.syncNoteItem()
 	room := ui.Box(c.Key(roomKey(t.ID))).Grow(1).MinWidth(0).MinHeight(0)
 	if anim := motion(c); anim != nil && a.tabSlideDir != 0 {
@@ -416,15 +415,6 @@ func (a *App) tabContent(c *ui.Context, k *colors, t *Tab) {
 			a.minimizedRail(c, k, minimized)
 		}
 	})
-	// A press on a page gives the page the keyboard, and MyGo clears the
-	// content's focus for it: with no pane's content focused and the
-	// pointer over a page, the page has the keyboard, and its pane takes
-	// the tab's focus, so that the shortcuts act on it.
-	if a.focusReq == nil && !a.contentFocus && a.pageHover != nil && t.Focus != a.pageHover &&
-		!a.paletteOpen && !a.wsConfirm && !a.teleportAsk.open && !a.wsOpen && !a.hostOpen && a.paneRenaming == nil && a.renaming == nil && a.findPane == nil {
-		t.setFocus(a.pageHover)
-		a.changed()
-	}
 }
 
 // share is a part of a tab's room, as fractions of its width and height.
@@ -440,7 +430,6 @@ type (
 	roomKey        int
 	cellKey        int
 	dividerKey     int
-	addressKey     int
 	noteKey        int
 	notePreviewKey int
 	floatGripKey   int
@@ -845,10 +834,9 @@ func (a *App) paneCard(c *ui.Context, k *colors, t *Tab, p *Pane, held bool) ui.
 	bg := cardFace(c, k, focused, p.float != nil)
 	// Under the glass setting a tiled terminal is a pane of the system's
 	// Liquid Glass, its face a tint, and its face where the system draws
-	// none; a float takes its face from its cell's glass. A browser pane
-	// keeps its face.
+	// none; a float takes its face from its cell's glass.
 	switch {
-	case !glassOn() || p.browser != nil && p.float == nil:
+	case !glassOn():
 		card.Background(bg)
 	case p.float == nil:
 		card.Material(ui.SystemGlass{Tint: glassTint(c, k, focused), Fallback: faceMaterial{bg}})
@@ -866,9 +854,8 @@ func (a *App) paneCard(c *ui.Context, k *colors, t *Tab, p *Pane, held bool) ui.
 	hovered := card.Hovered()
 	card.Children(func() {
 		top := float32(0)
-		// A browser pane keeps its header: the address field is the only
-		// way to its pages. A note pane keeps its too, which names it.
-		if paneHeaders() || p.browser != nil || p.note != nil {
+		// A note pane keeps its header, which names it.
+		if paneHeaders() || p.note != nil {
 			a.paneHeader(c, hk, t, p, focused, hovered)
 		} else if p.float != nil {
 			a.floatHandle(c, hk, t, p, p.float)
@@ -882,10 +869,6 @@ func (a *App) paneCard(c *ui.Context, k *colors, t *Tab, p *Pane, held bool) ui.
 			body.Clip()
 		}
 		body.Children(func() {
-			if p.browser != nil {
-				a.browserBody(c, k, t, p)
-				return
-			}
 			if p.note != nil {
 				a.noteBody(c, k, t, p)
 				return
@@ -925,7 +908,6 @@ func (a *App) paneCard(c *ui.Context, k *colors, t *Tab, p *Pane, held bool) ui.
 				a.changed()
 			}
 			if tv.Focused() {
-				a.contentFocus = true
 				p.attention = false
 				if a.focusedWin {
 					p.see()
@@ -1036,10 +1018,6 @@ func (a *App) paneHeader(c *ui.Context, k *colors, t *Tab, p *Pane, focused, hov
 		a.paneRename(c, k)
 		return
 	}
-	if p.browser != nil {
-		a.browserHeader(c, k, t, p, focused, hovered)
-		return
-	}
 	name, detail := p.label()
 	prog := p.program()
 	h := ui.Row(c).Height(headerH).Padding(0, 8, 0, 12).Gap(8).AlignItems(ui.Center).MinWidth(0)
@@ -1099,12 +1077,9 @@ func (a *App) noteBody(c *ui.Context, k *colors, t *Tab, p *Pane) {
 		in.Focus()
 		a.focusReq = nil
 	}
-	if in.Focused() {
-		a.contentFocus = true
-		if t.Focus != p {
-			t.setFocus(p)
-			a.changed()
-		}
+	if in.Focused() && t.Focus != p {
+		t.setFocus(p)
+		a.changed()
 	}
 	// The text is written as it changes, to its own file, not to the
 	// layout: the title shows at once, and nothing waits on a save.
@@ -1122,12 +1097,9 @@ func (a *App) notePreviewBody(c *ui.Context, k *colors, t *Tab, p *Pane) {
 		sc.Focus()
 		a.focusReq = nil
 	}
-	if sc.FocusWithin() {
-		a.contentFocus = true
-		if t.Focus != p {
-			t.setFocus(p)
-			a.changed()
-		}
+	if sc.FocusWithin() && t.Focus != p {
+		t.setFocus(p)
+		a.changed()
 	}
 	sc.Children(func() {
 		ui.Column(c).Padding(10, 12).Children(func() {
@@ -1251,7 +1223,7 @@ func (a *App) paneMenu(m *ui.Menu, p *Pane) {
 			}
 		})
 	}
-	if p.SID != "" && p.browser == nil && p.note == nil {
+	if p.SID != "" && p.note == nil {
 		m.Separator()
 		m.Submenu(locales.CmdTeleport(), func(sm *ui.Menu) { a.teleportMenu(sm, p) })
 	}
@@ -1325,120 +1297,6 @@ func (a *App) paneActions(c *ui.Context, k *colors, t *Tab, p *Pane, show bool) 
 		}
 		a.closeConfirm(c, k, x, t, p)
 	})
-}
-
-// browserHeader draws a browser pane's header: the page's history, its
-// address field, and the buttons of every pane.
-func (a *App) browserHeader(c *ui.Context, k *colors, t *Tab, p *Pane, focused, hovered bool) {
-	b := p.browser
-	h := ui.Row(c).Height(headerH).Padding(0, 8, 0, 8).Gap(4).AlignItems(ui.Center).MinWidth(0)
-	h.ContextMenu(func(m *ui.Menu) { a.paneMenu(m, p) })
-	if f := p.float; f != nil {
-		a.dragFloat(c, f, h)
-	} else {
-		h.Drag(p)
-		if h.Dragging() {
-			dimmed(h, 0.4)
-		}
-	}
-	if h.DoubleClicked() {
-		if f := p.float; f != nil {
-			a.raiseFloat(f)
-		}
-		t.setFocus(p)
-		a.toggleZoom()
-	}
-	if h.Clicked() {
-		if f := p.float; f != nil {
-			a.raiseFloat(f)
-		}
-		t.setFocus(p)
-		a.focusReq = p
-	}
-	h.Children(func() {
-		ui.Icon(c, icon(browserProgram.Glyph)).Size(14.5, 14.5).TextColor(k.text)
-		var page *mygo.Page
-		if b.web != nil {
-			page = b.web.Page()
-		}
-		nav := func(glyph, label string, enabled bool, run func()) {
-			e := iconButton(c, k, glyph, label, 24, 15)
-			if !enabled {
-				dimmed(e, 0.35)
-			}
-			if e.Clicked() && enabled {
-				run()
-			}
-		}
-		back, forward := false, false
-		if page != nil {
-			back, forward = page.CanGoBack(), page.CanGoForward()
-		}
-		nav("arrow-left", locales.BrowserBack(), back, func() { page.GoBack() })
-		nav("arrow-right", locales.BrowserForward(), forward, func() { page.GoForward() })
-		nav("rotate-ccw", locales.BrowserReload(), page != nil, func() { page.Reload() })
-		in := textField(c.Key(addressKey(p.ID)), k, &b.addr, fieldCompact).
-			Placeholder(locales.BrowserAddress()).Label(locales.BrowserAddress()).Grow(1).MinWidth(0)
-		if a.focusReq == p && a.tab() == t {
-			// The field of a new pane, which has its URL to type; else the
-			// page.
-			if b.auto {
-				in.Focus()
-			} else if b.web != nil {
-				b.web.Focus()
-			}
-			a.focusReq = nil
-		}
-		if in.Focused() {
-			a.contentFocus = true
-			b.auto = false
-			if t.Focus != p {
-				t.setFocus(p)
-				a.changed()
-			}
-		}
-		b.editing = in.Focused()
-		if in.Submitted() {
-			a.navigateBrowser(p, b.addr)
-			b.auto = false
-			a.focusReq = p
-		}
-		a.paneActions(c, k, t, p, focused || hovered)
-	})
-}
-
-// browserBody shows a browser pane's page, or a word about why it shows
-// none.
-func (a *App) browserBody(c *ui.Context, k *colors, t *Tab, p *Pane) {
-	b := p.browser
-	if b.web == nil {
-		var reload emptyAction
-		if b.addr != "" {
-			reload = emptyAction{locales.BrowserReload(), func() { a.navigateBrowser(p, b.addr) }}
-		}
-		emptyPage(c, k, func(p *ui.Painter, r ui.Rect, k *colors) {
-			drawEmptyScene(p, r, k, b.addr != "", c.Theme().Dark)
-		}, locales.BrowserUnavailable(), "", emptyAction{}, reload)
-		return
-	}
-	wv := ui.WebView(c, b.web).Grow(1).MinHeight(0)
-	if a.focusReq == p && a.tab() == t {
-		b.web.Focus()
-		a.focusReq = nil
-	}
-	if wv.Focused() {
-		a.contentFocus = true
-	}
-	if wv.Hovered() {
-		a.pageHover = p
-	}
-	if wv.Focused() && t.Focus != p {
-		t.setFocus(p)
-		a.changed()
-	}
-	if wv.Focused() {
-		p.attention = false
-	}
 }
 
 // paneRename draws the label field over a pane's header, in the row the

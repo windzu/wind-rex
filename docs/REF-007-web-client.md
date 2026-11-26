@@ -3,7 +3,7 @@ name: REF-007
 description: "The standalone web client in `web/`: hosts, trust of a page, Tailscale, hosting and the app shell. Use when you change the web client."
 metadata:
   created: "2026-11-12"
-  updated: "2026-11-24"
+  updated: "2026-11-26"
 ---
 
 # REF-007: Web client
@@ -325,79 +325,15 @@ tailnet host; allow it.
 
 ## Hosting
 
-The page is static files: `web/dist`, which `npm run build` (that is,
-`node build.mjs`) writes. `web/dist` is not in the repository
-(`web/.gitignore`).
+The page is static files: `web/dist`, which `npm run build` (that is, `node build.mjs`) writes. `web/dist` is not in the repository (`web/.gitignore`).
 
-### Cloudflare Workers
+WindRex converges `web/` to a local dev server or self-hosted static build ([`DSK-010`](DSK-010-trim-browser-and-web.md)). Cloudflare Workers (`wrangler.jsonc`), Cloudflare R2 snapshot uploads (`r2-upload.mjs`), the PWA install manifest (`manifest.webmanifest`) and the Service Worker (`sw.js`) have been retired.
 
-`web/wrangler.jsonc` deploys `web/dist` as a Worker with static assets
-only, no Worker code, named `gorex-web`, published at
-`https://web.gorex.uk` — a custom domain of the `gorex.uk` zone, declared
-in that file so every deploy keeps it. The Worker's own address,
-`https://gorex-web.<account>.workers.dev`, serves the same assets. From
-`web/`:
+`web/_headers`, which the build copies into `dist`, documents recommended CSP and cache headers for self-hosted static deployments:
 
-```sh
-npm run deploy    # node build.mjs, then wrangler deploy
-```
-
-`npm run deploy` runs Wrangler 4.152.0 with `npx`, which asks you to sign
-in to Cloudflare the first time. Wrangler is not a dependency of the
-page, so `npm ci` in a build does not fetch it and its runtime. Then
-trust the page's origin on each host:
-`gorex rexapi web allow https://web.gorex.uk`. The desktop writes the same
-list from its Pair dialog: **Rex QR…** → **Web (LAN)** → **Allow
-https://web.gorex.uk**, and the same tab opens the page in a browser.
-
-On a push to `main` that touches the page's files (`web/**`, `assets/**`,
-`ios/GoRex/ghostty-themes.json`, `go.mod`/`go.sum`), `.github/workflows/web.yml`
-deploys it the same way: it runs `node build.mjs --ci`, then Wrangler 4.152.0's
-`deploy`, in `web/`. It reads two secrets, `CLOUDFLARE_API_TOKEN` (a token with
-the Workers Scripts: Edit permission) and `CLOUDFLARE_ACCOUNT_ID`; a run with
-neither skips the deploy, as the R2 job skips its upload without the R2
-secrets. `gh workflow run web.yml -R si-mods/gorex` deploys on demand.
-
-`web/_headers`, which the build copies into `dist`, sets the files'
-headers on Cloudflare:
-
-- `Content-Security-Policy`: `default-src 'none'`; the page's own
-  scripts (`script-src 'self'`, which covers the script's ES module
-  chunks that `import()` loads, with `'wasm-unsafe-eval'` for
-  libghostty-vt), fonts and images (and `data:` for the empty favicon,
-  `blob:` for the image viewer's checked images, for images only);
-  its inline `<style>` (`style-src 'self' 'unsafe-inline'`; the styles
-  the script sets go through the CSSOM, which the policy does not
-  restrict); no `<base>`, no forms, no framing elsewhere. `connect-src`
-  is `'self' http: https: ws: wss:`: the hosts are the user's, added in
-  the page, so the policy cannot name them. The policy's defence is that
-  no script but the page's own runs; a narrower `connect-src` would need
-  the hosts at build time. `frame-src http: https:` lets the hidden frame
-  that takes a host's download (docs/WEB-001-open-files.md) load it.
+- `Content-Security-Policy`: `default-src 'none'`; the page's own scripts (`script-src 'self'`, with `'wasm-unsafe-eval'` for `libghostty-vt`), fonts and images (`data:` and `blob:` for checked images), inline `<style>` (`style-src 'self' 'unsafe-inline'`), `connect-src` for user-configured hosts and Tailscale, `frame-src http: https:` for hidden download frames, no `<base>`, no forms, and no framing elsewhere.
 - `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
-- The script and its code chunks, the terminal's wasm, the themes and
-  the Tailscale engine are in `/assets` under names that carry a hash of
-  their content (`app-<hash>.js`, `<module>-<hash>.js` and
-  `chunk-<hash>.js` with esbuild's hash, `ghostty-vt-<hash>.wasm`,
-  `manifest-<hash>.json`, `maple-index-<hash>.json`, and in `lazy/`
-  `ghostty-themes-<hash>.json`, `maple-<face><n>-<hash>.woff2`,
-  `tailnet-<hash>.wasm.gz`, `tailnet-<hash>.js`), kept a year
-  (`public, max-age=31536000, immutable`): after the first visit, a
-  reload takes them from the browser's cache without asking the server.
-  `/` and `index.html`, which names the script, are `no-cache`
-  (revalidated, with Cloudflare's ETag, on every load). The
-  fonts, icons and brand marks are kept for a day. Cloudflare gives a path
-  that two rules match both rules' headers, so no two rules set the same
-  header on one path.
-- `manifest-src 'self'` and `worker-src 'self'`: the app's manifest
-  and its Service Worker (see App). `sw.js` and `manifest.webmanifest`
-  are `no-cache`, so that a new build is found at the next load; the
-  manifest is sent as `application/manifest+json`. The app icons in
-  `/pwa` are kept for a day.
-- `connect-src` names `https://controlplane.tailscale.com`,
-  `wss://controlplane.tailscale.com` and `wss://*.tailscale.com` (DERP)
-  for built-in Tailscale; `http: https: ws: wss:` already allow them.
-  The engine uploads no logs.
+- Hashed assets in `/assets/*` are immutable (`public, max-age=31536000, immutable`), `/` and `index.html` are `no-cache`, and fonts, icons and brand marks are cached for a day.
 
 ### Local dev server
 
@@ -407,120 +343,13 @@ npm run dev                  # http://127.0.0.1:5173
 npm run dev -- --port 7478   # another port; --host ADDR to listen elsewhere
 ```
 
-`web/dev.mjs` builds `web/dist` once (`build.mjs`, with its type check),
-then serves it with esbuild. It bundles `src/` again on every change (not
-minified, with a source map, split into chunks as the build is), without
-the type check, and copies `index.html` again when it changes. The
-script keeps its plain name, `app.js`, in the dev server; its chunks go
-in `dist/assets` with esbuild's hash, and the other files keep the
-hashed names the build gave them (the manifest's `js/` entries are the
-build's). It builds the Tailscale engine again when a Go file of
-`web/tailnet` changes (a few seconds with Go's build cache) and lists it
-in the asset manifest, written again under the name the script knows;
-reload the page to load it. A change of `build.mjs` or `dev.mjs` needs
-a restart of the dev server. It prints the command that makes a
-host trust it. It is plain http on loopback, so it reaches both kinds of
-gateway: `http://` on the local network and `https://` on the tailnet. It
-sends none of `_headers`' headers. The page registers no Service Worker
-there (see App).
+`web/dev.mjs` builds `web/dist` once (`build.mjs`, with its type check), then serves it with esbuild. It bundles `src/` again on every change (not minified, with a source map, split into chunks as the build is), without the type check, and copies `index.html` again when it changes. It rebuilds the Tailscale and Tailcat engines when Go files under `web/tailnet`, `web/tailcat` or `web/jsbridge` change. It prints the `gorex rexapi web allow <origin>` command needed for a host to trust it.
 
-## App
+## Icons
 
-The page is an installable web app (a PWA): Chrome and Edge offer to
-install it, and iOS adds it to the Home Screen. Installed, it opens in a
-window of its own, with its own icon.
+`web/pwa` holds the SVG favicon and generated PNG icons (`go run ./tools/mkicon -web` rebuilds them from the WindRex master). `index.html` links `pwa/favicon.svg` and `pwa/apple-touch-icon.png`, and the sidebar/host list uses `pwa/icon-192.png`. The build copies these files into `dist/pwa`.
 
-- **Manifest**: `web/manifest.webmanifest`, linked from `index.html`:
-  GoRex, `start_url` and `scope` the page's directory, `display:
-  standalone`, and the dark page's colour (`#1c1c1e`) as its theme and
-  background. `main.ts` keeps `<meta name="theme-color">` to the
-  page's scheme (`#1c1c1e` dark, `#ececf0` light), which colours the
-  app window's title bar. There is no `window-controls-overlay`: the
-  page would go under the title bar's buttons, and would need a drag
-  region of its own.
-- **Icons**: `web/pwa` holds the SVG favicon and generated PNGs.
-  `go run ./tools/mkicon -web` rebuilds them from the WindRex master.
-  The manifest has the standard and maskable icons at 192 and 512 px.
-  The 180 px Apple touch icon has a solid background. The build
-  copies these files into `dist/pwa`.
-- **Install**: Settings, About, shows Install GoRex with an Install App
-  button when the browser offered its install prompt
-  (`beforeinstallprompt`, Chrome and Edge); the button shows the
-  browser's prompt. In a browser of iOS or iPadOS it shows how to Add to
-  Home Screen instead. Installed, or in a browser that offers neither
-  (Firefox, Safari on the Mac), it shows neither.
-- **Keyboard**: in the app's window (`display-mode: standalone`), the
-  page asks for Keyboard Lock (`navigator.keyboard.lock`, Chrome and
-  Edge) for every key but Escape, so that the browser's own chords
-  (Ctrl+W, Ctrl+T, Ctrl+N, Ctrl+Tab) can reach the terminal. A browser
-  holds the locked keys only in fullscreen; outside it they stay the
-  browser's, so in an app window that is not fullscreen they may still
-  close the window or open a tab. Escape is never locked, so it exits
-  fullscreen at once, as ever, and still closes the page's dialogs. The
-  page's own shortcuts (Ctrl+, for Settings, Ctrl+Shift+C for Copy and
-  Ctrl+Shift+V for Paste) are the page's either way. A tab asks for no lock.
-
-### Service Worker
-
-`web/sw.js` is the page's Service Worker, at the root of its scope. The
-build (`writeWorker` in `build.mjs`) writes into `dist/sw.js` this
-build's version, a hash of `web/sw.js`, the page and its files, and the
-files it keeps: all of `dist` but `index.html`, `_headers`, `sw.js` and
-`assets/lazy/` (the themes, the Tailscale engine and the CJK font's
-chunks; see Loading on demand), about 2.5 MB in all, the page's code
-chunks among them: all of them, about 46 KB that load on demand, so
-that Settings, the guide and the viewer open offline too. A build that
-changes none of them is the same worker.
-
-- **Install**: it fetches the page (the scope's root, checked to name
-  this build's script, so that a deploy between the two fetches fails
-  the install rather than mixing versions) and the files into a cache of
-  its version, `gorex-<version>`. **Activate** deletes the other
-  `gorex-` caches, but the loader's `gorex-assets-v<n>`, and takes the
-  open pages.
-- **Answers**: the page (a navigation to the root or `index.html`) and
-  `/assets` (hashed names) from the cache first; an `/assets` file
-  not kept joins the cache when fetched.
-  `/assets/lazy/` it leaves to the page's loader, which keeps those
-  files in its own cache (Loading on demand). The
-  rest of the page's origin (fonts, icons) comes from
-  the network, and from the cache when the network fails. So the page
-  opens offline, at the version the worker holds.
-- **Leaves alone**: every request to another origin (the GoRex hosts,
-  Tailscale's control server and relays), every request that is not a
-  GET, and `/api/`. It answers none of them, so the browser sends them
-  as it would without a worker. WebSockets never pass through a worker.
-- **Updates**: the browser checks `sw.js` (`no-cache`, registered with
-  `updateViaCache: "none"`) at each load, and the page asks again when
-  its tab comes back and hourly; Settings, About, Check for Updates
-  asks at once and says what it found. A new version installs beside the
-  running one and waits; the page then shows "A new version of GoRex is
-  ready." with Reload, a glass panel in the corner, as the host list's,
-  that takes no keys. Nothing reloads by itself: a reload ends the
-  terminals' connections and this tab's Tailscale sign-in. Reload asks the
-  waiting worker to take over (`skip-waiting`), and the page reloads
-  once when it has (`controllerchange`). The × hides the panel until
-  the next load. The first worker installed is not a new version and
-  shows nothing.
-- **Downloads over the tailnet** (docs/WEB-002-tailscale.md, Downloads): with
-  a worker controlling the page, a tailnet host's file streams to the
-  browser's own download, with no limit of size. The page posts
-  `save` with a random id, the file's name and a `MessagePort`; the
-  worker makes a stream that asks the page for each chunk in turn, and a
-  hidden frame opens `save/<id>`, which the worker answers once, as an
-  attachment (`Content-Disposition` with the name, `nosniff`); a
-  second fetch of it is 404. The page sends `ping` every 10 s while it
-  lasts, which keeps the worker awake. Cancelling in the browser's
-  download list cancels the read from the host. Without a worker (the
-  first load, the dev server) it is the blob of before, capped at
-  256 MiB.
-- **Dev server**: `dev.mjs` builds with `__GOREX_SW__` false, so the
-  page registers no worker, and serves a `sw.js` that removes itself and
-  the `gorex-` caches: a worker a build left on the same origin goes at
-  the next load instead of serving that build's page.
-- **Another directory**: `GOREX_WEB_DIST=<dir> npm run build` builds
-  into `<dir>` rather than `web/dist`, as a check beside a running dev
-  server.
+Tailnet file downloads read bytes through the transport into a Blob (capped at 256 MiB, `saveBlob` in `web/src/files.ts`) and save via `<a download>`.
 
 ## Program tiles
 

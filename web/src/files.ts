@@ -5,12 +5,9 @@
 // whose first bytes are that image's, opens in the viewer (viewer.ts) from
 // a blob of that image type only; anything else is the browser's own
 // download, a hidden link navigated to the file, so no blob of the host's
-// data other than a checked image exists on the page. Over the tailnet the
-// browser cannot navigate to the host, so the page reads the file through
-// the transport and streams it to the browser's download through the
-// Service Worker (app.ts, streamSave), or, with no worker, holds it in a
-// blob that is saved and let go (docs/WEB-002-tailscale.md, Downloads).
-import { streamSave } from "./app";
+// Over the tailnet the browser cannot navigate to the host, so the page
+// reads the file through the transport into a blob that is saved and let
+// go (docs/WEB-002-tailscale.md, Downloads).
 import { failure as fail, formatSize, Msg, PlainKey, t } from "./i18n";
 import { BytesStream, Control, describe, RexError, Transport } from "./rex";
 import { Chunk } from "./chunks";
@@ -223,35 +220,7 @@ function openBytesReader(f: Begun): ReadableStreamDefaultReader<Uint8Array> {
 }
 
 async function navigate(f: Begun, host: FileHost) {
-  return saveTailnet(f, host);
-}
-
-/**
- * Downloads a tailnet host's file through the transport, streamed to the
- * browser's download by the Service Worker, with no limit of size; with no
- * worker controlling the page, into a blob (saveBlob).
- */
-async function saveTailnet(f: Begun, host: FileHost) {
-  const name = f.name || "download";
-  const save = await streamSave(name);
-  if (!save) return saveBlob(f, host);
-  let reader: ReadableStreamDefaultReader<Uint8Array>;
-  try {
-    reader = openBytesReader(f);
-  } catch (e) {
-    save.abort(e instanceof Error ? e.message : String(e));
-    throw e;
-  }
-  let n = 0, shown = -1;
-  const how = await save.pipe(reader, (bytes) => {
-    n += bytes;
-    const pct = f.size ? Math.floor((100 * n) / f.size) : -1;
-    if (pct !== shown && pct >= 0) {
-      shown = pct;
-      host.status(() => t("fileDownloading", { name, percent: Math.min(pct, 100) }));
-    }
-  });
-  host.status(() => (how === "done" ? t("fileDownloaded", { name }) : t("fileCancelled", { name })));
+  return saveBlob(f, host);
 }
 
 /**

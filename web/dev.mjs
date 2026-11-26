@@ -15,11 +15,6 @@
 // (i18n.mjs), which the watch then bundles; a catalog with errors leaves
 // the last good one and prints them.
 //
-// The page registers no Service Worker here (__GOREX_SW__ is false), and
-// sw.js is one that removes itself and the page's caches: a worker that a
-// build served on the same origin installed then goes at the next load,
-// rather than serving that build's page in place of the dev server's.
-//
 // The script keeps its plain name here, app.js, which index.html names as
 // it is; its code chunks go in dist/assets with esbuild's hash, beside the
 // build's (the manifest's js/ entries are the build's, the first one's
@@ -27,7 +22,7 @@
 //
 // Usage: npm run dev [-- --port N] [-- --host ADDR]
 import { execFileSync } from "node:child_process";
-import { copyFileSync, watch, writeFileSync } from "node:fs";
+import { copyFileSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addTailcat, addTailnet, appOptions, assetDefines, buildTailcat, buildTailnet, dist, esbuild, Manifest } from "./build.mjs";
@@ -45,16 +40,6 @@ const port = Number(flag("--port", process.env.PORT || "5173"));
 // build.mjs takes the rest (--ghostty-source, --rebuild-wasm).
 const rest = args.filter((a, i) => !["--host", "--port"].includes(a) && !["--host", "--port"].includes(args[i - 1]));
 execFileSync(process.execPath, [join(web, "build.mjs"), ...rest], { stdio: "inherit" });
-writeFileSync(
-  join(dist, "sw.js"),
-  `// The dev server's: it removes itself and the page's caches (dev.mjs).
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil((async () => {
-  for (const k of await caches.keys()) if (k.startsWith("gorex-")) await caches.delete(k);
-  await self.registration.unregister();
-})()));
-`,
-);
 
 const { context } = await esbuild();
 const defines = assetDefines(dist);

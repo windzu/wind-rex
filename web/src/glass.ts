@@ -8,9 +8,9 @@ import { Backdrop, displacementMap, Ink, lift, maxOffset, nextInk, readBackdrop,
 import { prefs } from "./prefs";
 
 /** The surfaces of glass, as index.html lists them. */
-const surfaces = ".update, .chunk-load, .pane-upload, .find-bar, .select-menu, .context-menu, .float-dock-btn";
+const surfaces = ".chunk-load, .pane-upload, .find-bar, .select-menu, .context-menu, .float-dock-btn";
 /** The surfaces with a rim lens: the panels; not the menus (they open and close as their own layers) nor the dock's small buttons. */
-const lensed = ".update, .chunk-load, .pane-upload, .find-bar";
+const lensed = ".chunk-load, .pane-upload, .find-bar";
 /** How much more the red bends than the green, and the blue less: the rim's colour split. */
 const split = 0.15;
 /** The least time between two readings of the terminals while they draw. */

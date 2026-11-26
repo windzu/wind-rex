@@ -360,16 +360,6 @@ func (st *store) queue() {
 		st.out.add(rex.LayoutCommand{Op: "layout.apply", Batch: batch}, nil)
 	}
 	st.base = now
-	// What the browser panes show the server has now.
-	for _, a := range st.apps {
-		for _, t := range a.tabs {
-			for _, p := range t.allPanes() {
-				if b := p.browser; b != nil {
-					b.synced = b.url
-				}
-			}
-		}
-	}
 }
 
 // logFocus logs a change of a tab's focus the app sends, for the focus

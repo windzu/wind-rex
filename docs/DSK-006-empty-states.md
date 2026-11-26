@@ -3,7 +3,7 @@ name: DSK-006
 description: "The desktop shows a shared empty-state component where a surface has nothing to show: three sizes, one drawn wireframe, and the places that use them. Use when you change an empty, loading, no-result or failed surface."
 metadata:
   created: "2026-11-22"
-  updated: "2026-11-23"
+  updated: "2026-11-26"
 ---
 
 # DSK-006: Empty states
@@ -19,7 +19,6 @@ Several surfaces show nothing or a bare line when they have nothing to show. Eac
 - The find bar counts "0 of 0" when a query matches nothing (`findBar` in `view.go`).
 - The theme picker shows an empty grid when the filter matches nothing (`themeSettings` in `settingsview.go`).
 - The project picker shows nothing when a host has no projects (`pickerList`). The project sidebar shows just the host's header there, as iOS does; that is a decided look, not a missing state.
-- The browser pane shows one line when its page cannot be shown (`browserBody` in `view.go`).
 
 The words come and go with no shared shape. The states do not name the next step. A user cannot tell a blank area from a broken one.
 
@@ -41,7 +40,7 @@ One component draws the empty states. `empty.go` gives three sizes: `page`, `row
 
 | Size | Shape | Where |
 | --- | --- | --- |
-| `page` | A picture, a title in `fontTitle`, a note in `fontBody` `textFaint`, and up to two buttons. The group is centered and sits about 40% down the area. | the main area with no tab, the failed browser pane |
+| `page` | A picture, a title in `fontTitle`, a note in `fontBody` `textFaint`, and up to two buttons. The group is centered and sits about 40% down the area. | the main area with no tab |
 | `row` | One line of `textFaint`, with an optional ghost button at the end. | the project picker with no entries |
 | `menu` | One faint line. No picture, no button. | the command palette, the theme picker, the New Project sheet's status lines |
 
@@ -74,7 +73,6 @@ The picture is a small wireframe of the place, drawn with `ui.Painter` rectangle
 | Surface | Size | Title | Actions |
 | --- | --- | --- | --- |
 | Main area, no tab | `page` | No tab open | New Tab (primary), Command Palette… (ghost) |
-| Browser pane, no page | `page` | The page could not be shown. | Reload (ghost), only when the pane has an address |
 | Palette, no match | `menu` | No matches for "{query}" | none |
 | Palette, needs list | `menu` | Nothing needs you | none |
 | Find bar, no match | `row` | No matches | none |

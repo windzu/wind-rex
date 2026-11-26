@@ -345,26 +345,23 @@ func (a *App) endCanvasPan() {
 	a.changed()
 }
 
-// canvasMenu is the menu of t's empty plane: a new terminal, browser or
-// note there, its box's top left where it was clicked.
+// canvasMenu is the menu of t's empty plane: a new terminal or note
+// there, its box's top left where it was clicked.
 func (a *App) canvasMenu(m *ui.Menu, t *Tab) {
 	x, y := a.canvasAt[0], a.canvasAt[1]
 	if m.Item(locales.CanvasNewTerminal()).Chosen() {
 		a.canvasNew(t, "terminal", x, y)
 	}
-	// A tab's panes are on one host, which a browser's or a note's is not.
+	// A tab's panes are on one host, which a note's is not.
 	if t.host() != nil {
 		return
-	}
-	if m.Item(locales.CanvasNewBrowser()).Chosen() {
-		a.canvasNew(t, "browser", x, y)
 	}
 	if m.Item(locales.CanvasNewNote()).Chosen() {
 		a.canvasNew(t, "note", x, y)
 	}
 }
 
-// canvasNew puts a new pane of kind, "terminal", "browser" or "note", on
+// canvasNew puts a new pane of kind, "terminal" or "note", on
 // t's canvas at x, y of the room: a terminal on the tab's host, in the
 // current directory, as a new float's.
 func (a *App) canvasNew(t *Tab, kind string, x, y float32) {
@@ -389,8 +386,6 @@ func (a *App) canvasNew(t *Tab, kind string, x, y float32) {
 			return true
 		})
 	case h != nil:
-	case kind == "browser":
-		a.dropOnCanvas(t, a.newBrowserPane(browserStart), x, y)
 	case kind == "note":
 		a.dropOnCanvas(t, a.newNotePane(""), x, y)
 	}

@@ -101,9 +101,6 @@ type program struct {
 var (
 	shellTile = program{Glyph: "square-terminal", TileGlyph: "terminal", TileBg: ui.Hex("#1d2420"), TileFg: ui.Hex("#5fd38d"), Shell: true}
 
-	// browserProgram is the tile of a browser pane, which runs no program.
-	browserProgram = program{Name: "Browser", Glyph: "globe", TileGlyph: "globe", TileBg: ui.Hex("#2f6fed"), TileFg: ui.Hex("#ffffff")}
-
 	// noteProgram is the tile of a note pane, which runs no program.
 	noteProgram = program{Name: "Note", Glyph: "sticky-note", TileGlyph: "sticky-note", TileBg: ui.Hex("#f5c542"), TileFg: ui.Hex("#3a2f08")}
 

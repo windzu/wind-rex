@@ -39,8 +39,8 @@ func (p *Pane) running() bool {
 	return !p.info.Idle && p.info.Program != ""
 }
 
-// terminal reports whether the pane is a terminal: not a browser or a note.
-func (p *Pane) terminal() bool { return p.browser == nil && p.note == nil }
+// terminal reports whether the pane is a terminal: not a note.
+func (p *Pane) terminal() bool { return p.note == nil }
 
 // terminals counts the terminals among the tabs' panes, and those of them
 // that run a program.
