@@ -253,7 +253,8 @@ func (a *App) settingsView(c *ui.Context) {
 	if page := remoteUI.pairQR; page != nil {
 		// A code of this machine closes once its address no longer works.
 		if tailnet, lan := localRexPairs(); page.local && page.address != tailnet && page.address != lan ||
-			page.rexGo && !remoteUI.st.Running {
+			page.rexGo && !remoteUI.st.Running ||
+			page.directTLS && page.address != a.directPairURL() {
 			remoteUI.pairQR = nil
 		} else {
 			hostPairQRSheet(c, k, page)
@@ -402,6 +403,7 @@ func (a *App) serverSettings(c *ui.Context, k *colors) {
 	// connect to it from elsewhere.
 	a.localAPI(c, k)
 	a.remoteSettings(c, k)
+	a.directSettings(c, k)
 }
 
 // serverGroup is the server page's card: the machine and its state, and

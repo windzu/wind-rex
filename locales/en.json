@@ -2139,6 +2139,126 @@
   "@remoteDirectQRHint": {
     "description": "Text over the QR code of the direct address."
   },
+  "remoteDirectTitle": "Direct / Relay Access",
+  "@remoteDirectTitle": {
+    "description": "Title of the Settings › Server group for direct TLS and self-hosted windrex-relay access."
+  },
+  "remoteDirectNote": "Reach this machine from WindRex on iPhone over cellular networks using direct TLS or a self-hosted relay. Shares settings with gorex rexapi direct.",
+  "@remoteDirectNote": {
+    "description": "Footnote of the Direct / Relay Access group on Settings › Server."
+  },
+  "remoteDirectSwitch": "Enable direct TLS / relay access",
+  "@remoteDirectSwitch": {
+    "description": "Switch: turn direct TLS and self-hosted relay access on or off."
+  },
+  "remoteDirectOff": "Off",
+  "@remoteDirectOff": {
+    "description": "Direct / Relay Access state: turned off."
+  },
+  "remoteDirectWaiting": "On, waiting for the WindRex server",
+  "@remoteDirectWaiting": {
+    "description": "Direct / Relay Access state: enabled, waiting for the gateway to report status."
+  },
+  "remoteDirectUnconfigured": "On, enter a relay URL or direct public URL",
+  "@remoteDirectUnconfigured": {
+    "description": "Direct / Relay Access state: enabled, but neither a relay URL nor a direct public URL is configured."
+  },
+  "remoteDirectListening": "Listening on {url}",
+  "@remoteDirectListening": {
+    "description": "Direct / Relay Access state: local TLS listener is active.",
+    "placeholders": {
+      "url": {
+        "type": "String",
+        "example": "https://[::]:7443"
+      }
+    }
+  },
+  "remoteDirectRelayConnected": "Connected to relay",
+  "@remoteDirectRelayConnected": {
+    "description": "Direct / Relay Access state: outbound tunnel to the self-hosted relay is connected."
+  },
+  "remoteDirectRelayConnecting": "Connecting to relay…",
+  "@remoteDirectRelayConnecting": {
+    "description": "Direct / Relay Access state: outbound tunnel to the self-hosted relay is connecting."
+  },
+  "remoteDirectError": "Error: {error}",
+  "@remoteDirectError": {
+    "description": "Direct / Relay Access state: direct listener error.",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "address already in use"
+      }
+    }
+  },
+  "remoteDirectRelayError": "Relay error: {error}",
+  "@remoteDirectRelayError": {
+    "description": "Direct / Relay Access state: outbound relay connection error.",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "connection refused"
+      }
+    }
+  },
+  "remoteDirectRelayURL": "Relay URL",
+  "@remoteDirectRelayURL": {
+    "description": "Field label: self-hosted windrex-relay URL."
+  },
+  "remoteDirectRelayToken": "Relay token",
+  "@remoteDirectRelayToken": {
+    "description": "Field label: optional registration secret for the self-hosted relay."
+  },
+  "remoteDirectRelayPin": "Relay cert pin",
+  "@remoteDirectRelayPin": {
+    "description": "Field label: optional base64url SHA-256 certificate pin for a self-signed relay."
+  },
+  "remoteDirectOptional": "Optional",
+  "@remoteDirectOptional": {
+    "description": "Placeholder for optional Direct / Relay Access fields."
+  },
+  "remoteDirectRelayNote": "Connect outbound to a self-hosted windrex-relay server without opening inbound ports on this machine.",
+  "@remoteDirectRelayNote": {
+    "description": "Hint under the self-hosted relay fields."
+  },
+  "remoteDirectPublicURL": "Direct public URL",
+  "@remoteDirectPublicURL": {
+    "description": "Field label: public https:// URL advertised in direct TLS pairing QR codes."
+  },
+  "remoteDirectListen": "Listen address",
+  "@remoteDirectListen": {
+    "description": "Field label: local TCP bind address for the direct TLS listener."
+  },
+  "remoteDirectTLSNote": "Direct HTTPS endpoint reachable from your iPhone, such as through router port forwarding.",
+  "@remoteDirectTLSNote": {
+    "description": "Hint under the direct TLS fields."
+  },
+  "remoteDirectCertPin": "TLS cert pin",
+  "@remoteDirectCertPin": {
+    "description": "Fact row label: SHA-256 pin of the active direct TLS certificate."
+  },
+  "remoteDirectRelayQR": "Direct / Relay QR…",
+  "@remoteDirectRelayQR": {
+    "description": "Button: open the Direct TLS / Self-Hosted Relay pairing QR sheet."
+  },
+  "remoteDirectRotateToken": "Rotate Token",
+  "@remoteDirectRotateToken": {
+    "description": "Button: generate a new direct/relay pairing token and disconnect old clients."
+  },
+  "remoteDirectTLSQRTitle": "Direct / Relay QR for {host}",
+  "@remoteDirectTLSQRTitle": {
+    "description": "Title of the Direct TLS / Self-Hosted Relay pairing QR dialog.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "alice-laptop"
+      }
+    }
+  },
+  "remoteDirectTLSQRHint": "Scan this code in WindRex on your iPhone to connect over direct TLS or your self-hosted relay. The code holds this host's pairing token, a secret: show it only to your own devices.",
+  "@remoteDirectTLSQRHint": {
+    "description": "Hint above the Direct TLS / Self-Hosted Relay pairing QR code."
+  },
   "remotePairAddrFrom": "From {source}",
   "@remotePairAddrFrom": {
     "description": "Pairing request by address: the address it came from.",

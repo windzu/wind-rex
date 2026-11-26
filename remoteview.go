@@ -58,6 +58,18 @@ var remoteUI struct {
 	tsURL    string
 	tsEdited bool
 	tsErr    string
+	// direct is the gateway's native TLS direct listener and outbound
+	// stateless relay settings (rexapi.LoadDirect, LoadDirectStatus),
+	// shared on disk with "gorex rexapi direct".
+	direct            rexapi.DirectConfig
+	directStatus      rexapi.DirectStatus
+	directRelayURL    string
+	directRelaySecret string
+	directRelayPin    string
+	directPublicURL   string
+	directListen      string
+	directEdited      bool
+	directErr         string
 	// relay is what is typed in the relay field, relayErr what was wrong
 	// with it.
 	relay       string
@@ -100,6 +112,7 @@ func (a *App) showSection(id string) {
 	stopServerInfoPoll()
 	if id == "server" {
 		fetchLAN()
+		fetchDirect()
 		a.startRemotePoll()
 		startServerInfoPoll()
 	}
@@ -110,12 +123,16 @@ func stopRemotePoll() {
 		close(remoteUI.stop)
 	}
 	page := &remoteUI
-	page.stop, page.st, page.loaded, page.busy = nil, rex.RemoteStatus{}, false, false
+	page.stop, page.st, page.loaded, page.unreachable, page.busy = nil, rex.RemoteStatus{}, false, false, false
 	page.reveal, page.confirm, page.err, page.addErr, page.name, page.key = false, false, nil, false, "", ""
 	page.revealDirect = false
 	page.addingKey, page.details, page.wantPhoneQR = false, false, false
 	page.focusLAN = false
 	page.ts, page.tsURL, page.tsEdited, page.tsErr = rexapi.TailscaleConfig{}, "", false, ""
+	page.direct, page.directStatus = rexapi.DirectConfig{}, rexapi.DirectStatus{}
+	page.directRelayURL, page.directRelaySecret, page.directRelayPin = "", "", ""
+	page.directPublicURL, page.directListen = "", ""
+	page.directEdited, page.directErr = false, ""
 	page.relay, page.relayEdited, page.relayErr = "", false, ""
 	page.reach, page.reachEdited, page.reachErr, page.fwFailed = "", false, "", false
 }
@@ -205,6 +222,230 @@ func fetchLAN() {
 		remoteUI.lanListen = c.Listen
 	}
 	remoteUI.lanStatus = rexapi.LoadLANStatus(dir)
+}
+
+// fetchDirect reads the direct TLS / self-hosted relay settings and runtime
+// status from disk, keeping the GUI in sync with "gorex rexapi direct".
+func fetchDirect() {
+	dir := rexapi.TailnetDir()
+	c, _ := rexapi.LoadDirect(dir)
+	remoteUI.direct = c
+	if !remoteUI.directEdited {
+		remoteUI.directRelayURL = c.RelayURL
+		remoteUI.directRelaySecret = c.RelaySecret
+		remoteUI.directRelayPin = c.RelayCertPin
+		remoteUI.directPublicURL = c.PublicURL
+		remoteUI.directListen = c.Listen
+	}
+	remoteUI.directStatus = rexapi.LoadDirectStatus(dir)
+}
+
+// saveDirect writes direct.json for the server's gateway to pick up within a
+// second. It preserves CLI-owned fields (Token, HostID, CertFile, KeyFile)
+// from disk so a concurrent CLI rotation or custom cert is not clobbered.
+func saveDirect(c rexapi.DirectConfig) bool {
+	dir := rexapi.TailnetDir()
+	if cur, err := rexapi.LoadDirect(dir); err == nil {
+		cur.Enabled = c.Enabled
+		cur.RelayURL = strings.TrimSpace(c.RelayURL)
+		cur.RelaySecret = strings.TrimSpace(c.RelaySecret)
+		cur.RelayCertPin = strings.TrimSpace(c.RelayCertPin)
+		cur.PublicURL = strings.TrimSpace(c.PublicURL)
+		cur.Listen = strings.TrimSpace(c.Listen)
+		c = cur
+	} else {
+		c.RelayURL = strings.TrimSpace(c.RelayURL)
+		c.RelaySecret = strings.TrimSpace(c.RelaySecret)
+		c.RelayCertPin = strings.TrimSpace(c.RelayCertPin)
+		c.PublicURL = strings.TrimSpace(c.PublicURL)
+		c.Listen = strings.TrimSpace(c.Listen)
+		c.Token = ""
+		c.HostID = ""
+	}
+	if c.PublicURL != "" && c.Listen == "" {
+		c.Listen = fmt.Sprintf(":%d", rexapi.DirectPort)
+	}
+	if err := rexapi.SaveDirect(dir, c); err != nil {
+		remoteUI.directErr = err.Error()
+		return false
+	}
+	remoteUI.directErr = ""
+	// Read back: SaveDirect populates Token and HostID when missing.
+	if saved, err := rexapi.LoadDirect(dir); err == nil {
+		c = saved
+	}
+	remoteUI.direct = c
+	remoteUI.directRelayURL = c.RelayURL
+	remoteUI.directRelaySecret = c.RelaySecret
+	remoteUI.directRelayPin = c.RelayCertPin
+	remoteUI.directPublicURL = c.PublicURL
+	remoteUI.directListen = c.Listen
+	remoteUI.directEdited = false
+	return true
+}
+
+// rotateDirectToken generates a new 256-bit pairing token in direct.json so
+// the gateway disconnects existing direct/relay clients and issues a new QR.
+func rotateDirectToken() bool {
+	dir := rexapi.TailnetDir()
+	cur, err := rexapi.LoadDirect(dir)
+	if err != nil {
+		remoteUI.directErr = err.Error()
+		return false
+	}
+	cur.Token = rexapi.NewLANToken()
+	if err := rexapi.SaveDirect(dir, cur); err != nil {
+		remoteUI.directErr = err.Error()
+		return false
+	}
+	remoteUI.directErr = ""
+	if saved, err := rexapi.LoadDirect(dir); err == nil {
+		cur = saved
+	}
+	remoteUI.direct = cur
+	return true
+}
+
+// directReady reports whether Direct TLS or self-hosted relay access is
+// active and ready to pair with a QR code.
+func directReady(c rexapi.DirectConfig, st rexapi.DirectStatus) bool {
+	if !c.Enabled || c.Token == "" || st.Error != "" {
+		return false
+	}
+	if c.RelayURL != "" && c.HostID != "" {
+		return st.RelayConnected && st.RelayError == ""
+	}
+	if c.PublicURL != "" {
+		return st.Listening != ""
+	}
+	return false
+}
+
+// directState returns the human-readable status label and indicator color for
+// the Direct / Relay Access section.
+func directState(c rexapi.DirectConfig, st rexapi.DirectStatus, k *colors) (string, ui.Color) {
+	switch {
+	case !c.Enabled:
+		return locales.RemoteDirectOff(), k.exited
+	case st.Error != "":
+		return locales.RemoteDirectError(st.Error), k.danger
+	case c.RelayURL != "" && st.RelayError != "":
+		return locales.RemoteDirectRelayError(st.RelayError), k.danger
+	case c.RelayURL != "" && st.RelayConnected:
+		return locales.RemoteDirectRelayConnected(), k.busy
+	case st.Listening != "":
+		return locales.RemoteDirectListening("https://" + st.Listening), k.busy
+	case c.RelayURL != "":
+		return locales.RemoteDirectRelayConnecting(), k.attention
+	case c.PublicURL == "" && c.Listen == "":
+		return locales.RemoteDirectUnconfigured(), k.attention
+	default:
+		return locales.RemoteDirectWaiting(), k.attention
+	}
+}
+
+// directSettings renders the Direct / Relay Access group on Settings › Server
+// (docs/NET-005-direct-relay.md): enable switch, live status, QR and token
+// rotation actions, self-hosted relay fields, and direct TLS fields.
+func (a *App) directSettings(c *ui.Context, k *colors) {
+	page := &remoteUI
+	conf, st := page.direct, page.directStatus
+	label, dot := directState(conf, st, k)
+	ready := directReady(conf, st)
+	settingsGroup(c, k, locales.RemoteDirectTitle(), "", locales.RemoteDirectNote(), func() {
+		on := conf.Enabled
+		groupRow(c, k, "direct-switch").Gap(10).Children(func() {
+			apiLine(c, k, locales.RemoteDirectSwitch(), false, func() {
+				statusLine(c, k, dot, label).Selectable()
+			}, func() {
+				if ui.Switch(c.Key("direct-enable"), &on).Label(locales.RemoteDirectSwitch()).Changed() {
+					next := conf
+					next.Enabled = on
+					if on && page.directEdited {
+						next.RelayURL = page.directRelayURL
+						next.RelaySecret = page.directRelaySecret
+						next.RelayCertPin = page.directRelayPin
+						next.PublicURL = page.directPublicURL
+						next.Listen = page.directListen
+					}
+					saveDirect(next)
+				}
+			})
+			// Not dimmed: its color is its meaning.
+			if page.directErr != "" {
+				rowError(c, k, page.directErr)
+			}
+			if ready || conf.Token != "" {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					if ready {
+						if ui.PrimaryButton(c.Key("direct-qr-open"), locales.RemoteDirectRelayQR()).Clicked() {
+							a.openDirectPairQR()
+						}
+					}
+					if conf.Token != "" {
+						if ui.Button(c.Key("direct-rotate"), locales.RemoteDirectRotateToken()).Clicked() {
+							rotateDirectToken()
+						}
+					}
+				})
+			}
+		})
+		if st.CertPin != "" {
+			factRow(c, k, locales.RemoteDirectCertPin(), st.CertPin)
+		}
+		groupRow(c, k, "direct-relay").Gap(10).Children(func() {
+			rowLine(c, k, locales.RemoteDirectRelayURL(), func() {
+				if ui.TextInput(c.Key("direct-relay-url"), &page.directRelayURL).Placeholder("https://relay.example.com:7443").
+					Label(locales.RemoteDirectRelayURL()).Font(monoFamily()).Width(260).Changed() {
+					page.directEdited, page.directErr = true, ""
+				}
+			})
+			rowLine(c, k, locales.RemoteDirectRelayToken(), func() {
+				if ui.TextInput(c.Key("direct-relay-secret"), &page.directRelaySecret).Placeholder(locales.RemoteDirectOptional()).
+					Label(locales.RemoteDirectRelayToken()).Font(monoFamily()).Width(260).Changed() {
+					page.directEdited, page.directErr = true, ""
+				}
+			})
+			rowLine(c, k, locales.RemoteDirectRelayPin(), func() {
+				if ui.TextInput(c.Key("direct-relay-pin"), &page.directRelayPin).Placeholder(locales.RemoteDirectOptional()).
+					Label(locales.RemoteDirectRelayPin()).Font(monoFamily()).Width(260).Changed() {
+					page.directEdited, page.directErr = true, ""
+				}
+			})
+			rowHint(c, k, locales.RemoteDirectRelayNote())
+		})
+		groupRow(c, k, "direct-tls").Gap(10).Children(func() {
+			rowLine(c, k, locales.RemoteDirectPublicURL(), func() {
+				if ui.TextInput(c.Key("direct-public-url"), &page.directPublicURL).Placeholder("https://203.0.113.10:7443").
+					Label(locales.RemoteDirectPublicURL()).Font(monoFamily()).Width(260).Changed() {
+					page.directEdited, page.directErr = true, ""
+				}
+			})
+			rowLine(c, k, locales.RemoteDirectListen(), func() {
+				if ui.TextInput(c.Key("direct-listen"), &page.directListen).Placeholder(":7443").
+					Label(locales.RemoteDirectListen()).Font(monoFamily()).Width(160).Changed() {
+					page.directEdited, page.directErr = true, ""
+				}
+			})
+			rowHint(c, k, locales.RemoteDirectTLSNote())
+		})
+		groupRow(c, k, "direct-actions").Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Spacer(c)
+				if ui.Button(c.Key("direct-save"), locales.RemoteLanSave()).
+					Label(locales.RemoteDirectTitle() + ": " + locales.RemoteLanSave()).
+					Disabled(!page.directEdited).Clicked() {
+					next := conf
+					next.RelayURL = page.directRelayURL
+					next.RelaySecret = page.directRelaySecret
+					next.RelayCertPin = page.directRelayPin
+					next.PublicURL = page.directPublicURL
+					next.Listen = page.directListen
+					saveDirect(next)
+				}
+			})
+		})
+	})
 }
 
 // saveLAN writes the listener's settings, which the server's gateway
@@ -432,6 +673,7 @@ func admissionLabel(l rexapi.Listener) (label string, open bool) {
 // while it is shown.
 func (a *App) fetchRemote() {
 	fetchLAN()
+	fetchDirect()
 	fetchTailscale()
 	withAddress, withDirect := remoteUI.reveal, remoteUI.revealDirect
 	a.remoteAsk(func(srv *rex.Client) func() {
@@ -750,6 +992,24 @@ func (a *App) connectPhoneCard(c *ui.Context, k *colors) {
 				rowError(c, k, page.err())
 			}
 		})
+		if directReady(page.direct, page.directStatus) {
+			directLabel, directDot := directState(page.direct, page.directStatus, k)
+			groupRow(c, k, "connect-phone-direct").Children(func() {
+				tileLine(c, k, "shield-check", locales.RemoteDirectTitle(), func() {
+					statusLine(c, k, directDot, directLabel)
+				}, func() {
+					if !st.Running {
+						if ui.PrimaryButton(c.Key("direct-phone-qr"), locales.RemoteDirectRelayQR()).Clicked() {
+							a.openDirectPairQR()
+						}
+					} else {
+						if ui.Button(c.Key("direct-phone-qr"), locales.RemoteDirectRelayQR()).Clicked() {
+							a.openDirectPairQR()
+						}
+					}
+				})
+			})
+		}
 		for _, p := range st.Pending {
 			a.pendingRow(c, k, p)
 		}
