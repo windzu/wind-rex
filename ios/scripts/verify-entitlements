@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# verify-entitlements: verify that WindRex's main app and widget extension
+# carry their required iOS entitlements (App Group, iCloud KVS, Push).
+#
+#   verify-entitlements <GoRex.app | GoRex.ipa> [TEAM_ID]
+#
+# Runs `codesign -d --entitlements :-` on the main app bundle and on
+# PlugIns/GoRexWidgets.appex, parses the XML plists with python3, and exits
+# non-zero if any required entitlement is missing or still contains an
+# unexpanded Xcode build variable such as $(TeamIdentifierPrefix).
+set -euo pipefail
+
+usage() {
+  echo "usage: $(basename "$0") <path-to-.app-or-.ipa> [TEAM_ID]" >&2
+  exit 2
+}
+
+[[ $# -ge 1 && $# -le 2 ]] || usage
+TARGET=$1
+TEAM=${2:-}
+[[ -z $TEAM || $TEAM =~ ^[A-Z0-9]{10}$ ]] || {
+  echo "TEAM_ID must be a 10-character Apple team identifier" >&2
+  exit 2
+}
+
+TMPDIR_WORK=
+cleanup() {
+  [[ -z $TMPDIR_WORK ]] || rm -rf "$TMPDIR_WORK"
+}
+trap cleanup EXIT
+
+APP_DIR=
+if [[ -f $TARGET && $TARGET == *.ipa ]]; then
+  TMPDIR_WORK=$(mktemp -d)
+  unzip -q "$TARGET" 'Payload/*.app/*' -d "$TMPDIR_WORK"
+  for candidate in "$TMPDIR_WORK"/Payload/*.app; do
+    if [[ -d $candidate ]]; then
+      APP_DIR=$candidate
+      break
+    fi
+  done
+  [[ -n $APP_DIR ]] || {
+    echo "no Payload/*.app found inside $TARGET" >&2
+    exit 1
+  }
+elif [[ -d $TARGET && $TARGET == *.app ]]; then
+  APP_DIR=$TARGET
+else
+  echo "expected an existing .app directory or .ipa file: $TARGET" >&2
+  exit 2
+fi
+
+WIDGET_DIR="$APP_DIR/PlugIns/GoRexWidgets.appex"
+[[ -d $WIDGET_DIR ]] || {
+  echo "widget extension missing: $WIDGET_DIR" >&2
+  exit 1
+}
+
+check_bundle() {
+  local role=$1 bundle=$2 raw
+  raw=$(codesign -d --entitlements :- "$bundle" 2>/dev/null) || {
+    echo "$role: codesign failed to read entitlements from $bundle" >&2
+    return 1
+  }
+  python3 -I -c '
+import plistlib
+import sys
+
+role, team = sys.argv[1], sys.argv[2]
+raw = sys.stdin.buffer.read()
+start = raw.find(b"<?xml")
+if start < 0:
+    sys.exit(f"{role}: no XML entitlements plist found in codesign output")
+try:
+    data = plistlib.loads(raw[start:])
+except Exception as exc:
+    sys.exit(f"{role}: invalid entitlements plist: {exc}")
+
+if not isinstance(data, dict):
+    sys.exit(f"{role}: entitlements plist is not a dictionary")
+
+errors = []
+for key, value in data.items():
+    text = repr(value)
+    if "$(" in text:
+        errors.append(f"{key} contains unexpanded build variable: {value!r}")
+
+groups = data.get("com.apple.security.application-groups")
+if not isinstance(groups, list) or "group.wiki.wind.windrex" not in groups:
+    errors.append("missing App Group group.wiki.wind.windrex")
+
+if role == "app":
+    kvs = data.get("com.apple.developer.ubiquity-kvstore-identifier")
+    if not isinstance(kvs, str) or not kvs.endswith(".wiki.wind.windrex"):
+        errors.append(f"invalid com.apple.developer.ubiquity-kvstore-identifier: {kvs!r}")
+    elif team and kvs != f"{team}.wiki.wind.windrex":
+        errors.append("com.apple.developer.ubiquity-kvstore-identifier does not match TEAM_ID")
+
+    aps = data.get("aps-environment")
+    if aps not in ("development", "production"):
+        errors.append(f"missing or invalid aps-environment: {aps!r}")
+
+if errors:
+    for err in errors:
+        print(f"{role}: {err}", file=sys.stderr)
+    sys.exit(1)
+
+if role == "app":
+    print(f"OK: app entitlements verified (app-group=group.wiki.wind.windrex, icloud-kvs=present, aps-environment={aps})")
+else:
+    print("OK: widget entitlements verified (app-group=group.wiki.wind.windrex)")
+' "$role" "$TEAM" <<<"$raw"
+}
+
+check_bundle app "$APP_DIR"
+check_bundle widget "$WIDGET_DIR"

@@ -129,12 +129,16 @@ for try in 0 1 2; do
     CURRENT_PROJECT_VERSION="$B" GOREX_COMMIT="$C" DEVELOPMENT_TEAM="$TEAM" WINDREX_PUSH_RELAY_URL="${WINDREX_PUSH_RELAY_URL:-}" CODE_SIGNING_ALLOWED=NO archive > build/archive.log 2>&1 || { grep -E "error" build/archive.log | tail -15; exit 1; }
   echo ARCHIVED
   sign_entitlements build/GoRex.xcarchive/Products/Applications/GoRex.app
+  scripts/verify-entitlements build/GoRex.xcarchive/Products/Applications/GoRex.app "$TEAM"
   xcodebuild "${EXPORT_ARGS[@]}" > build/export.log 2>&1 && break
   grep -iE "error" build/export.log | tail -15 || true
   [[ $try -lt 2 ]] && grep -qiE "redundant binary upload|already (been )?(used|uploaded)|must be higher than the previously" build/export.log || exit 1
   B=$((B + 1))
 done
 tail -3 build/export.log
+if [[ $XCODE_DEST == export ]]; then
+  scripts/verify-entitlements build/export/GoRex.ipa "$TEAM"
+fi
 [[ $DEST == upload ]] || { echo "EXPORTED $V ($B) to build/export"; exit 0; }
 if [[ $XCODE_DEST == export ]]; then
   "${ASC[@]}" publish testflight --app "$APP" --ipa build/export/GoRex.ipa \
