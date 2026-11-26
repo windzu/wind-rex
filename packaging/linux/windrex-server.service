@@ -1,0 +1,19 @@
+[Unit]
+Description=WindRex headless session server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=windrex
+Group=windrex
+Environment=GOREX_DIR=/var/lib/windrex
+ExecStart=/usr/local/bin/windrex-server -server
+ExecReload=/usr/local/bin/windrex-server server upgrade
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

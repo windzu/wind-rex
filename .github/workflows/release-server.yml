@@ -1,0 +1,177 @@
+name: Release Headless Server
+
+on:
+  push:
+    tags:
+      - 'server-v*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag (e.g. server-v0.56.1); defaults to v<mygo.json version>'
+        required: false
+        type: string
+        default: ''
+      publish:
+        description: 'Create or update a GitHub Release draft (false = build artifacts only)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-server-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            tag="$INPUT_VERSION"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            tag="$REF_NAME"
+          else
+            base=$(awk -F'"' '/"version"[[:space:]]*:/ { if (!found) { print $4; found=1 } }' mygo.json)
+            tag="server-v${base:-0.0.0}"
+          fi
+          ver="${tag#server-}"
+          ver="${ver#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+      - name: Build linux/${{ matrix.arch }} binaries
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p dist/server dist/relay
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o dist/server/windrex-server ./cmd/windrex-server
+          go build -trimpath -ldflags "-s -w" -o dist/relay/windrex-relay ./cmd/windrex-relay
+      - name: Bundle verified libghostty-vt.so
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mygo_dir=$(go list -m -f '{{.Dir}}' github.com/egoist/mygo)
+          manifest="${mygo_dir}/plugins/terminal/mygo-plugin.json"
+          read -r lib_url lib_sha < <(
+            python3 - "$manifest" "linux-${ARCH}" <<'PY'
+          import json, sys
+          with open(sys.argv[1], "r", encoding="utf-8") as f:
+              data = json.load(f)
+          target = sys.argv[2]
+          for lib in data.get("libraries", []):
+              if lib.get("name") == "libghostty-vt":
+                  entry = lib["files"][target]
+                  print(entry["url"], entry["sha256"])
+                  sys.exit(0)
+          sys.exit(f"libghostty-vt entry for {target} not found")
+          PY
+          )
+          curl -fsSL --retry 3 -o dist/server/libghostty-vt.so "$lib_url"
+          echo "${lib_sha}  dist/server/libghostty-vt.so" | sha256sum -c -
+      - name: Package tarballs
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p dist/out dist/server/packaging/linux dist/server/scripts dist/relay/packaging/linux
+          cp packaging/linux/windrex-server.service packaging/linux/windrex-server.user.service dist/server/packaging/linux/
+          cp scripts/install-server.sh dist/server/scripts/
+          chmod 0755 dist/server/windrex-server dist/server/scripts/install-server.sh
+          tar -czf "dist/out/windrex-server_${TAG}_linux_${ARCH}.tar.gz" -C dist/server \
+            windrex-server libghostty-vt.so packaging/linux/windrex-server.service packaging/linux/windrex-server.user.service scripts/install-server.sh
+
+          cp packaging/linux/windrex-relay.service packaging/linux/windrex-relay.user.service dist/relay/packaging/linux/
+          chmod 0755 dist/relay/windrex-relay
+          tar -czf "dist/out/windrex-relay_${TAG}_linux_${ARCH}.tar.gz" -C dist/relay \
+            windrex-relay packaging/linux/windrex-relay.service packaging/linux/windrex-relay.user.service
+
+          ls -lh dist/out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-linux-${{ matrix.arch }}
+          path: dist/out/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: server-linux-*
+          merge-multiple: true
+          path: release-assets
+      - name: Resolve tag
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            tag="$INPUT_VERSION"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            tag="$REF_NAME"
+          else
+            base=$(awk -F'"' '/"version"[[:space:]]*:/ { if (!found) { print $4; found=1 } }' mygo.json)
+            tag="server-v${base:-0.0.0}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Generate and verify SHA256SUMS
+        working-directory: release-assets
+        run: |
+          LC_ALL=C sha256sum *.tar.gz > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-release-checksums
+          path: release-assets/SHA256SUMS
+          if-no-files-found: error
+      - name: Publish GitHub Release draft
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/*.tar.gz release-assets/SHA256SUMS --clobber
+          else
+            gh release create "$TAG" \
+              release-assets/*.tar.gz release-assets/SHA256SUMS \
+              --draft \
+              --target "$COMMIT_SHA" \
+              --title "WindRex Headless Server ${TAG}" \
+              --notes "Standalone Linux headless server (windrex-server) and stateless relay (windrex-relay) archives for linux/amd64 and linux/arm64, with bundled libghostty-vt.so and SHA256SUMS."
+          fi
