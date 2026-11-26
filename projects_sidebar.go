@@ -175,21 +175,28 @@ func (a *App) hostHeader(c *ui.Context, k *colors, h *hostConn) {
 	row.ContextMenu(func(m *ui.Menu) { a.hostMenu(m, h) })
 	row.Children(func() {
 		ui.Text(c, strings.ToUpper(name)).FontSize(sidebarFont(fontCaption)).FontWeight(700).TextColor(k.textFaint).SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
-		dot := ui.Box(c).Size(6, 6).Radius(capsule(6)).Shrink(0)
+		dot := ui.Box(c.Key("host-dot-"+key)).Size(6, 6).Radius(capsule(6)).Shrink(0)
 		switch {
 		case !away:
-			dot.Background(k.textFaint)
+			dot.Background(k.busy)
 		case h.state == hostConnecting:
-			dot.Border(1, k.textFaint)
+			dot.Border(1, k.attention)
 		default:
 			dot.Border(1, hostDot(k, h))
 		}
 		if h != nil {
 			label, _, _ := hostStatus(h)
 			dot.Role(ui.RoleImage).Label(label).Tooltip(label)
+		} else {
+			label := locales.HostsConnected()
+			dot.Role(ui.RoleImage).Label(label).Tooltip(label)
 		}
 		if away {
-			ui.Text(c, locales.ProjectsOfflineLabel()).FontSize(sidebarFont(fontCaption)).TextColor(k.textFaint).SingleLine().Shrink(0)
+			status := locales.ProjectsOfflineLabel()
+			if h.state == hostConnecting {
+				status, _, _ = hostStatus(h)
+			}
+			ui.Text(c, status).FontSize(sidebarFont(fontCaption)).TextColor(k.textFaint).SingleLine().Shrink(0)
 		}
 		ui.Spacer(c)
 		if away {
@@ -202,7 +209,7 @@ func (a *App) hostHeader(c *ui.Context, k *colors, h *hostConn) {
 		}
 	})
 	if away {
-		dimmed(row, 0.55)
+		row.Opacity(0.55)
 	}
 }
 
