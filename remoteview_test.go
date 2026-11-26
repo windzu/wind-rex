@@ -550,3 +550,72 @@ func TestServerPageWords(t *testing.T) {
 		}
 	}
 }
+
+// TestConnectPhoneEntry verifies the above-the-fold Connect iPhone card on
+// Settings › Server (docs/IOS-023-pairing-entry.md): visible while remote
+// access is off, guides enabling + waiting + WindRex QR, and surfaces
+// pending fingerprint approval requests without scrolling.
+func TestConnectPhoneEntry(t *testing.T) {
+	isolateSettings(t, "")
+	registerFonts()
+	t.Cleanup(stopRemotePoll)
+	a := &App{}
+	settingsUI.section = "server"
+	remoteUI.loaded, remoteUI.err, remoteUI.wantPhoneQR = true, nil, false
+	remoteUI.st = rex.RemoteStatus{Enabled: false}
+	tt := ui.NewTester(a.settingsView, 780, 540)
+	tt.Frame()
+
+	// Above the fold in the default 540px Settings window even while remote access is off.
+	for _, s := range []string{locales.SettingsServerCard(), locales.RemoteConnectPhoneTitle(),
+		locales.RemoteConnectPhoneOff(), locales.RemoteConnectPhoneEnable()} {
+		r, ok := tt.Find(s)
+		if !ok {
+			t.Fatalf("off: missing %q in %q", s, tt.Texts())
+		}
+		if r.Y+r.H > 540 {
+			t.Errorf("off: %q lies below the fold (bottom %.1f > 540)", s, r.Y+r.H)
+		}
+	}
+	if !strings.Contains(locales.SettingsServerCard(), "WindRex") || !strings.Contains(locales.RemoteRexGoQR(), "WindRex") {
+		t.Errorf("expected WindRex naming: card=%q qr=%q", locales.SettingsServerCard(), locales.RemoteRexGoQR())
+	}
+
+	// Clicking "Turn On & Show QR…" arms wantPhoneQR and asks the server.
+	if err := tt.Click(locales.RemoteConnectPhoneEnable()); err != nil {
+		t.Fatalf("%v; texts %q", err, tt.Texts())
+	}
+	tt.Frame()
+	if !remoteUI.wantPhoneQR {
+		t.Error("clicking Turn On & Show QR… did not arm wantPhoneQR")
+	}
+
+	// While starting, shows waiting guidance and keeps WindRex QR hidden until listening.
+	remoteUI.st = rex.RemoteStatus{Enabled: true, Running: false}
+	remoteUI.err = nil
+	tt.Frame()
+	if !tt.HasText(locales.RemoteConnectPhoneStarting()) {
+		t.Errorf("starting: missing waiting guidance in %q", tt.Texts())
+	}
+	if tt.HasText(locales.RemoteRexGoQR()) {
+		t.Errorf("starting: WindRex QR button shown before listening")
+	}
+
+	// Once listening, shows WindRex QR and inline pending fingerprint approval above the fold.
+	remoteUI.st = rex.RemoteStatus{
+		Enabled: true,
+		Running: true,
+		Pending: []rex.RemotePending{{Name: "alice-phone", PublicKey: testKey}},
+	}
+	tt.Frame()
+	for _, s := range []string{locales.RemoteRexGoQR(), locales.RemoteConnectPhoneReady(),
+		"alice-phone", rex.Fingerprint(testKey), locales.RemoteApprove(), locales.RemoteReject()} {
+		r, ok := tt.Find(s)
+		if !ok {
+			t.Fatalf("listening: missing %q in %q", s, tt.Texts())
+		}
+		if r.Y+r.H > 540 {
+			t.Errorf("listening: %q lies below the fold (bottom %.1f > 540)", s, r.Y+r.H)
+		}
+	}
+}

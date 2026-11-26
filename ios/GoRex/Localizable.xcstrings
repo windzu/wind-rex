@@ -3916,6 +3916,56 @@
         }
       }
     },
+    "Not a WindRex pairing code. Scan the WindRex QR code shown in Settings › Server on your Mac.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 WindRex 配对二维码。请扫描 Mac 上「设置 › 服务器」中显示的 WindRex 二维码。"
+          }
+        }
+      }
+    },
+    "On %@, open WindRex › Settings › Server and approve %@ only if its fingerprint is this one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %1$@ 上打开 WindRex › 设置 › 服务器，仅在指纹与此一致时批准 %2$@。"
+          }
+        }
+      }
+    },
+    "On your Mac, open WindRex › Settings › Server and click Connect iPhone to show the pairing QR code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 上打开 WindRex › 设置 › 服务器，点击「连接手机」获取配对二维码。"
+          }
+        }
+      }
+    },
+    "Scan QR to Pair": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫码配对"
+          }
+        }
+      }
+    },
+    "Scan the WindRex QR code from Settings › Server on your Mac, or enter your server details manually.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描 Mac 上「设置 › 服务器」中的 WindRex 二维码，或手动输入服务器信息。"
+          }
+        }
+      }
+    },
     "WindRex connects to the computers where GoRex runs. Try the demo to explore the app before you add one.": {
       "localizations": {
         "zh-Hans": {

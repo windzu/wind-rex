@@ -80,6 +80,9 @@ var remoteUI struct {
 	signErr string
 	// details shows this machine's key and address under the devices.
 	details bool
+	// wantPhoneQR opens the WindRex pairing QR dialog automatically once
+	// remote access finishes starting after clicking "Turn On & Show QR…".
+	wantPhoneQR bool
 }
 
 // showSection chooses a settings section and refreshes its Rex listener
@@ -110,7 +113,7 @@ func stopRemotePoll() {
 	page.stop, page.st, page.loaded, page.busy = nil, rex.RemoteStatus{}, false, false
 	page.reveal, page.confirm, page.err, page.addErr, page.name, page.key = false, false, nil, false, "", ""
 	page.revealDirect = false
-	page.addingKey, page.details = false, false
+	page.addingKey, page.details, page.wantPhoneQR = false, false, false
 	page.focusLAN = false
 	page.ts, page.tsURL, page.tsEdited, page.tsErr = rexapi.TailscaleConfig{}, "", false, ""
 	page.relay, page.relayEdited, page.relayErr = "", false, ""
@@ -455,6 +458,12 @@ func (a *App) fetchRemote() {
 				if !remoteUI.reachEdited {
 					remoteUI.reach = st.ReachableAt
 				}
+				if !st.Enabled {
+					remoteUI.wantPhoneQR = false
+				} else if st.Running && remoteUI.wantPhoneQR && !remoteUI.busy {
+					remoteUI.wantPhoneQR = false
+					a.openRexGoQR(false)
+				}
 			}
 		}
 	})
@@ -680,6 +689,92 @@ func remoteSwitch(c *ui.Context, k *colors, key, title, hint string, on *bool, d
 	return changed
 }
 
+// connectPhoneCard is the above-the-fold iPhone pairing entry on Settings ›
+// Server (docs/IOS-023-pairing-entry.md). It stays visible whether remote
+// access is off, starting, or listening, guides the user through enabling
+// remote access and showing the WindRex QR code, and surfaces pending
+// fingerprint approval requests without scrolling.
+func (a *App) connectPhoneCard(c *ui.Context, k *colors) {
+	page := &remoteUI
+	st := page.st
+	label, detail, kind := remoteState(st, page.unreachable)
+	if !page.loaded && !page.unreachable {
+		label, detail, kind = locales.RemoteAsking(), "", remoteStarting
+	}
+	dot := map[remoteKind]ui.Color{
+		remoteOff: k.exited, remoteStarting: k.attention, remoteListening: k.busy, remoteError: k.danger, remoteDown: k.danger,
+	}[kind]
+	settingsGroup(c, k, "", "", "", func() {
+		groupRow(c, k, "connect-phone").Children(func() {
+			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Box(c).Size(40, 40).Radius(radiusM).Background(k.accent).Center().Shrink(0).Children(func() {
+					glyphIcon(c, "globe", 22, ui.RGB(255, 255, 255))
+				})
+				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+					ui.Text(c, locales.RemoteConnectPhoneTitle()).FontSize(fontTitle).FontWeight(600).TextColor(k.text)
+					statusLine(c, k, dot, label)
+				})
+				if page.loaded && !page.unreachable {
+					switch {
+					case st.Running:
+						if ui.PrimaryButton(c.Key("phone-qr"), locales.RemoteRexGoQR()).Disabled(page.busy).Clicked() {
+							a.openRexGoQR(false)
+						}
+					case !st.Enabled:
+						if ui.PrimaryButton(c.Key("phone-enable"), locales.RemoteConnectPhoneEnable()).Disabled(page.busy).Clicked() {
+							page.wantPhoneQR = true
+							a.remoteDo((*rex.Client).EnableRemote, nil)
+						}
+					case page.wantPhoneQR:
+						if ui.Button(c.Key("phone-cancel"), locales.RemoteCancel()).Clicked() {
+							page.wantPhoneQR = false
+						}
+					}
+				}
+			})
+			switch {
+			case !page.loaded || page.unreachable:
+				if detail != "" {
+					rowHint(c, k, detail)
+				}
+			case st.Running:
+				rowHint(c, k, locales.RemoteConnectPhoneReady())
+			case st.Enabled && page.wantPhoneQR:
+				rowHint(c, k, locales.RemoteConnectPhoneStarting())
+			case !st.Enabled:
+				rowHint(c, k, locales.RemoteConnectPhoneOff())
+			case detail != "":
+				rowHint(c, k, detail)
+			}
+			if page.err != nil {
+				rowError(c, k, page.err())
+			}
+		})
+		for _, p := range st.Pending {
+			a.pendingRow(c, k, p)
+		}
+	})
+}
+
+// pendingRow renders an incoming pairing request with its fingerprint and
+// Reject/Approve actions.
+func (a *App) pendingRow(c *ui.Context, k *colors, p rex.RemotePending) {
+	page := &remoteUI
+	groupRow(c, k, "pending:"+p.PublicKey).Children(func() {
+		tileLine(c, k, "laptop", p.Name, func() {
+			ui.Text(c, rex.Fingerprint(p.PublicKey)).Font(monoFamily()).FontSize(fontFootnote).TextColor(k.textMuted).SingleLine().
+				Ellipsis("…").Tooltip(p.PublicKey)
+		}, func() {
+			if ui.Button(c.Key("r"), locales.RemoteReject()).Disabled(page.busy).Clicked() {
+				a.remoteDo(func(srv *rex.Client) error { return srv.RejectPairing(p.PublicKey) }, nil)
+			}
+			if ui.PrimaryButton(c.Key("a"), locales.RemoteApprove()).Disabled(page.busy).Clicked() {
+				a.remoteDo(func(srv *rex.Client) error { return srv.ApprovePairing(p.PublicKey) }, nil)
+			}
+		})
+	})
+}
+
 func (a *App) remoteSettings(c *ui.Context, k *colors) {
 	page := &remoteUI
 	if !page.loaded {
@@ -863,7 +958,7 @@ func pairingLeft(until, now time.Time) string {
 func (a *App) remoteDevices(c *ui.Context, k *colors, st rex.RemoteStatus) {
 	page := &remoteUI
 	on := remoteServes(st)
-	if !on && len(st.Pending) == 0 && len(st.PendingByAddress) == 0 {
+	if !on && len(st.PendingByAddress) == 0 {
 		return
 	}
 	if on {
@@ -883,21 +978,6 @@ func (a *App) remoteDevices(c *ui.Context, k *colors, st rex.RemoteStatus) {
 				if len(st.Pending) == 0 && len(st.PendingByAddress) == 0 {
 					rowHint(c, k, locales.RemotePairNoRequest())
 				}
-			})
-		}
-		for _, p := range st.Pending {
-			groupRow(c, k, "pending:"+p.PublicKey).Children(func() {
-				tileLine(c, k, "laptop", p.Name, func() {
-					ui.Text(c, rex.Fingerprint(p.PublicKey)).Font(monoFamily()).FontSize(fontFootnote).TextColor(k.textMuted).SingleLine().
-						Ellipsis("…").Tooltip(p.PublicKey)
-				}, func() {
-					if ui.Button(c.Key("r"), locales.RemoteReject()).Disabled(page.busy).Clicked() {
-						a.remoteDo(func(srv *rex.Client) error { return srv.RejectPairing(p.PublicKey) }, nil)
-					}
-					if ui.PrimaryButton(c.Key("a"), locales.RemoteApprove()).Disabled(page.busy).Clicked() {
-						a.remoteDo(func(srv *rex.Client) error { return srv.ApprovePairing(p.PublicKey) }, nil)
-					}
-				})
 			})
 		}
 		for _, p := range st.PendingByAddress {

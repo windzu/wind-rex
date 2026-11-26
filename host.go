@@ -219,6 +219,10 @@ func (a *App) hostPanel(c *ui.Context, k *colors, name, glyph string) {
 		row(locales.HostSessions(), locales.HostSessionCount(sessions, running))
 	})
 	ui.Divider(c)
+	if ui.Button(c.Key("connect-phone"), locales.HostConnectPhone()).Clicked() {
+		a.hostOpen = false
+		a.openSettingsAt("server")
+	}
 	a.hostsInPanel(c, k)
 }
 
