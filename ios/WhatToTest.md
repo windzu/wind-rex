@@ -10,6 +10,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 `web` job of `.github/workflows/ci.yml` fails it.
 
 ## en-US
+- Voice dictation now uses Apple's on-device iOS 26 Speech recognition with terminal vocabulary hints and no separate model downloads; choose a language in Settings > Terminal.
 - Diagnostics and connection logging now write safely in the background with no visible UI change.
 - Built-in Tailscale now starts only when you turn it on or add a Tailscale or tailcat host, so direct TLS, relay, and LAN hosts launch and resume without extra engine overhead.
 - Connecting to a terminal or running a task with top progress now traces the WindRex handwritten W along its stroke, fills to real progress, and stays static under Reduce Motion.
@@ -148,6 +149,7 @@ bullet that reads like a commit subject is one testers cannot read, and the
 - With Developer Mode on, the floating connection bar at the top no longer covers the first row of the computer list.
 
 ## zh-Hans
+- 语音听写现改用 iOS 26 原生本机语音识别并结合终端词汇提示，无需单独下载大模型；可在「设置 › 终端」选择听写语言。
 - 优化连接日志与后台状态处理的并发安全性，界面与操作体验保持不变。
 - 内置 Tailscale 现改为按需启动：仅配置直连 TLS、自建中继或局域网主机时，冷启动与后台切回不再唤醒内置代理，开启开关或添加 Tailscale/tailcat 主机时自动启用。
 - 顶部加载提示与终端连接动画现已换用 WindRex 单笔画图标，亮线沿笔画逐步点亮并按实际进度填充；开启「减少动态效果」时保持静态标记。

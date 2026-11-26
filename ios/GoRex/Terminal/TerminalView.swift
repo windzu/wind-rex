@@ -1,4 +1,3 @@
-import Accelerate
 import AVFoundation
 import GameController
 import GhosttyKit
@@ -187,11 +186,13 @@ final class TerminalView: UIView, TerminalOutput {
     /// what is told what is said, what tells it, and what shows its level
     /// (dictate).
     private var dictating: Dictating?
-    private typealias Dictating = (recording: Recording, listening: Listening, said: (Dictation.Said?) -> Void, told: Task<Void, Never>,
+    private typealias Dictating = (recording: Recording, listening: any DictationSession, said: (Dictation.Said?) -> Void, told: Task<Void, Never>,
                                    level: Task<Void, Never>)
+    /// An in-flight permission check or Apple Speech asset/analyzer startup.
+    private var preparingDictation: Task<Void, Never>?
     /// The dictation being finished (recognising its last phrase or polishing),
     /// so stopDictating can cancel it too.
-    private var finishing: (task: Task<Void, Never>, listening: Listening, said: (Dictation.Said?) -> Void)?
+    private var finishing: (task: Task<Void, Never>, listening: any DictationSession, said: (Dictation.Said?) -> Void)?
 
     init(session: TerminalSession) {
         self.session = session
@@ -703,48 +704,74 @@ final class TerminalView: UIView, TerminalOutput {
         shift = false
     }
 
-    /// Turns the mic on, and tells whether it starts: what the microphone
-    /// hears is recognised as it comes, and said told what is said so far,
-    /// from the moment it is on, and nil as the mic goes off, by
-    /// typeDictation or stopDictating. The microphone starts off the main
-    /// thread; a stop meanwhile wins, and one that can't start says why. A
-    /// first tap asks for the microphone, and does no more.
+    /// Turns the mic on without raising the soft keyboard: requests microphone
+    /// and speech recognition permissions as needed, ensures on-device Apple
+    /// Speech assets are installed, feeds screen vocabulary as contextual
+    /// strings, and streams recognized updates to `said`.
+    @discardableResult
     func dictate(said: @escaping (Dictation.Said?) -> Void) -> Bool {
-        guard dictating == nil else { return false }
-        switch AVAudioApplication.shared.recordPermission {
-        case .undetermined:
-            AVAudioApplication.requestRecordPermission { @Sendable _ in }
-            return false
-        case .denied:
-            alert(String(localized: "No Access to the Microphone"),
-                  String(localized: "Allow WindRex to use the microphone in Settings."))
-            return false
-        default:
-            break
-        }
-        let listening = Dictation.shared.listen()
-        let recording = Recording()
-        let meter = Meter()
-        dictating = (recording, listening, said, Task {
-            for await s in listening.said { said(s) }
-            // Ended with the mic on, it failed.
-            if dictating?.listening === listening, mute() != nil {
-                if case .failure(let e) = await listening.heard.result {
-                    alert(String(localized: "Can't Recognise Speech"), e.localizedDescription)
-                }
-                said(nil)
+        guard dictating == nil, preparingDictation == nil else { return false }
+        let vocabulary = Dictation.contextualVocabulary(
+            screen: screen,
+            program: session.host.blocks[session.block]?.program
+        )
+        preparingDictation = Task { [weak self] in
+            guard let self else { return }
+            defer { self.preparingDictation = nil }
+            let access = await Dictation.shared.requestAccess()
+            guard !Task.isCancelled else { return }
+            switch access {
+            case .granted:
+                break
+            case .denied(let title, let message):
+                self.alert(title, message)
+                return
+            case .needsRequest:
+                return
             }
-        }, Dictation.shared.show(meter))
-        recording.start({ s in
-            listening.add(s)
-            meter.set(vDSP.rootMeanSquare(s))
-        }, done: { [weak self] r in self?.started(listening, r) })
+            let prepared: (session: any DictationSession, format: AVAudioFormat)?
+            do {
+                prepared = try await Dictation.shared.startSession(vocabulary: vocabulary)
+            } catch is CancellationError {
+                return
+            } catch {
+                if !Task.isCancelled {
+                    self.alert(String(localized: "Can't Recognise Speech"), error.localizedDescription)
+                }
+                return
+            }
+            guard let prepared else { return }
+            if Task.isCancelled {
+                prepared.session.cancel()
+                return
+            }
+            let listening = prepared.session
+            let recording = Recording()
+            let meter = Meter()
+            self.dictating = (recording, listening, said, Task {
+                for await s in listening.said { said(s) }
+                // Ended with the mic on, it failed.
+                if self.dictating?.listening === listening, self.mute() != nil {
+                    if case .failure(let e) = await listening.heard.result, !(e is CancellationError) {
+                        self.alert(String(localized: "Can't Recognise Speech"), e.localizedDescription)
+                    }
+                    said(nil)
+                }
+            }, Dictation.shared.show(meter))
+            recording.start(format: prepared.format, onInput: { input in
+                listening.add(input)
+            }, onLevel: { rms in
+                meter.set(rms)
+            }, done: { [weak self] r in
+                self?.started(listening, r)
+            })
+        }
         return true
     }
 
     /// The microphone started, or not, for a listening: on, if the mic
     /// still is, it shows; one that can't record goes off and says why.
-    private func started(_ listening: Listening, _ r: Result<Bool, any Error>) {
+    private func started(_ listening: any DictationSession, _ r: Result<Bool, any Error>) {
         guard let d = dictating, d.listening === listening else { return }
         switch r {
         case .success:
@@ -784,9 +811,11 @@ final class TerminalView: UIView, TerminalOutput {
         finishing = nil
     }
 
-    /// Turns the mic off, typing nothing; cancels an in-flight finish or
-    /// polish too.
+    /// Turns the mic off, typing nothing; cancels an in-flight startup, finish,
+    /// or polish too.
     func stopDictating() {
+        preparingDictation?.cancel()
+        preparingDictation = nil
         if let f = finishing {
             finishing = nil
             f.task.cancel()

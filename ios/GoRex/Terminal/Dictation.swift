@@ -1,262 +1,269 @@
+import Accelerate
 import AVFoundation
-import FluidAudio
-import SherpaOnnxC
+import Speech
 import Synchronization
 import UIKit
 import os
 
-/// Dictation, after rootshell's: the mic records, and the model chosen
-/// recognises it on the phone, in the language it hears, with punctuation
-/// and digits: SenseVoiceSmall (FunASR's, in Core ML through FluidAudio), or
-/// a larger one, through sherpa-onnx. The app does not ship the models: the
-/// mic's first tap asks, and downloads the one chosen.
+/// On-device dictation backed by Apple's iOS 26 Speech framework
+/// (`SpeechAnalyzer` + `DictationTranscriber`, falling back to
+/// `SpeechTranscriber` when a locale is not supported by
+/// `DictationTranscriber`), keeping voice input keyboard-free behind `KeyBar`
+/// (docs/IOS-024-voice-without-keyboard.md).
 @Observable final class Dictation {
     static let shared = Dictation()
 
-    /// A speech model, and where it comes from.
-    nonisolated enum Model: String, CaseIterable, Sendable {
-        case senseVoice, funASRNano, qwen3ASR
+    nonisolated static let localeKey = "dictationLocale"
+    nonisolated static let legacyModelKey = "dictationModel"
 
-        var name: String {
+    /// Preferred recognition language configured in Settings › Terminal.
+    nonisolated enum LocaleOption: String, CaseIterable, Identifiable, Sendable {
+        case auto = "auto"
+        case zhCN = "zh-CN"
+        case enUS = "en-US"
+
+        var id: String { rawValue }
+
+        var locale: Locale? {
             switch self {
-            case .senseVoice: "SenseVoice Small"
-            case .funASRNano: "Fun-ASR-Nano"
-            case .qwen3ASR: "Qwen3-ASR 0.6B"
+            case .auto: nil
+            case .zhCN: Locale(identifier: "zh-CN")
+            case .enUS: Locale(identifier: "en-US")
             }
         }
 
-        /// sherpa-onnx's int8 conversion, in a Hugging Face repo at a
-        /// commit: its files, and what each weighs. SenseVoice's is
-        /// FluidAudio's.
-        var repo: (name: String, commit: String, files: [(path: String, size: Int)])? {
+        var title: String {
             switch self {
-            case .senseVoice: nil
-            case .funASRNano: ("csukuangfj/sherpa-onnx-funasr-nano-int8-2025-12-30", "6f16bd378457e13f36ccf3910df9017f96c346fb",
-                               [("encoder_adaptor.int8.onnx", 237_792_748), ("llm.int8.onnx", 600_356_593), ("embedding.int8.onnx", 155_584_380),
-                                ("Qwen3-0.6B/tokenizer.json", 11_422_654), ("Qwen3-0.6B/vocab.json", 2_776_833), ("Qwen3-0.6B/merges.txt", 1_671_853)])
-            case .qwen3ASR: ("csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25", "68818b2313fe77bd06f6a7c5068ff3ef59d02b8a", qwen3)
+            case .auto: String(localized: "Automatic")
+            case .zhCN: "中文（简体）"
+            case .enUS: "English (US)"
             }
         }
-
-        /// The same model as sherpa-onnx releases it, one tarball on
-        /// GitHub: its asset, and the files in it with what each weighs.
-        /// Those are that build's, which are not always the commit's:
-        /// Fun-ASR-Nano's differ. Nil for SenseVoice's, which FluidAudio
-        /// keeps.
-        var release: (asset: String, files: [(path: String, size: Int)])? {
-            switch self {
-            case .senseVoice: nil
-            case .funASRNano: ("sherpa-onnx-funasr-nano-int8-2025-12-30.tar.bz2",
-                               [("encoder_adaptor.int8.onnx", 238_277_200), ("llm.int8.onnx", 600_339_316), ("embedding.int8.onnx", 155_583_106),
-                                ("Qwen3-0.6B/tokenizer.json", 11_422_654), ("Qwen3-0.6B/vocab.json", 2_776_833), ("Qwen3-0.6B/merges.txt", 1_671_853)])
-            case .qwen3ASR: ("sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2", qwen3)
-            }
-        }
-
-        /// Qwen3-ASR's files, the same in its commit and its release.
-        private var qwen3: [(path: String, size: Int)] {
-            [("conv_frontend.onnx", 44_148_281), ("encoder.int8.onnx", 182_491_662), ("decoder.int8.onnx", 755_914_231),
-             ("tokenizer/tokenizer_config.json", 12_487), ("tokenizer/vocab.json", 2_776_833), ("tokenizer/merges.txt", 1_671_853)]
-        }
-
-        /// What it weighs: SenseVoice's preprocessor, encoder, vocabulary
-        /// and VAD; another's files.
-        var size: Int64 {
-            guard let repo else { return Dictation.precision == .fp16 ? 474_000_000 : 241_000_000 }
-            return Int64(repo.files.reduce(0) { $0 + $1.size })
-        }
-
-        /// The longest phrase it takes, in samples. SenseVoice's encoder
-        /// takes 0.2 to 30 s, and Qwen3-ASR as much: a phrase is cut as it
-        /// passes 29 s, its last chunk keeping it under 30. Fun-ASR-Nano
-        /// left words out of 29 s, not of 20.
-        var longest: Int { self == .funASRNano ? 20 * 16_000 : 29 * 16_000 }
     }
 
-    /// The encoder: int8, on the Neural Engine. Off it, as in the
-    /// simulator, int8 gives NaN: fp16 there, as this FluidAudio's fp32
-    /// takes 108 s of audio and no less.
-    nonisolated private static var precision: SenseVoiceEncoderPrecision {
-        #if targetEnvironment(simulator)
-        .fp16
-        #else
-        .int8
-        #endif
+    /// Microphone and speech recognition authorization state.
+    nonisolated enum AccessState: Equatable, Sendable {
+        case granted
+        case needsRequest(mic: Bool, speech: Bool)
+        case denied(title: String, message: String)
     }
-    /// Where FluidAudio keeps its models, and sherpa-onnx's, out of backups.
-    nonisolated private static let root = URL.applicationSupportDirectory.appending(path: "FluidAudio")
-    nonisolated private static var speechDir: URL { MLModelConfigurationUtils.defaultModelsDirectory(for: .senseVoiceSmall) }
-    nonisolated private static var vadModel: URL {
-        MLModelConfigurationUtils.defaultModelsDirectory(for: .vad).appending(path: ModelNames.VAD.sileroVadFile)
-    }
-    /// Hugging Face, and hf-mirror.com, a mirror run by others, for where
-    /// Hugging Face can't be reached, as often from mainland China. The
-    /// mirror now redirects there instead of serving the files itself, so a
-    /// model both fail to serve comes as one tarball from GitHub.
-    nonisolated private static let hub = "https://huggingface.co"
-    nonisolated private static let mirror = "https://hf-mirror.com"
-    /// sherpa-onnx's releases, where each of its models is one tarball.
-    nonisolated private static let releases = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
-    /// SenseVoice's text-norm: punctuation and digits (withitn).
-    nonisolated private static let textNorm: Int32 = 14
 
-    /// The model the mic uses, as Settings chose it.
-    var model = Model(rawValue: UserDefaults.standard.string(forKey: "dictationModel") ?? "") ?? .senseVoice {
+    /// Language preference saved in UserDefaults.
+    var localeOption = LocaleOption(rawValue: UserDefaults.standard.string(forKey: localeKey) ?? "") ?? .auto {
         didSet {
-            UserDefaults.standard.set(model.rawValue, forKey: "dictationModel")
-            // The one loaded goes; the next listening loads this.
-            models = nil
+            UserDefaults.standard.set(localeOption.rawValue, forKey: Self.localeKey)
         }
     }
-    /// The models on disk, whole, as the last scan found them: none until
-    /// the first, which starts with Dictation, ends (installedModels).
-    private(set) var installed: Set<Model> = []
-    /// The scan for the models on disk while one runs, and the count of
-    /// those asked for: one that ends after a later one is passed over.
-    private var scanning: Task<Void, Never>?
-    private var scans = 0
-    /// The microphone's last levels while the mic is on, 0 to 1, the
-    /// newest last.
+
+    /// The microphone's last levels while the mic is on, 0 to 1, the newest last.
     var levels = [Float](repeating: 0, count: 5)
-    /// How much of a download is done; nil when none runs.
+    /// How much of an Apple Speech on-device asset download is done; nil when idle.
     private(set) var progress: Double?
-    /// The model downloading, or the last downloaded.
-    private(set) var downloading: Model?
+    /// Latest asset download error shown to the user.
     var error: String?
-    private var task: Task<Void, Never>?
-    /// The model loaded, and what unloads it once idle.
-    var models: Task<(any Recogniser, VadManager), Error>?
-    private var idle: Task<Void, Never>?
-    /// The listenings not yet ended, each recognising until its last
-    /// phrase is done: while one is, the app going to the background keeps
-    /// the model.
-    var listenings = 0
 
-    private init() {
-        // Loading never downloads: only download does.
-        ModelHub.offlineMode = true
-        // A model weighs up to a gigabyte: it goes as memory runs short,
-        // and as the app leaves the screen with the mic off, rather than a
-        // minute later, when iOS may have ended the app for it.
-        let center = NotificationCenter.default
-        center.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.unload() }
+    private var downloadTask: Task<Bool, Error>?
+    private var downloadProgress: Progress?
+
+    private init() {}
+
+    /// Removes legacy third-party ASR model weights (`Application Support/FluidAudio`)
+    /// and the obsolete `dictationModel` preference left by older builds.
+    nonisolated static func cleanLegacyArtifacts(
+        appSupport: URL = URL.applicationSupportDirectory,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.removeObject(forKey: legacyModelKey)
+        let legacyDir = appSupport.appending(path: "FluidAudio")
+        if FileManager.default.fileExists(atPath: legacyDir.path) {
+            try? FileManager.default.removeItem(at: legacyDir)
         }
-        center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.listenings == 0 else { return }
-                self.unload()
+    }
+
+    /// Clears the obsolete preference immediately and deletes legacy model
+    /// files off the main actor.
+    static func cleanLegacyArtifactsInBackground() {
+        UserDefaults.standard.removeObject(forKey: legacyModelKey)
+        let appSupport = URL.applicationSupportDirectory
+        Task.detached(priority: .utility) {
+            let legacyDir = appSupport.appending(path: "FluidAudio")
+            if FileManager.default.fileExists(atPath: legacyDir.path) {
+                try? FileManager.default.removeItem(at: legacyDir)
             }
         }
-        // A few file checks and a directory listing, off the main actor.
-        scan()
     }
 
-    /// Whether the last scan for the models on disk has ended.
-    var scanned: Bool { scanning == nil }
-
-    /// The models on disk, once the scan running ends: what the mic waits
-    /// for, so that it never offers to download a model already there.
-    func installedModels() async -> Set<Model> {
-        while let s = scanning { await s.value }
-        return installed
-    }
-
-    /// Scans the disk for the models whole on it, off the main actor; the
-    /// last scan asked for wins over one before it that ends after it.
-    @discardableResult private func scan() -> Task<Void, Never> {
-        scans += 1
-        let n = scans
-        let t = Task {
-            let found = await Self.onDisk()
-            guard n == scans else { return }
-            installed = found
-            scanning = nil
+    /// Resolves the preferred Speech locale from the user's setting or system
+    /// language list.
+    nonisolated static func preferredLocale(
+        choice: LocaleOption,
+        preferredLanguages: [String] = Locale.preferredLanguages,
+        current: Locale = .current
+    ) -> Locale {
+        if let explicit = choice.locale { return explicit }
+        if let first = preferredLanguages.first, !first.isEmpty {
+            let lower = first.lowercased()
+            if lower.hasPrefix("zh-hans") || lower == "zh-cn" || lower == "zh" {
+                return Locale(identifier: "zh-CN")
+            }
+            if lower.hasPrefix("zh-hant") || lower == "zh-tw" || lower == "zh-hk" {
+                return Locale(identifier: "zh-TW")
+            }
+            if lower.hasPrefix("en") {
+                return Locale(identifier: first.contains("-") || first.contains("_") ? first : "en-US")
+            }
+            return Locale(identifier: first)
         }
-        scanning = t
-        return t
+        return current
     }
 
-    /// The models whole on disk.
-    @concurrent nonisolated static func onDisk() async -> Set<Model> {
-        Set(Model.allCases.filter(present))
+    /// Extracts screen identifiers and CLI names for `AnalysisContext.contextualStrings`.
+    nonisolated static func contextualVocabulary(screen: String, program: String?, limit: Int = 150) -> [String] {
+        Polish.words(in: screen, program: program, limit: limit)
     }
 
-    /// Whether a model is loaded, or loading.
-    var loaded: Bool { models != nil }
-
-    /// Unloads the model now. A listening still on keeps the one it has
-    /// until it ends; the next loads it again.
-    func unload() {
-        idle?.cancel()
-        idle = nil
-        models = nil
+    /// Pure access check over microphone and speech recognition authorization.
+    nonisolated static func evaluateAccess(
+        mic: AVAudioApplication.recordPermission,
+        speech: SFSpeechRecognizerAuthorizationStatus
+    ) -> AccessState {
+        if mic == .denied {
+            return .denied(
+                title: String(localized: "No Access to the Microphone"),
+                message: String(localized: "Allow WindRex to use the microphone in Settings.")
+            )
+        }
+        if speech == .denied || speech == .restricted {
+            return .denied(
+                title: String(localized: "No Access to Speech Recognition"),
+                message: String(localized: "Allow WindRex to use Speech Recognition in Settings.")
+            )
+        }
+        let needMic = mic == .undetermined
+        let needSpeech = speech == .notDetermined
+        if needMic || needSpeech {
+            return .needsRequest(mic: needMic, speech: needSpeech)
+        }
+        return .granted
     }
 
-    func download(_ m: Model) {
-        error = nil
-        progress = 0
-        downloading = m
-        task = Task {
+    /// Checks and, when undetermined, requests microphone and speech
+    /// recognition permissions.
+    func requestAccess() async -> AccessState {
+        let initial = Self.evaluateAccess(
+            mic: AVAudioApplication.shared.recordPermission,
+            speech: SFSpeechRecognizer.authorizationStatus()
+        )
+        guard case .needsRequest(let needMic, let needSpeech) = initial else { return initial }
+        if needMic {
+            _ = await AVAudioApplication.requestRecordPermission()
+        }
+        if needSpeech {
+            _ = await withCheckedContinuation { (c: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+                SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
+            }
+        }
+        return Self.evaluateAccess(
+            mic: AVAudioApplication.shared.recordPermission,
+            speech: SFSpeechRecognizer.authorizationStatus()
+        )
+    }
+
+    /// Cancels an active OS speech asset download, if any.
+    func cancelDownload() {
+        downloadProgress?.cancel()
+        downloadTask?.cancel()
+    }
+
+    /// Prepares an on-device Apple Speech session for the preferred locale,
+    /// downloading the OS locale asset via `AssetInventory` if needed.
+    /// Returns `nil` when the user cancels an asset download.
+    func startSession(vocabulary: [String]) async throws -> (session: any DictationSession, format: AVAudioFormat)? {
+        let preferred = Self.preferredLocale(choice: localeOption)
+        let transcriber = try await Self.makeTranscriber(for: preferred)
+        let installed = try await ensureAssets(for: transcriber)
+        guard installed else { return nil }
+        let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber.module]) ?? Recording.format
+        let session = try await AppleSpeechSession.start(
+            transcriber: transcriber,
+            format: format,
+            vocabulary: vocabulary
+        )
+        return (session, format)
+    }
+
+    /// Chooses `DictationTranscriber` (which supports contextual vocabulary),
+    /// falling back to `SpeechTranscriber` when a locale is unavailable there.
+    nonisolated private static func makeTranscriber(for preferred: Locale) async throws -> TranscriberModule {
+        if let locale = await DictationTranscriber.supportedLocale(equivalentTo: preferred) {
+            let module = DictationTranscriber(
+                locale: locale,
+                contentHints: [.shortForm],
+                transcriptionOptions: [.punctuation],
+                reportingOptions: [.volatileResults, .frequentFinalization],
+                attributeOptions: []
+            )
+            return .dictation(module)
+        }
+        if SpeechTranscriber.isAvailable,
+           let locale = await SpeechTranscriber.supportedLocale(equivalentTo: preferred) {
+            let module = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
+            return .speech(module)
+        }
+        throw RexError(
+            code: "dictation",
+            message: String(localized: "On-device speech recognition is not available for this language.")
+        )
+    }
+
+    /// Ensures the OS on-device speech assets for `transcriber` are installed,
+    /// reporting download progress on `Dictation.progress`.
+    private func ensureAssets(for transcriber: TranscriberModule) async throws -> Bool {
+        let status = await AssetInventory.status(forModules: [transcriber.module])
+        switch status {
+        case .installed:
+            return true
+        case .unsupported:
+            throw RexError(
+                code: "dictation",
+                message: String(localized: "On-device speech recognition is not available for this language.")
+            )
+        case .supported, .downloading:
+            guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber.module]) else {
+                return true
+            }
+            error = nil
+            progress = request.progress.fractionCompleted
+            downloadProgress = request.progress
+            let poll = Task { [weak self] in
+                while !Task.isCancelled {
+                    self?.progress = min(1, max(0, request.progress.fractionCompleted))
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+            let work = Task { () throws -> Bool in
+                try await request.downloadAndInstall()
+                return !Task.isCancelled && !request.progress.isCancelled
+            }
+            downloadTask = work
+            defer {
+                poll.cancel()
+                downloadProgress = nil
+                downloadTask = nil
+                progress = nil
+            }
             do {
-                try await Self.fetch(m) { p in Task { @MainActor in if self.progress != nil { self.progress = p } } }
+                return try await work.value
+            } catch is CancellationError {
+                return false
             } catch {
-                if !Task.isCancelled { self.error = error.localizedDescription }
+                if request.progress.isCancelled || Task.isCancelled { return false }
+                self.error = error.localizedDescription
+                throw error
             }
-            await scan().value
-            progress = nil
+        @unknown default:
+            return true
         }
-    }
-
-    func cancel() { task?.cancel() }
-
-    /// Removes a model, or what a download of it left; with the last, the
-    /// VAD too.
-    func delete(_ m: Model) {
-        if downloading == m { task?.cancel() }
-        if m == model { models = nil }
-        try? FileManager.default.removeItem(at: Self.dir(m))
-        try? FileManager.default.removeItem(at: Self.stage(m))
-        installed.remove(m)
-        guard scanning != nil else { return dropVAD(after: m) }
-        // A scan begun before the files went may find them: one begun
-        // after does not, and the VAD waits for it.
-        scan()
-        Task {
-            _ = await installedModels()
-            dropVAD(after: m)
-        }
-    }
-
-    /// The VAD, with the last model deleted.
-    private func dropVAD(after m: Model) {
-        if installed.isEmpty, downloading == m || progress == nil { try? FileManager.default.removeItem(at: Self.root) }
-    }
-
-    /// A listening, as the mic goes on. The model loads as it starts, what
-    /// it hears waiting for it, and stays loaded a minute after it ends.
-    func listen() -> Listening {
-        idle?.cancel()
-        let model = self.model
-        let models = self.models ?? Task { try await Self.load(model) }
-        self.models = models
-        let listening = Listening(models, longest: model.longest)
-        listenings += 1
-        Task {
-            _ = await listening.heard.result
-            listenings -= 1
-            // A load that failed is tried again by the next.
-            guard case .success = await models.result else {
-                if self.models == models { self.models = nil }
-                return
-            }
-            idle?.cancel()
-            idle = Task {
-                try? await Task.sleep(for: .seconds(60))
-                if !Task.isCancelled { self.models = nil }
-            }
-        }
-        return listening
     }
 
     /// Takes the level of samples the microphone heard.
@@ -297,7 +304,7 @@ import os
     }
 
     /// Phrases, spaced as words are: none between Chinese or Japanese on
-    /// both sides, as SenseVoice also spaces Japanese tokens.
+    /// both sides, keeping spaces beside Latin words.
     nonisolated static func joined(_ phrases: [String]) -> String {
         var out = ""
         var gap = ""
@@ -319,575 +326,198 @@ import os
         default: false
         }
     }
-
-    nonisolated private static func dir(_ m: Model) -> URL {
-        guard let repo = m.repo else { return speechDir }
-        return root.appending(path: repo.name)
-    }
-
-    /// Where a release's archive and what it unpacks into live while it
-    /// downloads: beside the model, never in it.
-    nonisolated private static func stage(_ m: Model) -> URL {
-        root.appending(path: (m.repo?.name ?? m.rawValue) + ".release")
-    }
-
-    /// Whether the VAD's compiled model is on disk whole: what every model
-    /// recognises a phrase through.
-    nonisolated static var vadPresent: Bool {
-        FileManager.default.fileExists(atPath: vadModel.appending(path: "coremldata.bin").path)
-            && !(FileManager.default.enumerator(at: vadModel, includingPropertiesForKeys: nil)?.contains { ($0 as? URL)?.pathExtension == "partial" } ?? true)
-    }
-
-    /// Whether a model is whole: the VAD's compiled model, with nothing
-    /// left half downloaded; FluidAudio's check for SenseVoice, and
-    /// another's files.
-    nonisolated static func present(_ m: Model) -> Bool {
-        guard vadPresent else { return false }
-        guard let repo = m.repo else { return SenseVoiceModels.modelsExist(at: speechDir, precision: precision) }
-        if whole(repo.files, in: dir(m)) { return true }
-        // The release's build of the same model, whose files are not
-        // always the commit's.
-        return m.release.map { whole($0.files, in: dir(m)) } ?? false
-    }
-
-    /// Whether each file is in dir at its size; one downloading is not
-    /// yet, as get keeps it as .partial.
-    nonisolated static func whole(_ files: [(path: String, size: Int)], in dir: URL) -> Bool {
-        files.allSatisfy { (try? dir.appending(path: $0.path).resourceValues(forKeys: [.fileSizeKey]).fileSize) == $0.size }
-    }
-
-    @concurrent nonisolated private static func load(_ m: Model) async throws -> (any Recogniser, VadManager) {
-        let speech: any Recogniser = m == .senseVoice
-            ? SenseVoiceManager(models: try SenseVoiceModels.load(from: speechDir, precision: precision), language: 0, textNorm: textNorm)
-            : try Sherpa(m, in: dir(m))
-        return (speech, try await VadManager())
-    }
-
-    /// Downloads what is missing from the first source that serves it:
-    /// Hugging Face, hf-mirror, or sherpa-onnx's release on GitHub, where
-    /// the model is one tarball. FluidAudio checks each file against the
-    /// size its source lists, and keeps it as .partial until it is whole;
-    /// get and the release's tarball do the same.
-    @concurrent nonisolated private static func fetch(_ m: Model, _ progress: @escaping @Sendable (Double) -> Void) async throws {
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        var v = URLResourceValues()
-        v.isExcludedFromBackup = true
-        var dir = root
-        try dir.setResourceValues(v)
-        ModelHub.offlineMode = false
-        defer { ModelHub.offlineMode = true }
-        let sources = await sources(m)
-        guard !sources.isEmpty else {
-            throw RexError(code: "dictation", message: m.release == nil
-                           ? String(localized: "Hugging Face and its mirror could not be reached.")
-                           : String(localized: "Hugging Face, its mirror and GitHub could not be reached."))
-        }
-        var failure: Error?
-        for source in sources {
-            ModelRegistry.baseURL = source.url
-            do {
-                // Listing the VAD's files on Hugging Face takes the network:
-                // one already on disk is not asked for again, whatever the
-                // source, its listing unreachable as much as its files.
-                if !vadPresent {
-                    try await ModelHub.download(.vad, to: MLModelConfigurationUtils.defaultModelsDirectory())
-                }
-                if m == .senseVoice {
-                    _ = try await SenseVoiceModels.download(precision: precision) { progress($0.fractionCompleted) }
-                } else if source.release {
-                    try await tarball(m, progress)
-                } else {
-                    try await get(m, from: source.url, progress)
-                }
-                return
-            } catch {
-                if Task.isCancelled { throw error }
-                failure = error
-            }
-        }
-        // A source served, and failed: its error says the most about why.
-        throw failure ?? URLError(.cannotConnectToHost)
-    }
-
-    /// A place a model comes from: Hugging Face or its mirror, file by
-    /// file, or sherpa-onnx's release, the model as one tarball.
-    nonisolated private struct Source: Sendable {
-        let url: String
-        let release: Bool
-    }
-
-    /// The sources that serve a model, best first. One that does not serve
-    /// is left out, so a host this network blocks fails no download: from
-    /// mainland China hf-mirror answers nothing but a redirect to Hugging
-    /// Face, which does not answer at all.
-    @concurrent nonisolated private static func sources(_ m: Model) async -> [Source] {
-        async let fromHub = serves(hub, m)
-        async let fromMirror = serves(mirror, m)
-        var sources: [Source] = []
-        if await fromHub { sources.append(Source(url: hub, release: false)) }
-        if await fromMirror { sources.append(Source(url: mirror, release: false)) }
-        if m.release != nil { sources.append(Source(url: hub, release: true)) }
-        return sources
-    }
-
-    /// Whether a source serves a model: the first bytes of the smallest of
-    /// its files come back, not a redirect to a host this network cannot
-    /// reach. SenseVoice's is the VAD's model, which a source of a
-    /// sherpa-onnx one carries too.
-    @concurrent nonisolated private static func serves(_ base: String, _ m: Model) async -> Bool {
-        let probe: (repo: String, commit: String, path: String, size: Int)
-        if let repo = m.repo, let smallest = repo.files.min(by: { $0.size < $1.size }) {
-            probe = (repo.name, repo.commit, smallest.path, smallest.size)
-        } else {
-            probe = (Repo.vad.rawValue, "main", "\(ModelNames.VAD.sileroVadFile)/coremldata.bin", 100)
-        }
-        let n = min(64, probe.size)
-        guard let url = URL(string: "\(base)/\(probe.repo)/resolve/\(probe.commit)/\(probe.path)") else { return false }
-        var r = URLRequest(url: url, timeoutInterval: 10)
-        r.setValue("bytes=0-\(n - 1)", forHTTPHeaderField: "Range")
-        guard let (data, res) = try? await sessions[0].data(for: r) else { return false }
-        return (res as? HTTPURLResponse)?.statusCode == 206 && data.count == n
-    }
-
-    /// A sherpa-onnx model from GitHub's release: the whole of it as one
-    /// tarball, resumed by ranges on four connections as get does a file,
-    /// then unpacked where its files belong. Half of what the tarball holds
-    /// is not wanted, and bzip2 gives no way to pass over it.
-    @concurrent nonisolated private static func tarball(_ m: Model, _ progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard let release = m.release else { return }
-        let dir = dir(m)
-        // Its archive and what it unpacks into stand beside the model, so
-        // that neither a half download nor a file of the release's build
-        // lies beside the commit's, which get goes on from.
-        let stage = Self.stage(m)
-        let archive = stage.appending(path: release.asset).appendingPathExtension("partial")
-        let unpacked = stage.appending(path: "unpacked")
-        try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
-        let url = URL(string: "\(releases)/\(release.asset)")!
-        let size = try await length(of: url)
-        var have = Int((try? archive.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-        if have > size {
-            try FileManager.default.removeItem(at: archive)
-            have = 0
-        }
-        if have < size {
-            if !FileManager.default.fileExists(atPath: archive.path) { FileManager.default.createFile(atPath: archive.path, contents: nil) }
-            let out = try FileHandle(forWritingTo: archive)
-            defer { try? out.close() }
-            try out.truncate(atOffset: UInt64(have))
-            try out.seekToEnd()
-            try await withThrowingTaskGroup(of: (Int, Data, URL).self) { g in
-                var next = have
-                var got: [Int: Data] = [:]
-                while have < size {
-                    while next < size, next - have < 3 * chunk {
-                        let at = next, n = min(chunk, size - at)
-                        g.addTask { try await range(at, n, of: url, else: url) }
-                        next += n
-                    }
-                    let (at, data, _) = try await g.next()!
-                    got[at] = data
-                    while let data = got.removeValue(forKey: have) {
-                        try out.write(contentsOf: data)
-                        have += data.count
-                        progress(0.9 * Double(have) / Double(size))
-                    }
-                }
-            }
-        }
-        try? FileManager.default.removeItem(at: unpacked)
-        try TarBz2.extract(release.files, from: archive, into: unpacked, strip: 1) { progress(0.9 + 0.1 * $0) }
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        for f in release.files {
-            let from = unpacked.appending(path: f.path)
-            let to = dir.appending(path: f.path)
-            try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: to)
-            try FileManager.default.moveItem(at: from, to: to)
-        }
-        try? FileManager.default.removeItem(at: stage)
-    }
-
-    /// How big a release's asset is: a range asked for its first byte is
-    /// answered with the whole of it.
-    @concurrent nonisolated private static func length(of url: URL) async throws -> Int {
-        var r = URLRequest(url: url, timeoutInterval: 30)
-        r.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-        // Only the headers: a server that passed the range over would send
-        // the whole model, which does not fit in memory.
-        let (bytes, res) = try await URLSession.shared.bytes(for: r)
-        bytes.task.cancel()
-        guard let http = res as? HTTPURLResponse,
-              let field = http.value(forHTTPHeaderField: "Content-Range"),
-              let total = Int(field.split(separator: "/").last ?? ""), total > 0
-        else { throw URLError(.badServerResponse) }
-        return total
-    }
-
-    /// A sherpa-onnx model's files not yet whole, as Maple gets its faces:
-    /// by ranges, four at a time on four connections as one is slow, each
-    /// added in turn to the file's .partial, which goes on from what it
-    /// has and takes its name once whole.
-    @concurrent nonisolated private static func get(_ m: Model, from source: String, _ progress: @Sendable (Double) -> Void) async throws {
-        guard let repo = m.repo else { return }
-        let total = repo.files.reduce(0) { $0 + $1.size }
-        var done = 0
-        for f in repo.files {
-            let file = dir(m).appending(path: f.path)
-            if whole([f], in: dir(m)) {
-                done += f.size
-                continue
-            }
-            let part = file.appendingPathExtension("partial")
-            try FileManager.default.createDirectory(at: part.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if !FileManager.default.fileExists(atPath: part.path) { FileManager.default.createFile(atPath: part.path, contents: nil) }
-            let out = try FileHandle(forWritingTo: part)
-            defer { try? out.close() }
-            var have = Int(try out.seekToEnd())
-            if have > f.size {
-                try out.truncate(atOffset: 0)
-                have = 0
-            }
-            done += have
-            // The file's URL; after the first range, the signed one it
-            // redirects to, signed again as it expires.
-            let resolve = URL(string: "\(source)/\(repo.name)/resolve/\(repo.commit)/\(f.path)")!
-            var url = resolve
-            // Ranges ahead of the .partial, those coming and those come
-            // out of turn, are four at most.
-            try await withThrowingTaskGroup(of: (Int, Data, URL).self) { g in
-                var next = have
-                var got: [Int: Data] = [:]
-                while have < f.size {
-                    while next < f.size, next - have < 4 * chunk {
-                        let at = next, n = min(chunk, f.size - at), u = url
-                        g.addTask { try await range(at, n, of: u, else: resolve) }
-                        next += n
-                    }
-                    let (at, data, signed) = try await g.next()!
-                    got[at] = data
-                    url = signed
-                    while let data = got.removeValue(forKey: have) {
-                        try out.write(contentsOf: data)
-                        have += data.count
-                        done += data.count
-                        progress(Double(done) / Double(total))
-                    }
-                }
-            }
-            try? FileManager.default.removeItem(at: file)
-            try FileManager.default.moveItem(at: part, to: file)
-        }
-    }
-
-    /// What get asks for at once: 8 MB.
-    nonisolated private static let chunk = 8 << 20
-    /// A connection for each of get's four ranges: one session would carry
-    /// them all on one HTTP/2 connection, no faster than one range.
-    nonisolated private static let sessions = (0..<4).map { _ in URLSession(configuration: .ephemeral) }
-
-    /// n bytes of a file from at, by its signed URL, or by resolve when
-    /// that fails as signed URLs expire; with the signed URL it gave.
-    @concurrent nonisolated private static func range(_ at: Int, _ n: Int, of url: URL, else resolve: URL) async throws -> (Int, Data, URL) {
-        for u in url == resolve ? [url] : [url, resolve] {
-            var req = URLRequest(url: u)
-            req.setValue("bytes=\(at)-\(at + n - 1)", forHTTPHeaderField: "Range")
-            let (data, res) = try await sessions[at / chunk % 4].data(for: req)
-            if (res as? HTTPURLResponse)?.statusCode == 206, data.count == n { return (at, data, res.url ?? u) }
-        }
-        throw URLError(.badServerResponse)
-    }
-
 }
 
-/// One listening, as rootshell's DictationRecognizer, with its defaults:
-/// Silero VAD cuts what the mic hears into phrases as it comes; the phrase
-/// open is recognised again as it grows, for what is said so far, and once
-/// more as the speaker pauses, for good.
-nonisolated final class Listening: Sendable {
-    /// What is said so far, as it changes: the newest only.
+/// Accumulates streaming volatile and finalized transcription updates into
+/// `Dictation.Said`.
+nonisolated struct TranscriptAccumulator: Sendable {
+    private(set) var said = Dictation.Said()
+
+    @discardableResult
+    mutating func apply(text: String, isFinal: Bool) -> Dictation.Said {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isFinal {
+            said.open = ""
+            if !trimmed.isEmpty { said.phrases.append(trimmed) }
+        } else {
+            said.open = trimmed
+        }
+        return said
+    }
+
+    var finalText: String {
+        said.text
+    }
+}
+
+/// Active recognition session consumed by `TerminalView`.
+nonisolated protocol DictationSession: AnyObject, Sendable {
+    /// Streaming transcript updates as recognition progresses.
+    var said: AsyncStream<Dictation.Said> { get }
+    /// Final transcript task, resolving once recognition finishes.
+    var heard: Task<String, Error> { get }
+    /// Feeds converted audio into the recognition session.
+    func add(_ input: AnalyzerInput)
+    /// Ends audio input, finalizes pending hypotheses, and returns the transcript.
+    func finish() async throws -> String
+    /// Aborts recognition and discards pending audio/results.
+    func cancel()
+}
+
+/// Concrete Apple Speech module selected for a session.
+nonisolated enum TranscriberModule: Sendable {
+    case dictation(DictationTranscriber)
+    case speech(SpeechTranscriber)
+
+    var module: any SpeechModule {
+        switch self {
+        case .dictation(let m): m
+        case .speech(let m): m
+        }
+    }
+}
+
+/// Live recognition session powered by `SpeechAnalyzer` + `DictationTranscriber`
+/// (or `SpeechTranscriber` fallback).
+nonisolated final class AppleSpeechSession: DictationSession, @unchecked Sendable {
     let said: AsyncStream<Dictation.Said>
-    /// All that was said, as finish gives it.
     let heard: Task<String, Error>
-    /// What the microphone heard, waiting for the model.
-    private let audio: SampleRing
 
-    /// longest: the longest phrase the model takes, in samples.
-    init(_ models: Task<(any Recogniser, VadManager), Error>, longest: Int) {
-        let (said, show) = AsyncStream.makeStream(of: Dictation.Said.self, bufferingPolicy: .bufferingNewest(1))
-        let audio = SampleRing(capacity: Self.backlog)
+    private let analyzer: SpeechAnalyzer
+    private let input: AsyncStream<AnalyzerInput>.Continuation
+
+    private init(
+        analyzer: SpeechAnalyzer,
+        input: AsyncStream<AnalyzerInput>.Continuation,
+        said: AsyncStream<Dictation.Said>,
+        heard: Task<String, Error>
+    ) {
+        self.analyzer = analyzer
+        self.input = input
         self.said = said
-        self.audio = audio
-        heard = Task { try await Self.run(audio, models, longest, show) }
+        self.heard = heard
     }
 
-    /// The most samples that wait for the model, a minute of audio: past
-    /// them, what comes is dropped rather than held without end while a
-    /// model falls behind.
-    static let backlog = 60 * 16_000
+    /// Starts `SpeechAnalyzer` with optional contextual vocabulary strings and
+    /// begins streaming results into `said`.
+    static func start(
+        transcriber: TranscriberModule,
+        format: AVAudioFormat,
+        vocabulary: [String]
+    ) async throws -> AppleSpeechSession {
+        let (inputStream, inputContinuation) = AsyncStream.makeStream(
+            of: AnalyzerInput.self,
+            bufferingPolicy: .bufferingNewest(64)
+        )
+        let (saidStream, saidContinuation) = AsyncStream.makeStream(
+            of: Dictation.Said.self,
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        let analyzer = SpeechAnalyzer(
+            modules: [transcriber.module],
+            options: SpeechAnalyzer.Options(priority: .userInitiated, modelRetention: .lingering)
+        )
+        if !vocabulary.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = vocabulary
+            try await analyzer.setContext(context)
+        }
+        try await analyzer.prepareToAnalyze(in: format)
+        try await analyzer.start(inputSequence: inputStream)
 
-    /// 16 kHz mono samples, in order, from one thread at a time: the audio
-    /// thread's. False when they are dropped, the backlog full or the
-    /// listening over.
-    @discardableResult func add(_ samples: UnsafeBufferPointer<Float>) -> Bool {
-        audio.write(samples)
+        let heard = Task<String, Error> {
+            defer {
+                saidContinuation.finish()
+                inputContinuation.finish()
+            }
+            var acc = TranscriptAccumulator()
+            switch transcriber {
+            case .dictation(let module):
+                for try await result in module.results {
+                    try Task.checkCancellation()
+                    saidContinuation.yield(acc.apply(text: String(result.text.characters), isFinal: result.isFinal))
+                }
+            case .speech(let module):
+                for try await result in module.results {
+                    try Task.checkCancellation()
+                    saidContinuation.yield(acc.apply(text: String(result.text.characters), isFinal: result.isFinal))
+                }
+            }
+            return acc.finalText
+        }
+
+        return AppleSpeechSession(
+            analyzer: analyzer,
+            input: inputContinuation,
+            said: saidStream,
+            heard: heard
+        )
     }
 
-    @discardableResult func add(_ samples: [Float]) -> Bool {
-        samples.withUnsafeBufferPointer { audio.write($0) }
+    func add(_ input: AnalyzerInput) {
+        self.input.yield(input)
     }
 
-    /// Adds samples to the end of kept, and keeps its last n, in place.
-    static func keep(_ n: Int, of kept: inout [Float], adding samples: [Float]) {
-        kept += samples
-        if kept.count > n { kept.removeFirst(kept.count - n) }
-    }
-
-    /// Stops listening, and gives all that was said, the phrase open
-    /// recognised for good.
     func finish() async throws -> String {
-        audio.finish()
+        input.finish()
+        try? await analyzer.finalizeAndFinishThroughEndOfInput()
         return try await heard.value
     }
 
-    /// Stops listening, and recognises no more.
     func cancel() {
-        audio.finish()
+        input.finish()
         heard.cancel()
-    }
-
-    /// Hears the audio in the VAD's chunks, one at a time, each filled from
-    /// the ring as the audio comes: while it recognises, the audio waits.
-    @concurrent private static func run(_ audio: SampleRing, _ models: Task<(any Recogniser, VadManager), Error>,
-                                        _ longest: Int, _ show: AsyncStream<Dictation.Said>.Continuation) async throws -> String {
-        defer { show.finish() }
-        let (speech, vad) = try await models.value
-        var ear = Ear(speech: speech, vad: vad, longest: longest, show: show)
-        var chunk = [Float](repeating: 0, count: VadManager.chunkSize)
-        var filled = 0
-        while true {
-            try Task.checkCancellation()
-            // Over before the read: what came before the end is read.
-            let over = audio.finished
-            let n = chunk.withUnsafeMutableBufferPointer { audio.read(into: UnsafeMutableBufferPointer(rebasing: $0[filled...])) }
-            filled += n
-            if filled == chunk.count {
-                try await ear.hear(chunk)
-                filled = 0
-            } else if over {
-                break
-            } else {
-                try await Task.sleep(for: poll)
-            }
-        }
-        try Task.checkCancellation()
-        try await ear.end(Array(chunk[..<filled]))
-        return ear.said.settled
-    }
-
-    /// How long the audio is waited for when the ring has too little of it:
-    /// about half a microphone's buffer.
-    private static let poll = Duration.milliseconds(50)
-
-    /// The phrase open, and how it is heard.
-    private nonisolated struct Ear {
-        let speech: any Recogniser
-        let vad: VadManager
-        /// A phrase is cut as it passes this many samples.
-        let longest: Int
-        let show: AsyncStream<Dictation.Said>.Continuation
-        var said = Dictation.Said()
-        private var state = VadStreamState.initial()
-        /// What came before speech, for its first syllable: 0.4 s.
-        private var before: [Float] = []
-        private var phrase: [Float] = []
-        private var speaking = false
-        /// Whether the phrase open goes on from one cut at its limit.
-        private var cut = false
-        /// Samples since the last guess, and how many between guesses.
-        private var heard = 0
-        private var every = 9_600
-
-        /// A pause of 0.8 s ends a phrase; speech starts at 0.6 and ends below 0.45.
-        private static let pause = VadSegmentationConfig(minSilenceDuration: 0.8, silenceThresholdForSplit: 0.45,
-                                                         negativeThreshold: 0.45, negativeThresholdOffset: 0.15)
-        /// Shorter than 0.3 s, a phrase is a noise; a phrase cut goes on
-        /// with a word of 0.2 s.
-        private static let shortest = 4_800
-
-        init(speech: any Recogniser, vad: VadManager, longest: Int, show: AsyncStream<Dictation.Said>.Continuation) {
-            self.speech = speech
-            self.vad = vad
-            self.longest = longest
-            self.show = show
-        }
-
-        mutating func hear(_ chunk: [Float]) async throws {
-            let r = try await vad.processStreamingChunk(chunk, state: state, config: Self.pause)
-            state = r.state
-            if r.event?.kind == .speechStart, !speaking {
-                speaking = true
-                phrase = before
-                before = []
-                heard = 0
-            }
-            if speaking {
-                phrase += chunk
-                heard += chunk.count
-            } else {
-                Listening.keep(6_400, of: &before, adding: chunk)
-            }
-            if r.event?.kind == .speechEnd, speaking {
-                speaking = false
-                try await settle(last: true)
-            } else if speaking, phrase.count >= longest {
-                try await settle(last: false)
-            } else if speaking, heard >= every {
-                await guess()
-            }
-        }
-
-        /// The end of the audio: the phrase open, with what is left.
-        mutating func end(_ rest: [Float]) async throws {
-            guard speaking else { return }
-            phrase += rest
-            try await settle(last: true)
-        }
-
-        /// The phrase open, recognised for a guess; the slower that is, the
-        /// less often, so it takes a third of the time at most and audio
-        /// never piles up.
-        private mutating func guess() async {
-            heard = 0
-            guard phrase.count >= Self.shortest else { return }
-            let start = ContinuousClock.now
-            if let text = try? await recognise(phrase), !text.isEmpty {
-                said.open = text
-                show.yield(said)
-            }
-            let took = (ContinuousClock.now - start) / .seconds(1)
-            every = max(9_600, Int(took * 16_000) * 3)
-        }
-
-        /// The phrase open, recognised for good, as it ends or is cut.
-        private mutating func settle(last: Bool) async throws {
-            let samples = phrase
-            phrase = []
-            heard = 0
-            let shortest = cut ? 3_200 : Self.shortest
-            cut = !last
-            let text = samples.count < shortest ? "" : try await recognise(samples)
-            said.open = ""
-            if !text.isEmpty { said.phrases.append(text) }
-            show.yield(said)
-        }
-
-        private func recognise(_ samples: [Float]) async throws -> String {
-            Dictation.joined([try await speech.recognise(samples)])
-        }
+        let analyzer = self.analyzer
+        Task { await analyzer.cancelAndFinishNow() }
     }
 }
 
-/// A speech model loaded: what it recognises in a phrase, 16 kHz mono
-/// samples; "" for none.
-nonisolated protocol Recogniser: Sendable {
-    func recognise(_ samples: [Float]) async throws -> String
-}
-
-extension SenseVoiceManager: Recogniser {
-    func recognise(_ samples: [Float]) throws -> String {
-        let r = try transcribeDetailed(audio: samples)
-        return r.language == "nospeech" ? "" : r.text
-    }
-}
-
-/// sherpa-onnx's recogniser, for Fun-ASR-Nano and Qwen3-ASR, on two CPU
-/// cores, as they were measured: greedy, without hotwords.
-actor Sherpa: Recogniser {
-    private nonisolated(unsafe) let recogniser: OpaquePointer
-
-    /// Throws as sherpa-onnx can't load the model in dir.
-    init(_ m: Dictation.Model, in dir: URL) throws {
-        var c = SherpaOnnxOfflineRecognizerConfig()
-        var paths: [UnsafeMutablePointer<CChar>] = []
-        defer { paths.forEach { free($0) } }
-        func path(_ p: String) -> UnsafePointer<CChar> {
-            paths.append(strdup(dir.appending(path: p).path))
-            return UnsafePointer(paths.last!)
-        }
-        c.model_config.num_threads = 2
-        switch m {
-        case .funASRNano:
-            c.model_config.funasr_nano.encoder_adaptor = path("encoder_adaptor.int8.onnx")
-            c.model_config.funasr_nano.llm = path("llm.int8.onnx")
-            c.model_config.funasr_nano.embedding = path("embedding.int8.onnx")
-            c.model_config.funasr_nano.tokenizer = path("Qwen3-0.6B")
-            c.model_config.funasr_nano.itn = 1
-        case .qwen3ASR:
-            c.feat_config.feature_dim = 128
-            c.model_config.qwen3_asr.conv_frontend = path("conv_frontend.onnx")
-            c.model_config.qwen3_asr.encoder = path("encoder.int8.onnx")
-            c.model_config.qwen3_asr.decoder = path("decoder.int8.onnx")
-            c.model_config.qwen3_asr.tokenizer = path("tokenizer")
-            c.model_config.qwen3_asr.max_new_tokens = 256
-        case .senseVoice:
-            break
-        }
-        guard let r = SherpaOnnxCreateOfflineRecognizer(&c) else { throw CocoaError(.fileReadCorruptFile) }
-        recogniser = r
-    }
-
-    deinit { SherpaOnnxDestroyOfflineRecognizer(recogniser) }
-
-    func recognise(_ samples: [Float]) -> String {
-        guard let s = SherpaOnnxCreateOfflineStream(recogniser) else { return "" }
-        defer { SherpaOnnxDestroyOfflineStream(s) }
-        SherpaOnnxAcceptWaveformOffline(s, 16_000, samples, Int32(samples.count))
-        SherpaOnnxDecodeOfflineStream(recogniser, s)
-        guard let r = SherpaOnnxGetOfflineStreamResult(s) else { return "" }
-        defer { SherpaOnnxDestroyOfflineRecognizerResult(r) }
-        return r.pointee.text.map { String(cString: $0) } ?? ""
-    }
-}
-
-/// The microphone while the mic is on: what it hears, as the models take
-/// it, 16 kHz mono floats, given as it comes. A call or a new route stops
-/// it. The audio session and the engine start and stop on a queue of their
-/// own, in turn (Turns): both wait on the system's audio, and take no time
-/// from the main thread; a stop asked for as it starts wins, and the next
-/// start waits for it. The engine is made and used on that queue only.
+/// The microphone while the mic is on: captures live audio on a dedicated
+/// serial queue (`Turns`), converts each tap buffer to the `SpeechAnalyzer`
+/// target format, and reports RMS levels for `Meter`.
 nonisolated final class Recording: @unchecked Sendable {
-    static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    /// Fallback format for `SpeechAnalyzer` (`AnalyzerInput` requires 16-bit
+    /// signed integer PCM samples).
+    static let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
     private static let queue = DispatchQueue(label: "wiki.wind.windrex.recording", qos: .userInitiated)
-    /// The engine, once a start begins: a stop with none has nothing to
-    /// stop.
     private var engine: AVAudioEngine?
     private let turns = Turns(on: Recording.queue)
 
-    /// Starts the microphone, on its queue: heard takes what it hears, on
-    /// the audio thread, until the next convert; done is told on the main
-    /// actor whether it is on (false: a stop came first), or why it can't be.
-    func start(_ heard: @escaping @Sendable (UnsafeBufferPointer<Float>) -> Void,
-               done: @escaping @MainActor @Sendable (Result<Bool, any Error>) -> Void) {
-        turns.start({ try self.begin(heard) }, done: done)
+    /// Starts the microphone on its queue, converting audio into `targetFormat`
+    /// `AnalyzerInput` buffers and reporting RMS levels on the audio thread.
+    func start(
+        format targetFormat: AVAudioFormat = Recording.format,
+        onInput: @escaping @Sendable (AnalyzerInput) -> Void,
+        onLevel: @escaping @Sendable (Float) -> Void,
+        done: @escaping @MainActor @Sendable (Result<Bool, any Error>) -> Void
+    ) {
+        turns.start({ try self.begin(targetFormat: targetFormat, onInput: onInput, onLevel: onLevel) }, done: done)
     }
 
-    private func begin(_ heard: @escaping @Sendable (UnsafeBufferPointer<Float>) -> Void) throws {
+    private func begin(
+        targetFormat: AVAudioFormat,
+        onInput: @escaping @Sendable (AnalyzerInput) -> Void,
+        onLevel: @escaping @Sendable (Float) -> Void
+    ) throws {
         let engine = AVAudioEngine()
         self.engine = engine
         let audio = AVAudioSession.sharedInstance()
-        try audio.setCategory(.record)
+        try audio.setCategory(.record, mode: .measurement, options: .duckOthers)
         try audio.setActive(true)
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard let c = Converter(from: format) else {
+        let sourceFormat = input.outputFormat(forBus: 0)
+        guard let c = Converter(from: sourceFormat, to: targetFormat) else {
             try? audio.setActive(false, options: .notifyOthersOnDeactivation)
             throw RexError(code: "dictation", message: String(localized: "This device has no microphone."))
         }
         let converter = OSAllocatedUnfairLock(uncheckedState: c)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { @Sendable buffer, _ in
-            // Given inside the lock: the samples are the converter's.
-            converter.withLockUnchecked { heard($0.convert(buffer)) }
+        input.installTap(onBus: 0, bufferSize: 4096, format: sourceFormat) { @Sendable buffer, _ in
+            if let ch = buffer.floatChannelData?[0], buffer.frameLength > 0 {
+                let ptr = UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength))
+                onLevel(vDSP.rootMeanSquare(ptr))
+            }
+            let converted = converter.withLockUnchecked { $0.convertToInput(buffer) }
+            if let converted { onInput(converted) }
         }
         do {
             try engine.start()
@@ -897,8 +527,7 @@ nonisolated final class Recording: @unchecked Sendable {
         }
     }
 
-    /// Stops the microphone, or the start of it; others' sound comes back,
-    /// soon after.
+    /// Stops the microphone, or the start of it; others' sound comes back soon after.
     func stop() {
         turns.stop { self.halt() }
     }
@@ -907,41 +536,45 @@ nonisolated final class Recording: @unchecked Sendable {
         guard let engine else { return }
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
+        self.engine = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    /// The microphone's format, converted.
+    /// Converts microphone tap buffers into owned buffers in `target` format
+    /// so each `AnalyzerInput` stays valid while `SpeechAnalyzer` consumes it.
     nonisolated struct Converter {
         private let converter: AVAudioConverter
-        /// What a buffer converts into: made for the first, and again only
-        /// for one larger, not for each as the audio thread takes it.
-        private(set) var out: AVAudioPCMBuffer?
+        let target: AVAudioFormat
 
         /// Nil for a microphone that hears nothing, as a simulator's.
-        init?(from source: AVAudioFormat) {
+        init?(from source: AVAudioFormat, to target: AVAudioFormat = Recording.format) {
             guard source.sampleRate > 0, source.channelCount > 0,
-                  let c = AVAudioConverter(from: source, to: Recording.format) else { return nil }
-            // The first channel of several: the microphone's.
-            if source.channelCount > 1 { c.channelMap = [0] }
-            converter = c
+                  let c = AVAudioConverter(from: source, to: target) else { return nil }
+            if source.channelCount > 1, target.channelCount == 1 { c.channelMap = [0] }
+            self.converter = c
+            self.target = target
         }
 
-        /// The buffer converted, in out: good until the next convert, so
-        /// the audio thread makes no array for it.
-        mutating func convert(_ buffer: AVAudioPCMBuffer) -> UnsafeBufferPointer<Float> {
-            let frames = AVAudioFrameCount((Double(buffer.frameLength) * Recording.format.sampleRate / buffer.format.sampleRate).rounded(.up)) + 16
-            if (out?.frameCapacity ?? 0) < frames { out = AVAudioPCMBuffer(pcmFormat: Recording.format, frameCapacity: frames) }
-            guard let out else { return UnsafeBufferPointer(start: nil, count: 0) }
+        /// Converts `buffer` into a newly allocated PCM buffer in `target` format.
+        func convertBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+            guard buffer.frameLength > 0 else { return nil }
+            let frames = AVAudioFrameCount((Double(buffer.frameLength) * target.sampleRate / buffer.format.sampleRate).rounded(.up)) + 16
+            guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: frames) else { return nil }
             out.frameLength = 0
-            // The converter asks until it has nothing more: the buffer once.
             var given = false
-            _ = converter.convert(to: out, error: nil) { _, status in
-                status.pointee = given ? .noDataNow : .haveData
+            let status = converter.convert(to: out, error: nil) { _, inputStatus in
+                inputStatus.pointee = given ? .noDataNow : .haveData
                 defer { given = true }
                 return given ? nil : buffer
             }
-            guard let c = out.floatChannelData?[0] else { return UnsafeBufferPointer(start: nil, count: 0) }
-            return UnsafeBufferPointer(start: c, count: Int(out.frameLength))
+            guard status != .error, out.frameLength > 0 else { return nil }
+            return out
+        }
+
+        /// Converts `buffer` into a `Sendable` `AnalyzerInput`.
+        func convertToInput(_ buffer: AVAudioPCMBuffer) -> AnalyzerInput? {
+            guard let out = convertBuffer(buffer) else { return nil }
+            return AnalyzerInput(buffer: out)
         }
     }
 }
@@ -973,67 +606,6 @@ nonisolated final class Turns: Sendable {
     func stop(_ stop: @escaping @Sendable () -> Void) {
         stopped.store(true, ordering: .releasing)
         queue.async(execute: stop)
-    }
-}
-
-/// Samples from one thread to another, as the audio thread gives what the
-/// microphone hears to the listening: lock-free, a writer and a reader,
-/// in a buffer made once. The audio thread neither allocates nor waits on
-/// a lock the reader could hold. A write that does not fit is dropped
-/// whole, as is one after finish.
-nonisolated final class SampleRing: @unchecked Sendable {
-    let capacity: Int
-    private let storage: UnsafeMutablePointer<Float>
-    /// The samples written, and read, since the start: the writer alone
-    /// stores the first, and the reader the second.
-    private let written = Atomic<Int>(0)
-    private let taken = Atomic<Int>(0)
-    private let over = Atomic<Bool>(false)
-
-    init(capacity: Int) {
-        precondition(capacity > 0)
-        self.capacity = capacity
-        storage = .allocate(capacity: capacity)
-    }
-
-    deinit { storage.deallocate() }
-
-    /// The samples waiting.
-    var count: Int { written.load(ordering: .acquiring) - taken.load(ordering: .acquiring) }
-
-    /// Whether no more is written: what was stays to be read.
-    var finished: Bool { over.load(ordering: .acquiring) }
-
-    func finish() { over.store(true, ordering: .releasing) }
-
-    /// Writes samples after those before; false, and none written, when
-    /// they do not all fit, or after finish. The writer only.
-    @discardableResult func write(_ samples: UnsafeBufferPointer<Float>) -> Bool {
-        guard !finished else { return false }
-        let w = written.load(ordering: .relaxed)
-        let n = samples.count
-        guard n <= capacity - (w - taken.load(ordering: .acquiring)) else { return false }
-        guard n > 0, let from = samples.baseAddress else { return true }
-        let at = w % capacity
-        let first = min(n, capacity - at)
-        (storage + at).update(from: from, count: first)
-        storage.update(from: from + first, count: n - first)
-        written.store(w + n, ordering: .releasing)
-        return true
-    }
-
-    /// Reads the oldest samples into out, as many as wait and fit; how
-    /// many. The reader only.
-    func read(into out: UnsafeMutableBufferPointer<Float>) -> Int {
-        let r = taken.load(ordering: .relaxed)
-        let n = min(out.count, written.load(ordering: .acquiring) - r)
-        guard n > 0, let to = out.baseAddress else { return 0 }
-        let at = r % capacity
-        let first = min(n, capacity - at)
-        to.update(from: storage + at, count: first)
-        (to + first).update(from: storage, count: n - first)
-        taken.store(r + n, ordering: .releasing)
-        return n
     }
 }
 

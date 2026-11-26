@@ -8,16 +8,6 @@ packages:
   GhosttyKit:
     url: https://github.com/kitknox/ghosttykit-rootshell.git
     exactVersion: 0.2.23
-  # Speech recognition on the phone (Dictation): FluidAudio's SenseVoice and
-  # Silero VAD, from rootshell's fork as rootshell pins it (0.17.4-rootshell.2).
-  # Upstream builds TTS too, whose bundled G2P data is GPL-3.0.
-  FluidAudio:
-    url: https://github.com/kitknox/fluidaudio-rootshell.git
-    revision: bc3521103941a5e4b395604bc4402274210c68d8
-  # Fun-ASR-Nano and Qwen3-ASR (Dictation): sherpa-onnx 2.0.1's prebuilt
-  # framework, by its checksum.
-  SherpaOnnx:
-    path: SherpaOnnx
 options:
   deploymentTarget:
     iOS: "26.0"
@@ -59,12 +49,9 @@ targets:
         embed: false
       - package: GhosttyKit
         product: GhosttyKitAppStore
-      - package: FluidAudio
-      - package: SherpaOnnx
-        product: SherpaOnnxC
     settings:
       base:
-        OTHER_LDFLAGS: -lc++ -lbz2
+        OTHER_LDFLAGS: -lc++
         SWIFT_OBJC_BRIDGING_HEADER: GoRex/GoRex-Bridging-Header.h
         PRODUCT_BUNDLE_IDENTIFIER: wiki.wind.windrex
         # iCloud key-value store: the settings that sync (CloudSettings).
@@ -109,6 +96,7 @@ targets:
         NSCameraUsageDescription: WindRex scans the pairing QR code that GoRex or Rex shows.
         # The mic dictates into the terminal (Dictation).
         NSMicrophoneUsageDescription: WindRex hears what you say while the mic is on, and types it into the terminal. Speech is recognised on this device.
+        NSSpeechRecognitionUsageDescription: WindRex recognises your speech on this device and types it into the terminal.
         # A gallery's image saved to Photos from the share sheet.
         NSPhotoLibraryAddUsageDescription: WindRex saves the images you choose from a terminal's gallery to your photos.
         # A window row's or a host's drag in the list (HostListView's
@@ -191,7 +179,6 @@ targets:
       - GoRex/Gallery/GalleryScanner.swift
       - GoRex/Gallery/GalleryStore.swift
       - GoRex/Gallery/PaneGallery.swift
-      - GoRex/Terminal/Archive.swift
       - GoRex/Terminal/Dictation.swift
       - GoRex/Terminal/Polish.swift
       - GoRex/Tailnet/TailnetSettings.swift
@@ -204,16 +191,11 @@ targets:
     dependencies:
       - framework: Frameworks/GhosttyVt.xcframework
         embed: false
-      - package: FluidAudio
-      - package: SherpaOnnx
-        product: SherpaOnnxC
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true
         # An identifier, for its asset catalog (the brand marks) to load.
         PRODUCT_BUNDLE_IDENTIFIER: wiki.wind.windrex.tests
-        # Archive.swift reads bzip2, as the app does.
-        OTHER_LDFLAGS: -lbz2
         SWIFT_OBJC_BRIDGING_HEADER: GoRex/GoRex-Bridging-Header.h
   GoRexUITests:
     type: bundle.ui-testing
