@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -180,6 +181,9 @@ type agentInfo struct {
 	HookPath string
 	// HookSkip says why a selected agent gets no hook.
 	HookSkip string
+	// TitlePath is the settings file holding the agent's terminal title
+	// command (such as Antigravity CLI's settings.json), "" when unused.
+	TitlePath string
 }
 
 func homeDir() (string, error) { return os.UserHomeDir() }
@@ -333,6 +337,7 @@ func agents(project bool) ([]agentInfo, error) {
 	codexNative := filepath.Join(codex, "skills", skillName)
 	agySkill := filepath.Join(agyConfig, "skills", skillName)
 	agyHook := filepath.Join(agyConfig, "hooks.json")
+	agyTitle := filepath.Join(agyCLI, "settings.json")
 	opencodeNative := filepath.Join(opencode, "skills", skillName)
 	piNative := filepath.Join(pi, "skills", skillName)
 	devinNative := filepath.Join(devin, "skills", skillName)
@@ -347,6 +352,7 @@ func agents(project bool) ([]agentInfo, error) {
 		codexNative = filepath.Join(wd, ".codex", "skills", skillName)
 		agySkill = shared
 		agyHook = filepath.Join(wd, ".agents", "hooks.json")
+		agyTitle = ""
 		opencodeNative = filepath.Join(wd, ".opencode", "skills", skillName)
 		piNative = filepath.Join(wd, ".pi", "skills", skillName)
 		devinNative = filepath.Join(wd, ".devin", "skills", skillName)
@@ -374,6 +380,7 @@ func agents(project bool) ([]agentInfo, error) {
 			SkillDir:       agySkill,
 			NativeSkillDir: filepath.Join(agyConfig, "skills", skillName),
 			HookPath:       agyHook,
+			TitlePath:      agyTitle,
 		},
 		{
 			ID:             "opencode",
@@ -810,6 +817,17 @@ func skillRun(action string, args []string, out, errOut io.Writer) (int, bool) {
 			failed = true
 		}
 	}
+	// Terminal title hooks (e.g. Antigravity CLI's settings.json title block).
+	for _, a := range selected {
+		if a.TitlePath == "" {
+			continue
+		}
+		change, reason, err := setTitle(a.TitlePath, a.ID, action == "setup", *dry)
+		steps = append(steps, stepResult{Harnesses: []string{a.ID}, Kind: "title", Path: a.TitlePath, Change: change, Reason: cmp.Or(reason, errString(err))})
+		if err != nil {
+			failed = true
+		}
+	}
 	actionName := action
 	if action == "setup" {
 		actionName = "install"
@@ -880,6 +898,15 @@ func skillStatus(selected []agentInfo, scope string, out io.Writer, asJSON bool)
 				failed = true
 			}
 			h.Items = append(h.Items, hi)
+		}
+		if a.TitlePath != "" {
+			ts, err := titleState(a.TitlePath, a.ID)
+			ti := statusItem{Kind: "title", Path: a.TitlePath, State: ts}
+			if err != nil {
+				ti.Reason = err.Error()
+				failed = true
+			}
+			h.Items = append(h.Items, ti)
 		}
 		result.Harnesses = append(result.Harnesses, h)
 	}

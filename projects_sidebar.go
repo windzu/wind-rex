@@ -582,10 +582,15 @@ func (a *App) workspaceTabs(c *ui.Context, k *colors, w *Workspace, reserve floa
 		}
 		a.later(c, func() { a.showWorkspaceTab(w, i) })
 	}
+	proj := ""
+	if w.Dir != "" {
+		proj = w.Name
+	}
 	if o := w.app; o != nil {
 		for i, t := range o.tabs[:limit] {
-			name, detail := t.label()
-			if spaceTab(c, k, t.UID, name, detail, t.status(), reserve, func() { a.tiles(c, k, t) }) {
+			name, detail := t.labelIn(proj)
+			tip := tabTooltip(t, proj)
+			if spaceTab(c, k, t.UID, name, detail, tip, t.status(), reserve, func() { a.tiles(c, k, t) }) {
 				pick(i)
 			}
 		}
@@ -595,9 +600,10 @@ func (a *App) workspaceTabs(c *ui.Context, k *colors, w *Workspace, reserve floa
 	// of its session, as a window's tab does; no pane attaches for it.
 	infos, id, _ := a.st.listOf(w.host)
 	for i, t := range w.layout.Tabs[:limit] {
-		name, detail, prog := savedTabFace(t, infos)
+		name, detail, prog := savedTabFaceIn(t, infos, proj)
+		tip := savedTabTooltip(t, infos, proj)
 		s := a.st.savedTabStatus(t, id, infos)
-		if spaceTab(c, k, cmp.Or(t.ID, fmt.Sprint(i)), name, detail, s, reserve, func() {
+		if spaceTab(c, k, cmp.Or(t.ID, fmt.Sprint(i)), name, detail, tip, s, reserve, func() {
 			ui.Box(c).Size(tileSlot, tileH+4).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
 				fr := ui.Rect{X: r.X + 1, Y: r.Y + 2, W: tileW, H: tileH}
 				drawTile(p, fr, prog, true)

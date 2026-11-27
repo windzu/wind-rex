@@ -3,7 +3,7 @@ name: REF-001
 description: "The `gorex` command line: the commands that drive sessions without a window, and the agent hooks. Use when you add or change a CLI command."
 metadata:
   created: "2026-10-28"
-  updated: "2026-11-26"
+  updated: "2026-11-27"
 ---
 
 # REF-001: gorex command line
@@ -190,7 +190,11 @@ hook, added to `~/.claude/settings.json`, `~/.codex/hooks.json`,
 runs `gorex __internal session-start --agent NAME`, which prints the
 session, pane and connection for the agent's context — for Devin as the
 JSON `hookSpecificOutput.additionalContext` it expects — and labels the
-pane when `--pane-naming` is on. Devin runs hooks through a POSIX shell
+pane when `--pane-naming` is on. In user scope, Antigravity CLI also gets
+a `title` command in `~/.gemini/antigravity-cli/settings.json` running
+`gorex __internal title --agent agy` so its conversation title flows to
+WindRex through OSC 2 when the user has not configured another `title`
+command. Devin runs hooks through a POSIX shell
 on every platform, so on Windows its command is `sh -c "gorex.cmd …"`
 rather than `cmd /c`, and the injected context names `gorex.cmd` for the
 same reason. Only GoRex's own hook is added or removed: every other

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -20,10 +22,75 @@ func internalCmd(args []string, out, errOut io.Writer) (int, bool) {
 		return internalSkillCmd(args[1:], out)
 	case "session-start":
 		return sessionStartCmd(args[1:], out)
+	case "title":
+		return internalTitleCmd(args[1:], os.Stdin, out)
 	default:
 		fmt.Fprintf(errOut, "gorex: unknown internal command %q\n", args[0])
 		return ExitUsage, true
 	}
+}
+
+// internalTitleCmd prints the terminal window title for an agent CLI from
+// the state JSON piped on stdin. It exits 0 whatever happens so an agent
+// never disables its title hook on transient or empty input.
+func internalTitleCmd(args []string, in io.Reader, out io.Writer) (int, bool) {
+	fs := flagSet("__internal title", io.Discard)
+	agent := fs.String("agent", "", "")
+	if fs.Parse(args) != nil {
+		return ExitOK, true
+	}
+	if *agent != "agy" {
+		return ExitOK, true
+	}
+	if title := agyTitleFromJSON(in); title != "" {
+		fmt.Fprintln(out, title)
+	}
+	return ExitOK, true
+}
+
+// agyTitleFromJSON extracts the terminal title from an Antigravity CLI
+// state JSON payload (https://antigravity.google/docs/cli/title). When
+// conversation_title is absent or empty on a valid payload, it returns
+// "Antigravity" so switching to a new untitled conversation actively
+// resets the OSC 2 title instead of keeping the previous conversation's
+// title. Invalid or empty input returns "".
+func agyTitleFromJSON(r io.Reader) string {
+	if r == nil {
+		return ""
+	}
+	b, err := io.ReadAll(io.LimitReader(r, 256<<10))
+	if err != nil {
+		return ""
+	}
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		return ""
+	}
+	var payload struct {
+		ConversationTitle string `json:"conversation_title"`
+	}
+	if json.Unmarshal(b, &payload) != nil {
+		return ""
+	}
+	if t := sanitizeTitleLine(payload.ConversationTitle); t != "" {
+		return t
+	}
+	return "Antigravity"
+}
+
+// sanitizeTitleLine turns a conversation title into a single clean line
+// safe for an OSC 2 terminal title.
+func sanitizeTitleLine(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
 }
 
 // internalSkillCmd prints the guide the stub skill tells an agent to read.

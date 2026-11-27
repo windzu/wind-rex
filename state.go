@@ -2122,6 +2122,13 @@ func (p *Pane) program() program {
 // label returns how a pane names itself: its program, or the title the
 // program set, and the directory it works in.
 func (p *Pane) label() (name, detail string) {
+	return p.labelIn("")
+}
+
+// labelIn is label with the surrounding WindRex project name ("" outside a
+// project) for programs whose untitled fallback shows project context instead
+// of a directory path (docs/DSK-012-antigravity-session-naming.md).
+func (p *Pane) labelIn(projectName string) (name, detail string) {
 	if p.note != nil {
 		name = p.Name
 		if name == "" {
@@ -2134,6 +2141,9 @@ func (p *Pane) label() (name, detail string) {
 	}
 	in := p.info
 	if p.Name != "" {
+		if isAgyInfo(in) {
+			return p.Name, ""
+		}
 		return p.Name, shortDir(in.Dir)
 	}
 	prog := programOf(in.ProgramName())
@@ -2153,6 +2163,15 @@ func (p *Pane) label() (name, detail string) {
 			name = in.Shell
 		}
 		return name, dir
+	}
+	// Antigravity CLI uses its conversation title when present, and falls back
+	// to a concise temporary label with optional project context while the full
+	// path stays in hover tooltips.
+	if isAgyInfo(in) {
+		if t := agyConversationTitle(paneRawTitle(p), in); t != "" {
+			return t, ""
+		}
+		return prog.Name, agyProjectDetail(projectName, cmp.Or(in.Dir, p.startDir))
 	}
 	// A program that is not a shell names its pane by the title it sets,
 	// even while it is the one the session started with, as a mirror of a
@@ -2249,13 +2268,33 @@ func samePath(a, b string) bool {
 
 // tabLabel names a tab: its name, or its focused pane's.
 func (t *Tab) label() (name, detail string) {
+	return t.labelIn("")
+}
+
+// labelIn names a tab inside projectName ("" outside a project).
+func (t *Tab) labelIn(projectName string) (name, detail string) {
 	if t.Name != "" {
 		return t.Name, ""
 	}
 	if t.Focus == nil {
 		return "Shell", ""
 	}
-	return t.Focus.label()
+	return t.Focus.labelIn(projectName)
+}
+
+func (a *App) projectName() string {
+	if a.ws != nil && a.ws.Dir != "" {
+		return a.ws.Name
+	}
+	return ""
+}
+
+func (a *App) tabLabel(t *Tab) (name, detail string) {
+	return t.labelIn(a.projectName())
+}
+
+func (a *App) tabTooltip(t *Tab) string {
+	return tabTooltip(t, a.projectName())
 }
 
 // The saved layout: the tabs, their splits and the sessions of their
@@ -2742,6 +2781,9 @@ func (a *App) take(h *hostConn, byID map[string]rex.SessionInfo) {
 			}
 			was := p.info
 			p.info = in
+			if was.Title != in.Title && p.title == was.Title {
+				p.title = in.Title
+			}
 			// A strip naming what the pane ran has served its purpose once
 			// something runs there again.
 			if p.resume != nil && !in.Idle {

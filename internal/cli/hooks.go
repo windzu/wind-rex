@@ -422,3 +422,111 @@ func existingPaneNaming(selected []agentInfo) bool {
 	}
 	return false
 }
+
+// titleCommand is what an agent's terminal title command runs. Antigravity
+// CLI already executes title.command via sh -c (cmd /c on Windows), so no
+// outer shell wrapper is needed. The trailing marker lets status and remove
+// recognize our entry without touching a user-configured title command.
+func titleCommand(agent string) string {
+	name := "__internal title --agent " + agent
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("gorex %s 2>nul & rem # gorex", name)
+	}
+	return fmt.Sprintf("gorex %s 2>/dev/null || true # gorex", name)
+}
+
+func isOurTitleCommand(cmd, agent string) bool {
+	return strings.Contains(cmd, "# gorex") && strings.Contains(cmd, "__internal title --agent "+agent)
+}
+
+// titleState tells whether the agent's terminal title command is installed,
+// current, custom (owned by the user), missing or in conflict.
+func titleState(path, agent string) (string, error) {
+	root, created, err := readObject(path)
+	if err != nil {
+		return "conflict", err
+	}
+	if !created {
+		return "missing", nil
+	}
+	raw, exists := root["title"]
+	if !exists {
+		return "missing", nil
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return "conflict", errors.New("title is not a JSON object")
+	}
+	cmd, _ := obj["command"].(string)
+	if !isOurTitleCommand(cmd, agent) {
+		return "custom", nil
+	}
+	enabled, hasEnabled := obj["enabled"].(bool)
+	typ, _ := obj["type"].(string)
+	if cmd == titleCommand(agent) && (typ == "" || typ == "command") && (!hasEnabled || enabled) {
+		return "installed", nil
+	}
+	return "outdated", nil
+}
+
+// setTitle adds, replaces or removes GoRex's terminal title command in an
+// agent's settings.json, leaving user-configured title commands and every
+// other setting untouched.
+func setTitle(path, agent string, install, dry bool) (change, reason string, err error) {
+	root, created, err := readObject(path)
+	if err != nil {
+		return "conflict", "", err
+	}
+	want := titleCommand(agent)
+	raw, exists := root["title"]
+	if exists {
+		obj, ok := raw.(map[string]any)
+		if !ok {
+			return "conflict", "", errors.New("title is not a JSON object")
+		}
+		cmd, _ := obj["command"].(string)
+		if !isOurTitleCommand(cmd, agent) {
+			if install {
+				return "skipped", "existing user title command kept", nil
+			}
+			return "absent", "", nil
+		}
+		if install {
+			enabled, hasEnabled := obj["enabled"].(bool)
+			typ, _ := obj["type"].(string)
+			if cmd == want && (typ == "" || typ == "command") && (!hasEnabled || enabled) {
+				return "unchanged", "", nil
+			}
+			if dry {
+				return "would replace", "", nil
+			}
+			root["title"] = map[string]any{"type": "command", "command": want}
+			if err := writeObject(path, root); err != nil {
+				return "failed", "", err
+			}
+			return "replaced", "", nil
+		}
+		if dry {
+			return "would remove", "", nil
+		}
+		delete(root, "title")
+		if !created {
+			return "removed", "", nil
+		}
+		if err := writeObject(path, root); err != nil {
+			return "failed", "", err
+		}
+		return "removed", "", nil
+	}
+	if !install {
+		return "absent", "", nil
+	}
+	if dry {
+		return "would create", "", nil
+	}
+	root["title"] = map[string]any{"type": "command", "command": want}
+	if err := writeObject(path, root); err != nil {
+		return "failed", "", err
+	}
+	return "created", "", nil
+}
