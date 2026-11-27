@@ -861,6 +861,101 @@ func TestWorkspaceStatus(t *testing.T) {
 	}
 }
 
+func TestWorkspaceWorkingStatus(t *testing.T) {
+	a, _ := newTestApp(t)
+	now := time.Now()
+	work1 := rex.ProgramStatus{ID: "w1", App: "claude-code", State: "working", Updated: now}
+	work2 := rex.ProgramStatus{ID: "w2", App: "codex", State: "working", Updated: now.Add(time.Second)}
+	blocked := rex.ProgramStatus{ID: "b1", App: "claude-code", State: "blocked", Kind: "permission", Updated: now.Add(2 * time.Second)}
+	done := rex.ProgramStatus{ID: "w2", App: "codex", State: "done", Updated: now.Add(3 * time.Second)}
+
+	// Shown workspace: 2 working tabs -> 1 finishes -> last finishes.
+	p1 := a.tab().Focus
+	t2 := a.newTab(os.TempDir())
+	p2 := t2.Focus
+	p1.info.Statuses = []rex.ProgramStatus{work1}
+	p2.info.Statuses = []rex.ProgramStatus{work2}
+	if s := a.st.workingStatus(a.ws); s == nil || s.ID != "w2" {
+		t.Fatalf("two working tabs: got %+v, want w2", s)
+	}
+	// First finishes (unseen done) while second keeps working: both status and workingStatus surface.
+	p2.info.Statuses = []rex.ProgramStatus{done}
+	if s := a.st.workingStatus(a.ws); s == nil || s.ID != "w1" {
+		t.Fatalf("one remaining working tab: got %+v, want w1", s)
+	}
+	if s := a.st.status(a.ws); s == nil || s.State != "done" {
+		t.Fatalf("done status alongside working: got %+v, want done", s)
+	}
+	// Simultaneous blocked and working on separate tabs and on one pane.
+	p2.info.Statuses = []rex.ProgramStatus{blocked}
+	if s := a.st.status(a.ws); s == nil || s.State != "blocked" {
+		t.Fatalf("blocked status: got %+v", s)
+	}
+	if s := a.st.workingStatus(a.ws); s == nil || s.ID != "w1" {
+		t.Fatalf("working alongside blocked: got %+v, want w1", s)
+	}
+	p1.info.Statuses = []rex.ProgramStatus{blocked, work1}
+	p2.info.Statuses = nil
+	if s := a.st.status(a.ws); s == nil || s.State != "blocked" {
+		t.Fatalf("single-pane blocked status: got %+v", s)
+	}
+	if s := a.st.workingStatus(a.ws); s == nil || s.ID != "w1" {
+		t.Fatalf("single-pane working alongside blocked: got %+v, want w1", s)
+	}
+	// Last working session finishes -> nil immediately.
+	p1.info.Statuses = []rex.ProgramStatus{blocked}
+	if s := a.st.workingStatus(a.ws); s != nil {
+		t.Fatalf("working after last finished: got %+v, want nil", s)
+	}
+
+	// Hidden local workspace: aggregates across saved tabs and respects remote offline state.
+	w := a.st.newTestSpace()
+	w.layout = savedLayout{Tabs: []savedTab{
+		{Root: &savedNode{SID: "s1"}},
+		{Root: &savedNode{SID: "s2"}},
+	}}
+	a.st.infos = map[string]rex.SessionInfo{
+		"s1": {ID: "s1", Statuses: []rex.ProgramStatus{work1}},
+		"s2": {ID: "s2", Statuses: []rex.ProgramStatus{work2}},
+	}
+	if s := a.st.workingStatus(w); s == nil || s.ID != "w2" {
+		t.Fatalf("hidden two working: got %+v, want w2", s)
+	}
+	a.st.infos["s2"] = rex.SessionInfo{ID: "s2", Statuses: []rex.ProgramStatus{blocked}}
+	if s := a.st.status(w); s == nil || s.State != "blocked" {
+		t.Fatalf("hidden blocked: got %+v", s)
+	}
+	if s := a.st.workingStatus(w); s == nil || s.ID != "w1" {
+		t.Fatalf("hidden working alongside blocked: got %+v, want w1", s)
+	}
+	a.st.infos["s1"] = rex.SessionInfo{ID: "s1"}
+	if s := a.st.workingStatus(w); s != nil {
+		t.Fatalf("hidden after last finished: got %+v, want nil", s)
+	}
+
+	// Hidden remote workspace: connected reports working, offline clears it.
+	remote := &hostConn{
+		savedHost: savedHost{ID: "h1", Name: "alice-laptop"},
+		state:     hostConnected,
+		infos:     map[string]rex.SessionInfo{"r1": {ID: "r1", Statuses: []rex.ProgramStatus{work1}}},
+	}
+	a.st.hosts = append(a.st.hosts, remote)
+	rw := &Workspace{
+		ID:     "rw",
+		Name:   "remote-api",
+		Dir:    "/srv/api",
+		host:   remote,
+		layout: savedLayout{Tabs: []savedTab{{Root: &savedNode{SID: "r1", Host: "h1"}}}},
+	}
+	if s := a.st.workingStatus(rw); s == nil || s.ID != "w1" {
+		t.Fatalf("connected remote working: got %+v, want w1", s)
+	}
+	remote.state = hostFailed
+	if s := a.st.workingStatus(rw); s != nil {
+		t.Fatalf("offline remote working: got %+v, want nil", s)
+	}
+}
+
 func TestStatusEvents(t *testing.T) {
 	p := &Pane{SID: "s1", info: rex.SessionInfo{Program: "claude", Dir: "/tmp"}}
 	ev := statusEvents(p, nil, []rex.ProgramStatus{{ID: "a", State: "blocked", Kind: "question", Title: "T", Progress: 40}})

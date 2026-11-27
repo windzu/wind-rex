@@ -1630,3 +1630,195 @@ func TestSidebarHostHeaderStatusDot(t *testing.T) {
 		t.Errorf("reconnected remote host header ALICE-LAPTOP has no green status dot beside its name")
 	}
 }
+
+// TestCollapsedProjectWorkingDots verifies Issue #62:
+//  1. A collapsed project with a working session shows the 3-dot working
+//     indicator at the trailing end of its project row (in Grouped and Compact
+//     layouts, and whether the project is hidden or currently shown).
+//  2. With 2 working sessions, finishing 1 keeps the indicator on the collapsed
+//     project row; finishing the last clears it immediately.
+//  3. Simultaneous working + needs-attention (blocked/error) surface both
+//     indicators cleanly on the collapsed project row; expanding the project
+//     leaves working indicators on each individual tab row without duplicating
+//     them on the project header.
+func TestCollapsedProjectWorkingDots(t *testing.T) {
+	a, tt := newTestApp(t)
+	old := prefs
+	t.Cleanup(func() { prefs = old })
+	prefs = settings{TabPlacement: "left", Animation: "off"}
+
+	now := time.Now()
+	work1 := rex.ProgramStatus{ID: "w1", App: "claude-code", State: "working", Progress: -1, Updated: now}
+	work2 := rex.ProgramStatus{ID: "w2", App: "codex", State: "working", Progress: -1, Updated: now.Add(time.Second)}
+	blocked := rex.ProgramStatus{ID: "b1", App: "claude-code", State: "blocked", Kind: "permission", Progress: -1, Updated: now.Add(2 * time.Second)}
+	errStatus := rex.ProgramStatus{ID: "e1", App: "cargo", State: "error", Progress: -1, Updated: now.Add(3 * time.Second)}
+
+	// Hidden project with 2 tabs, collapsed.
+	w := a.st.newTestSpace()
+	w.Name = "acme-api"
+	w.Dir = appTempDir(t, a)
+	w.layout = savedLayout{Tabs: []savedTab{
+		{ID: "t1", Name: "agent-one", Root: &savedNode{SID: "sid-1"}},
+		{ID: "t2", Name: "agent-two", Root: &savedNode{SID: "sid-2"}},
+	}}
+	key := openKey(nil, w.ID)
+	setRowOpen(key, false)
+
+	rowLabel := func() string { return w.Name + spacedComma(workspaceDetail(w, a, w.tabCount())) }
+	inRow := func(r, row ui.Rect) bool { return r.Y >= row.Y && r.Y+r.H <= row.Y+row.H }
+	countLabel := func(label string) int {
+		n := 0
+		for _, s := range tt.Texts() {
+			if s == label {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Scenario 1 + 2: 2 working sessions inside collapsed project -> 1 finishes -> last finishes.
+	a.st.infos = map[string]rex.SessionInfo{
+		"sid-1": {ID: "sid-1", Statuses: []rex.ProgramStatus{work1}},
+		"sid-2": {ID: "sid-2", Statuses: []rex.ProgramStatus{work2}},
+	}
+	tt.Frame()
+	row, ok := tt.Find(rowLabel())
+	if !ok {
+		t.Fatalf("collapsed project row missing: %q", tt.Texts())
+	}
+	nameRect, ok := tt.Find(w.Name)
+	if !ok {
+		t.Fatalf("collapsed project name missing: %q", tt.Texts())
+	}
+	foldRect, ok := tt.Find(locales.ProjectsTabsOf(w.Name))
+	if !ok {
+		t.Fatalf("collapsed project chevron missing: %q", tt.Texts())
+	}
+	dot2, ok := tt.Find(statusTip(&work2))
+	if !ok || !inRow(dot2, row) {
+		t.Fatalf("collapsed project with 2 working sessions: dots %+v (ok=%v), row %+v", dot2, ok, row)
+	}
+	if dot2.X < nameRect.X+nameRect.W || dot2.X+dot2.W > foldRect.X {
+		t.Errorf("working dots not at trailing end before chevron: name %+v, dots %+v, chevron %+v", nameRect, dot2, foldRect)
+	}
+
+	// First working session finishes -> collapsed row still shows remaining working session.
+	a.st.infos["sid-2"] = rex.SessionInfo{ID: "sid-2"}
+	tt.Frame()
+	dot1, ok := tt.Find(statusTip(&work1))
+	if !ok || !inRow(dot1, row) {
+		t.Fatalf("after 1 of 2 finishes, collapsed project lost working indicator: dots %+v (ok=%v), row %+v", dot1, ok, row)
+	}
+
+	// Last working session finishes -> collapsed row updates immediately.
+	a.st.infos["sid-1"] = rex.SessionInfo{ID: "sid-1"}
+	tt.Frame()
+	if _, ok := tt.Find(statusTip(&work1)); ok {
+		t.Fatalf("working indicator remained after last session finished: %q", tt.Texts())
+	}
+
+	// Scenario 3a: Collapsed project with simultaneous working + blocked (needs confirmation).
+	a.st.infos["sid-1"] = rex.SessionInfo{ID: "sid-1", Statuses: []rex.ProgramStatus{work1}}
+	a.st.infos["sid-2"] = rex.SessionInfo{ID: "sid-2", Statuses: []rex.ProgramStatus{blocked}}
+	tt.Frame()
+	row, _ = tt.Find(rowLabel())
+	workRect, okW := tt.Find(statusTip(&work1))
+	blockRect, okB := tt.Find(statusTip(&blocked))
+	if !okW || !okB {
+		t.Fatalf("simultaneous working+blocked missing on collapsed project: work=%v blocked=%v texts=%q", okW, okB, tt.Texts())
+	}
+	if !inRow(workRect, row) || !inRow(blockRect, row) {
+		t.Fatalf("indicators outside collapsed project row: work=%+v blocked=%+v row=%+v", workRect, blockRect, row)
+	}
+	if workRect.X+workRect.W >= blockRect.X {
+		t.Errorf("working dots and blocked dot overlap or are misordered: work=%+v blocked=%+v", workRect, blockRect)
+	}
+	if workRect.W == blockRect.W {
+		t.Errorf("working dots (%v wide) and blocked dot (%v wide) should have distinct geometry", workRect.W, blockRect.W)
+	}
+
+	// Also verify simultaneous working + error on collapsed project.
+	a.st.infos["sid-2"] = rex.SessionInfo{ID: "sid-2", Statuses: []rex.ProgramStatus{errStatus}}
+	tt.Frame()
+	if _, ok := tt.Find(statusTip(&work1)); !ok {
+		t.Fatalf("working indicator missing alongside error on collapsed project")
+	}
+	if _, ok := tt.Find(statusTip(&errStatus)); !ok {
+		t.Fatalf("error indicator missing alongside working on collapsed project")
+	}
+
+	// Scenario 3b: Expanded project shows per-session states and does not duplicate working dots on project header.
+	a.st.infos["sid-2"] = rex.SessionInfo{ID: "sid-2", Statuses: []rex.ProgramStatus{blocked}}
+	setRowOpen(key, true)
+	tt.Frame()
+	if got := countLabel(statusTip(&work1)); got != 1 {
+		t.Fatalf("expanded project working dots count = %d, want 1 (tab row only): %q", got, tt.Texts())
+	}
+	row, _ = tt.Find(rowLabel())
+	tab1Row, ok1 := tt.Find("agent-one ")
+	tab2Row, ok2 := tt.Find("agent-two ")
+	if !ok1 || !ok2 || tab2Row.Y <= tab1Row.Y {
+		t.Fatalf("expanded tab rows missing or misordered: tab1=%+v (%v) tab2=%+v (%v) texts=%q", tab1Row, ok1, tab2Row, ok2, tt.Texts())
+	}
+	workRect, _ = tt.Find(statusTip(&work1))
+	if !inRow(workRect, tab1Row) || inRow(workRect, row) {
+		t.Errorf("expanded working dots should be on tab1 row, not project row: work=%+v tab1=%+v project=%+v", workRect, tab1Row, row)
+	}
+	if got := countLabel(statusTip(&blocked)); got != 2 {
+		t.Errorf("expanded blocked dot count = %d, want 2 (project header + tab2): %q", got, tt.Texts())
+	}
+
+	// Compact layout: collapsed project also shows working + blocked cleanly.
+	prefs.SidebarLayout = sidebarCompact
+	setRowOpen(key, false)
+	tt.Frame()
+	row, ok = tt.Find(rowLabel())
+	if !ok {
+		t.Fatalf("compact collapsed project row missing: %q", tt.Texts())
+	}
+	if r, ok := tt.Find(statusTip(&work1)); !ok || !inRow(r, row) {
+		t.Errorf("compact collapsed project missing working dots: %+v (ok=%v) row=%+v", r, ok, row)
+	}
+	if r, ok := tt.Find(statusTip(&blocked)); !ok || !inRow(r, row) {
+		t.Errorf("compact collapsed project missing blocked dot: %+v (ok=%v) row=%+v", r, ok, row)
+	}
+	prefs.SidebarLayout = ""
+
+	// Currently shown workspace collapsed: updates immediately via pollRound.
+	p1 := a.tab().Focus
+	t2 := a.newTab(os.TempDir())
+	p2 := t2.Focus
+	activeKey := openKey(nil, a.ws.ID)
+	setRowOpen(activeKey, false)
+	a.st.infos = map[string]rex.SessionInfo{
+		p1.SID: {ID: p1.SID, Statuses: []rex.ProgramStatus{work1}},
+		p2.SID: {ID: p2.SID, Statuses: []rex.ProgramStatus{work2}},
+	}
+	a.st.pollRound(true)
+	tt.Frame()
+	activeName := a.ws.Name
+	if a.ws.Dir == "" {
+		activeName = locales.ProjectsNoProject()
+	}
+	activeRow, ok := tt.Find(activeName + spacedComma(workspaceDetail(a.ws, a, a.ws.tabCount())))
+	if !ok {
+		t.Fatalf("collapsed active project row missing: %q", tt.Texts())
+	}
+	if r, ok := tt.Find(statusTip(&work2)); !ok || !inRow(r, activeRow) {
+		t.Fatalf("collapsed active project missing working dots: %+v (ok=%v) row=%+v", r, ok, activeRow)
+	}
+	// Finish 1 of 2 via pollRound -> still shows work1.
+	a.st.infos[p2.SID] = rex.SessionInfo{ID: p2.SID}
+	a.st.pollRound(true)
+	tt.Frame()
+	if r, ok := tt.Find(statusTip(&work1)); !ok || !inRow(r, activeRow) {
+		t.Fatalf("collapsed active project lost working dots with 1 remaining: %+v (ok=%v)", r, ok)
+	}
+	// Finish last via pollRound -> clears immediately.
+	a.st.infos[p1.SID] = rex.SessionInfo{ID: p1.SID}
+	a.st.pollRound(true)
+	tt.Frame()
+	if _, ok := tt.Find(statusTip(&work1)); ok {
+		t.Fatalf("collapsed active project kept working dots after last finished")
+	}
+}

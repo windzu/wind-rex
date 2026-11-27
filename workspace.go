@@ -100,6 +100,41 @@ func (st *store) status(w *Workspace) *rex.ProgramStatus {
 	return rex.MostUrgent(all, time.Time{})
 }
 
+// workingStatus is the latest working status across the workspace's
+// sessions, from the window that shows it or, hidden, from the last
+// session list; nil when no session is working.
+func (st *store) workingStatus(w *Workspace) *rex.ProgramStatus {
+	if w == nil {
+		return nil
+	}
+	var all []rex.ProgramStatus
+	collect := func(rs []rex.ProgramStatus) {
+		for _, r := range rs {
+			if r.State == "working" {
+				all = append(all, r)
+			}
+		}
+	}
+	if w.app != nil {
+		for _, t := range w.app.tabs {
+			for _, p := range t.allPanes() {
+				collect(p.info.Statuses)
+			}
+		}
+		return rex.MostUrgent(all, time.Time{})
+	}
+	st.eachHost(func(h *hostConn) {
+		infos, id, ok := st.listOf(h)
+		if !ok {
+			return
+		}
+		st.visitSIDs(w, id, func(sid string) {
+			collect(infos[sid].Statuses)
+		})
+	})
+	return rex.MostUrgent(all, time.Time{})
+}
+
 // eachHost calls fn with this machine, nil, then each host.
 func (st *store) eachHost(fn func(h *hostConn)) {
 	fn(nil)
