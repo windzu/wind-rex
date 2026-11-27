@@ -318,6 +318,11 @@ func (a *App) projectRow(c *ui.Context, k *colors, w *Workspace, reserve float32
 				weight = 600
 			}
 			ui.Text(c, name).FontSize(sidebarFont(fontBody)).FontWeight(weight).TextColor(ck.text.Alpha(0.85)).SingleLine().Ellipsis("…").Grow(1).MinWidth(0)
+			if !open && !offline && n > 0 {
+				if work := a.st.workingStatus(w); work != nil {
+					statusDot(c, ck, work, 7).Label(statusTip(work))
+				}
+			}
 			if s := a.st.status(w); needsUser(s) {
 				statusDot(c, ck, s, 7).Label(statusTip(s))
 			}
