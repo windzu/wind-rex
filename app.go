@@ -200,6 +200,10 @@ type App struct {
 	preview *linkPreview
 	// openURLHook overrides Services.OpenURL in unit tests without a UI tester.
 	openURLHook func(string)
+	// Archived tabs dialog state (docs/DSK-013-archive-tabs.md).
+	archiveOpen      bool
+	archiveQuery     string
+	archiveDeleteKey string
 }
 
 func (a *App) post(fn func()) {

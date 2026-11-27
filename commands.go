@@ -344,6 +344,8 @@ var (
 	}
 	cmdClosePane    = command{ID: "pane.close", Name: locales.Messages.CmdClosePane, Accel: "CmdOrCtrl+W", Keys: "⌘W", Other: ctrlShift(ui.KeyW), Run: func(a *App) { a.closeFocused() }}
 	cmdPaneToNewTab = command{ID: "pane.to_new_tab", Name: locales.Messages.CmdPaneToNewTab, Run: func(a *App) { a.paneToNewTab() }}
+	cmdArchiveTab   = command{ID: "tab.archive", Name: locales.Messages.CmdArchiveTab, Run: func(a *App) { a.archiveActiveTab() }, Available: func(a *App) bool { return a.canArchiveTab(a.tab()) }}
+	cmdArchivedTabs = command{ID: "tab.archived", Name: locales.Messages.CmdArchivedTabs, Run: func(a *App) { a.openArchiveDialog() }, Available: func(a *App) bool { return a.st != nil }}
 	cmdCloseTab     = command{ID: "tab.close", Name: locales.Messages.CmdCloseTab, Accel: "CmdOrCtrl+Shift+W", Keys: "⇧⌘W", Run: func(a *App) { a.closeActiveTab() }}
 	cmdZoom         = command{
 		ID: "pane.zoom", Name: locales.Messages.CmdZoomPane, Accel: "CmdOrCtrl+Shift+Enter", Keys: "⇧⌘↩", Other: ctrlShift(ui.KeyEnter),
@@ -718,7 +720,7 @@ func (cmd *command) English() string { return cmd.Name(locales.In("en")) }
 
 // paletteCommands are those the command palette lists, before the tabs.
 var paletteCommands = []*command{
-	&cmdNewTab, &cmdNewNote, &cmdSplitRight, &cmdSplitDown, &cmdSplitNote, &cmdNotePreview, &cmdZoom, &cmdEqualize, &cmdResetCanvas, &cmdPaneToNewTab, &cmdClosePane, &cmdCloseTab,
+	&cmdNewTab, &cmdNewNote, &cmdSplitRight, &cmdSplitDown, &cmdSplitNote, &cmdNotePreview, &cmdZoom, &cmdEqualize, &cmdResetCanvas, &cmdPaneToNewTab, &cmdClosePane, &cmdArchiveTab, &cmdArchivedTabs, &cmdCloseTab,
 	&cmdFloatPane, &cmdNewFloat, &cmdToggleFloat, &cmdHideFloats, &cmdFloatState, &cmdRaiseFloat, &cmdLowerFloat, &cmdCycleFloat,
 	&cmdFloatMove, &cmdFloatResize, &cmdMoveFloatLeft, &cmdMoveFloatRight, &cmdMoveFloatUp, &cmdMoveFloatDown,
 	&cmdNextTab, &cmdPrevTab, &cmdJumpNeedy, &cmdNeeds, &cmdRenameTab, &cmdSidebar,

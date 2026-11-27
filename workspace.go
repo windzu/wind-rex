@@ -40,9 +40,11 @@ type Workspace struct {
 	// machine's: its tabs and panes live there (hostlayout.go).
 	host *hostConn
 	// layout is its tabs while no window shows it; app is the window that
-	// shows it, whose tabs are then its own.
-	layout savedLayout
-	app    *App
+	// shows it, whose tabs are then its own. archived holds the host's
+	// archived tabs of this workspace so serverLayout keeps them intact.
+	layout   savedLayout
+	archived []savedTab
+	app      *App
 	// kept are the live tabs of the window that last showed it, which
 	// shows them again as they were; nil when none.
 	kept *keptTabs
@@ -300,6 +302,10 @@ type store struct {
 	// adoptRefused are the adoptions a host refused, by ID: they go to it
 	// again once it connects anew (retryAdoptions).
 	adoptRefused map[string]*hostConn
+	// archived holds desktop-archived tabs persisted in archived.json
+	// (docs/DSK-013-archive-tabs.md).
+	archived       []archivedEntry
+	archivedLoaded bool
 }
 
 // The layout the server keeps, opaque to it: every workspace, and which
@@ -316,7 +322,7 @@ func (st *store) saved() savedStore {
 		if w.host != nil {
 			continue
 		}
-		l := w.savedLayout()
+		l := w.serverLayout(st.base.Space(w.ID))
 		s.Sessions = append(s.Sessions, savedWorkspace{ID: w.ID, Name: w.Name, Color: w.Color, Dir: w.Dir, Space: w.Space, Used: w.Used, Launchers: cloneStringSlicePtr(w.Launchers), Layout: l})
 		if len(s.Windows) > 0 && w.ID == s.Windows[0] {
 			s.Layout = l
@@ -618,18 +624,22 @@ func (st *store) reconcileOn(h *hostConn, s savedStore) {
 			w = &Workspace{ID: sw.ID, host: h}
 		}
 		w.Name, w.Color, w.Dir, w.Space, w.Used, w.Launchers = sw.Name, sw.Color, sw.Dir, sw.Space, sw.Used, cloneStringSlicePtr(sw.Launchers)
+		vis, arch := st.splitArchived(h, w, sw.Layout)
+		w.archived = arch
 		if a := w.app; a != nil {
-			if !a.reconcile(sw.Layout) {
-				// Emptied by another client: the space stays, as Rex
-				// keeps a session of no windows, and the window goes on.
-				a.leave()
-				homeless = append(homeless, a)
+			if !a.reconcile(vis) {
+				// Keep the window open on emptyNoTab when tabs remain archived
+				// rather than closing the window; otherwise behave as before.
+				if len(arch) == 0 && len(st.archived) == 0 {
+					a.leave()
+					homeless = append(homeless, a)
+				}
 			}
 		} else {
-			if w.kept != nil && !sameLayout(w.layout, sw.Layout) {
+			if w.kept != nil && !sameLayout(w.layout, vis) {
 				w.unkeep()
 			}
-			w.layout = sw.Layout
+			w.layout = vis
 		}
 		mine = append(mine, w)
 	}
@@ -745,10 +755,13 @@ func (st *store) read() ([]byte, error) {
 // loaded takes the workspaces of layout raw, and returns those of the
 // windows open last.
 func (st *store) loaded(raw []byte) []*Workspace {
+	st.loadArchived()
 	s := layout.Parse(raw)
 	var mine []*Workspace
 	for _, sw := range s.Sessions {
-		mine = append(mine, &Workspace{ID: sw.ID, Name: sw.Name, Color: sw.Color, Dir: sw.Dir, Space: sw.Space, Used: sw.Used, Launchers: cloneStringSlicePtr(sw.Launchers), layout: sw.Layout})
+		w := &Workspace{ID: sw.ID, Name: sw.Name, Color: sw.Color, Dir: sw.Dir, Space: sw.Space, Used: sw.Used, Launchers: cloneStringSlicePtr(sw.Launchers)}
+		w.layout, w.archived = st.splitArchived(nil, w, sw.Layout)
+		mine = append(mine, w)
 	}
 	// The hosts' workspaces stay, after this machine's.
 	st.workspaces = append(mine, slices.DeleteFunc(st.workspaces, func(w *Workspace) bool { return w.host == nil })...)
@@ -1160,6 +1173,7 @@ func (st *store) start() {
 		return
 	}
 	st.started = true
+	st.loadArchived()
 	if !st.connect() {
 		return
 	}
@@ -1372,7 +1386,7 @@ func (a *App) show(w *Workspace) {
 	case a.reconcile(w.layout):
 	case w.offline():
 		// A host's copy, while it is away: nothing opens there.
-	case w.Dir == "":
+	case w.Dir == "" && len(w.archived) == 0:
 		// The tabs with no project open one at home.
 		a.newTabOn(w.host, a.homeOf(w.host))
 	}
@@ -1531,6 +1545,7 @@ func (a *App) closeWorkspace() {
 		}
 	}
 	a.tabs = nil
+	st.dropWorkspaceArchived(w)
 	next := st.freeAfter(w)
 	st.remove(w)
 	a.detach()

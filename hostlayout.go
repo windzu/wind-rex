@@ -210,7 +210,7 @@ func (st *store) savedOn(h *hostConn) savedStore {
 	s := savedStore{Version: layout.Version, Sessions: []savedWorkspace{}, Windows: base.Windows, Spaces: base.Spaces}
 	for _, w := range st.workspaces {
 		if w.host == h {
-			s.Sessions = append(s.Sessions, savedWorkspace{ID: w.ID, Name: w.Name, Color: w.Color, Dir: w.Dir, Space: w.Space, Used: w.Used, Launchers: cloneStringSlicePtr(w.Launchers), Layout: w.savedLayout()})
+			s.Sessions = append(s.Sessions, savedWorkspace{ID: w.ID, Name: w.Name, Color: w.Color, Dir: w.Dir, Space: w.Space, Used: w.Used, Launchers: cloneStringSlicePtr(w.Launchers), Layout: w.serverLayout(base.Space(w.ID))})
 		}
 	}
 	return s
@@ -441,7 +441,8 @@ func (st *store) workspaceOfTab(h *hostConn, id string) *Workspace {
 		if w.host != h || id == "" {
 			continue
 		}
-		if slices.ContainsFunc(w.savedLayout().Tabs, func(t savedTab) bool { return t.ID == id }) {
+		if slices.ContainsFunc(w.savedLayout().Tabs, func(t savedTab) bool { return t.ID == id }) ||
+			slices.ContainsFunc(w.archived, func(t savedTab) bool { return t.ID == id }) {
 			return w
 		}
 	}

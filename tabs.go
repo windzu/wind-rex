@@ -221,14 +221,14 @@ func (a *App) tabItem(c *ui.Context, k *colors, i int, t *Tab, width float32, sq
 		if h := t.host(); h != nil {
 			hostBadge(c, k, h)
 		}
-		a.tabRest(c, k, t, active, hovered, false)
+		a.tabRest(c, k, t, active, hovered, false, false)
 	})
 	return e
 }
 
 // tabRest draws a tab after its tiles: its label and its end, or the field
 // that renames it.
-func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered, compact bool) {
+func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered, compact, inSidebar bool) {
 	name, detail := a.tabLabel(t)
 	if a.renaming == t {
 		a.renameField(c, k, t, name)
@@ -252,7 +252,7 @@ func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered, compact
 	if dragged, over := ui.DragOver[*Pane](label); over && (t.Root == nil || dragged.host == t.host()) {
 		label.Border(1.5, k.busy.Alpha(0.6))
 	}
-	a.tabEnd(c, k, t, hovered)
+	a.tabEnd(c, k, t, hovered, inSidebar)
 }
 
 // tabMotion is where a tab comes from as it opens, and goes as it closes:
@@ -367,16 +367,29 @@ func tabsCanMerge(src, dst *Tab) bool {
 	return len(dst.panes()) == 0 || src.host() == dst.host()
 }
 
-// tabEnd draws the end of a tab: its close button while hovered, else the
-// dot of its record, or of its attention.
-func (a *App) tabEnd(c *ui.Context, k *colors, t *Tab, hovered bool) {
-	// The button stays while it asks before closing, which it anchors.
-	if asking := a.asking(t, nil); hovered && len(a.tabs) > 1 || asking {
-		x := iconButton(c, k, "x", locales.CmdCloseTab(), 18, 12).Tooltip(locales.CmdCloseTab())
-		if x.Clicked() {
-			a.later(c, func() { a.askCloseTab(t) })
-		}
-		a.closeConfirm(c, k, x, t, nil)
+// tabEnd draws the end of a tab: its archive/close buttons while hovered, else
+// the dot of its record, or of its attention.
+func (a *App) tabEnd(c *ui.Context, k *colors, t *Tab, hovered, inSidebar bool) {
+	// The close button stays while it asks before closing, which it anchors.
+	asking := a.asking(t, nil)
+	showArchive := inSidebar && hovered && a.canArchiveTab(t)
+	showClose := hovered && len(a.tabs) > 1 || asking
+	if showArchive || showClose {
+		ui.Row(c).Gap(2).AlignItems(ui.Center).Shrink(0).Children(func() {
+			if showArchive {
+				arch := iconButton(c.Key("archive"), k, "archive", locales.CmdArchiveTab(), 18, 12).Tooltip(locales.CmdArchiveTab())
+				if arch.Clicked() {
+					a.later(c, func() { a.archiveTab(t) })
+				}
+			}
+			if showClose {
+				x := iconButton(c.Key("close"), k, "x", locales.CmdCloseTab(), 18, 12).Tooltip(locales.CmdCloseTab())
+				if x.Clicked() {
+					a.later(c, func() { a.askCloseTab(t) })
+				}
+				a.closeConfirm(c, k, x, t, nil)
+			}
+		})
 	} else if s := t.status(); needsUser(s) {
 		statusDot(c, k, s, 5.5).Margin(0, 6, 0, 0)
 	} else if t.attention() {
@@ -481,6 +494,9 @@ func (a *App) tabMenu(m *ui.Menu, t *Tab) {
 	}
 	if m.Item(locales.CmdNewTab()).Shortcut(mods, key).Chosen() {
 		a.newProjectTab()
+	}
+	if a.canArchiveTab(t) && m.Item(locales.CmdArchiveTab()).Chosen() {
+		a.laterService(func() { a.archiveTab(t) })
 	}
 	if m.Item(locales.CmdCloseTab()).Chosen() {
 		a.laterService(func() { a.askCloseTab(t) })

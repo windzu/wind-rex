@@ -642,5 +642,22 @@
   "previewRemoteFailedTitle": "远程文件传输失败",
   "previewRemoteUnsupported": "{host} 暂不支持文件传输。请更新该主机上的 WindRex 后再预览或下载文件。",
   "previewRemoteOffline": "{host} 未连接。重新连接后再预览或下载此文件。",
-  "previewLineBadge": "第 {line} 行"
+  "previewLineBadge": "第 {line} 行",
+  "cmdArchiveTab": "归档标签页",
+  "cmdArchivedTabs": "已归档会话…",
+  "sidebarArchived": "已归档",
+  "sidebarArchivedCount": "已归档 ({count})",
+  "archiveDialogTitle": "已归档",
+  "archiveClose": "关闭",
+  "archiveSearchPlaceholder": "搜索已归档会话…",
+  "archiveEmpty": "暂无已归档会话",
+  "archiveEmptyHint": "在侧边栏悬停会话行或右键标签页即可归档，终端进程会继续运行。",
+  "archiveNoMatches": "没有匹配「{query}」的已归档会话",
+  "archivePaneCount": "{count} 个分屏",
+  "archiveStatusLive": "仍在主机运行",
+  "archiveStatusExited": "已退出",
+  "archiveRestore": "恢复",
+  "archiveRestoreOffline": "主机已离线",
+  "archiveDelete": "永久删除",
+  "archiveDeleteConfirm": "结束并删除"
 }

@@ -214,6 +214,21 @@ func (st *store) debug(dir, line string) {
 				a.askCloseOthers(t)
 			}
 		})
+	case "archive": // [open|close|restore]: archives the active tab, opens/closes the Archived dialog, or restores the newest archived tab
+		debugMain(func() {
+			switch arg {
+			case "open":
+				a.openArchiveDialog()
+			case "close":
+				a.archiveOpen = false
+			case "restore":
+				if entries := st.archivedEntries(); len(entries) > 0 {
+					a.restoreArchivedTab(entries[0].Host, entries[0].ID)
+				}
+			default:
+				a.archiveActiveTab()
+			}
+		})
 	default:
 		a.debug(dir, line)
 	}
