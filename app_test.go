@@ -379,7 +379,7 @@ func TestLabels(t *testing.T) {
 	}
 	p.info.Program = "agy"
 	p.title = ""
-	if n, d := p.label(); n != "Antigravity" || d != short {
+	if n, d := p.label(); n != "Antigravity" || d != "rex-snake" {
 		t.Errorf("agy label %q %q", n, d)
 	}
 	p.title = "Fix login redirect"

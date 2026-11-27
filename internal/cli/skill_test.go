@@ -523,6 +523,105 @@ func TestSessionStartAgy(t *testing.T) {
 	}
 }
 
+func TestInternalTitleAgy(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"with conversation title", `{"agent_state":"working","conversation_title":"Fix login redirect"}`, "Fix login redirect\n"},
+		{"with CJK title", `{"conversation_title":"优化侧边栏展示"}`, "优化侧边栏展示\n"},
+		{"sanitizes control chars", `{"conversation_title":"Fix\n\tlogin\u001bredirect"}`, "Fix login redirect\n"},
+		{"without title resets to brand", `{"agent_state":"initializing","cwd":"/srv/app"}`, "Antigravity\n"},
+		{"empty title resets to brand", `{"conversation_title":"   "}`, "Antigravity\n"},
+		{"invalid json prints nothing", `{not json`, ""},
+		{"empty stdin prints nothing", "", ""},
+	}
+	for _, tc := range cases {
+		var out strings.Builder
+		code, handled := internalTitleCmd([]string{"--agent", "agy"}, strings.NewReader(tc.in), &out)
+		if !handled || code != ExitOK {
+			t.Fatalf("%s: code=%d handled=%v", tc.name, code, handled)
+		}
+		if out.String() != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, out.String(), tc.want)
+		}
+	}
+}
+
+func TestSkillAgyTitle(t *testing.T) {
+	home := tempHome(t)
+	cliDir := filepath.Join(home, ".gemini", "antigravity-cli")
+	mkdirs(t, cliDir)
+	settingsPath := filepath.Join(cliDir, "settings.json")
+	writeFile(t, settingsPath, "{\n  \"theme\": \"dark\"\n}\n")
+
+	// Setup installs the title command and keeps existing settings.
+	code, _, out, errOut := runMain(t, "skill", "setup", "--agent", "agy", "--json")
+	if code != ExitOK {
+		t.Fatalf("setup: %d %q %s", code, out, errOut)
+	}
+	got := readFile(t, settingsPath)
+	if !strings.Contains(got, `"theme": "dark"`) || !strings.Contains(got, "__internal title --agent agy") || !strings.Contains(got, "# gorex") {
+		t.Fatalf("settings.json after setup: %s", got)
+	}
+
+	// Status reports the title item as installed.
+	code, _, out, errOut = runMain(t, "skill", "status", "--agent", "agy", "--json")
+	if code != ExitOK || !strings.Contains(out, `"kind": "title"`) || !strings.Contains(out, `"state": "installed"`) {
+		t.Fatalf("status: %d %q %s", code, out, errOut)
+	}
+
+	// Re-running setup leaves it unchanged.
+	code, _, out, errOut = runMain(t, "skill", "setup", "--agent", "agy", "--json")
+	if code != ExitOK || !strings.Contains(out, `"kind": "title"`) || !strings.Contains(out, `"change": "unchanged"`) {
+		t.Fatalf("second setup: %d %q %s", code, out, errOut)
+	}
+
+	// Remove deletes our title command and preserves other settings.
+	code, _, out, errOut = runMain(t, "skill", "remove", "--agent", "agy", "--json")
+	if code != ExitOK {
+		t.Fatalf("remove: %d %q %s", code, out, errOut)
+	}
+	got = readFile(t, settingsPath)
+	if strings.Contains(got, `"title"`) || !strings.Contains(got, `"theme": "dark"`) {
+		t.Fatalf("settings.json after remove: %s", got)
+	}
+
+	// A user-configured title command is preserved on setup and remove.
+	custom := "{\n  \"theme\": \"dark\",\n  \"title\": {\n    \"type\": \"command\",\n    \"command\": \"~/.gemini/antigravity-cli/custom-title.sh\"\n  }\n}\n"
+	writeFile(t, settingsPath, custom)
+	code, _, out, errOut = runMain(t, "skill", "setup", "--agent", "agy", "--json")
+	if code != ExitOK || !strings.Contains(out, `"change": "skipped"`) {
+		t.Fatalf("custom setup: %d %q %s", code, out, errOut)
+	}
+	if readFile(t, settingsPath) != custom {
+		t.Fatalf("setup overwrote custom title: %s", readFile(t, settingsPath))
+	}
+	code, _, out, errOut = runMain(t, "skill", "status", "--agent", "agy", "--json")
+	if code != ExitOK || !strings.Contains(out, `"state": "custom"`) {
+		t.Fatalf("custom status: %d %q %s", code, out, errOut)
+	}
+	code, _, out, errOut = runMain(t, "skill", "remove", "--agent", "agy", "--json")
+	if code != ExitOK {
+		t.Fatalf("custom remove: %d %q %s", code, out, errOut)
+	}
+	if readFile(t, settingsPath) != custom {
+		t.Fatalf("remove altered custom title: %s", readFile(t, settingsPath))
+	}
+
+	// Malformed title entry is reported as a conflict without rewriting.
+	bad := `{"title": true}`
+	writeFile(t, settingsPath, bad)
+	code, _, out, _ = runMain(t, "skill", "setup", "--agent", "agy", "--json")
+	if code != ExitFailed || !strings.Contains(out, `"change": "conflict"`) {
+		t.Fatalf("bad title setup: %d %q", code, out)
+	}
+	if readFile(t, settingsPath) != bad {
+		t.Fatalf("conflict rewrote settings.json: %s", readFile(t, settingsPath))
+	}
+}
+
 func TestSkillDevin(t *testing.T) {
 	home := tempHome(t)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))

@@ -1028,9 +1028,13 @@ func (a *App) paneHeader(c *ui.Context, k *colors, t *Tab, p *Pane, focused, hov
 		a.paneRename(c, k)
 		return
 	}
-	name, detail := p.label()
+	proj := a.projectName()
+	name, detail := p.labelIn(proj)
 	prog := p.program()
 	h := ui.Row(c).Height(headerH).Padding(0, 8, 0, 12).Gap(8).AlignItems(ui.Center).MinWidth(0)
+	if tip := paneTooltip(p, "", proj); tip != "" {
+		h.Tooltip(tip)
+	}
 	h.ContextMenu(func(m *ui.Menu) { a.paneMenu(m, p) })
 	if f := p.float; f != nil {
 		a.dragFloat(c, f, h)

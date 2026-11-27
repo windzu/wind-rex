@@ -33,7 +33,7 @@ func (a *App) tabStrip(c *ui.Context, k *colors) {
 	widths := make([]float32, len(a.tabs))
 	total := float32(4 + max(len(a.tabs)-1, 0)) // the padding and separators
 	for i, t := range a.tabs {
-		widths[i] = tabWidth(c, t)
+		widths[i] = tabWidthIn(c, t, a.projectName())
 		total += widths[i]
 	}
 	track := ui.Row(c).Shrink(1).MinWidth(0).Height(tabH+4).Padding(2).Radius((tabH+4)/2).
@@ -102,7 +102,11 @@ type tabSepKey int
 // tiles and its label, the label faded out past tabMaxW, and room for its
 // close button or its dot.
 func tabWidth(c *ui.Context, t *Tab) float32 {
-	name, detail := t.label()
+	return tabWidthIn(c, t, "")
+}
+
+func tabWidthIn(c *ui.Context, t *Tab, projectName string) float32 {
+	name, detail := t.labelIn(projectName)
 	w, _ := c.MeasureText(0, tabLabel(name, detail, ui.Color{}, ui.Color{})...)
 	tiles := float32(tileW + tileStep*min(len(t.panes())-1, 2) + 2)
 	// A host's badge takes room of its own, past the label's widest.
@@ -200,8 +204,11 @@ func (a *App) tabItem(c *ui.Context, k *colors, i int, t *Tab, width float32, sq
 	}
 	e := ui.Row(c.Key(t.ID)).Height(tabH).Basis(width).Shrink(shrink).MinWidth(64).
 		Padding(0, 10, 0, 10).Gap(6).AlignItems(ui.Center).Radius(tabH / 2).Role(ui.RoleTab).AccessSelected(active)
-	name, detail := t.label()
+	name, detail := a.tabLabel(t)
 	e.Label(name + " " + detail)
+	if tip := a.tabTooltip(t); tip != "" {
+		e.Tooltip(tip)
+	}
 	if !active && e.Hovered() {
 		e.Background(hoverFace(k))
 	}
@@ -222,7 +229,7 @@ func (a *App) tabItem(c *ui.Context, k *colors, i int, t *Tab, width float32, sq
 // tabRest draws a tab after its tiles: its label and its end, or the field
 // that renames it.
 func (a *App) tabRest(c *ui.Context, k *colors, t *Tab, active, hovered, compact bool) {
-	name, detail := t.label()
+	name, detail := a.tabLabel(t)
 	if a.renaming == t {
 		a.renameField(c, k, t, name)
 		return

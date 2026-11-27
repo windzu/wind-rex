@@ -549,8 +549,11 @@ func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float3
 	} else {
 		e.Selected(active)
 	}
-	name, detail := t.label()
+	name, detail := a.tabLabel(t)
 	e.Label(name + " " + detail)
+	if tip := a.tabTooltip(t); tip != "" {
+		e.Tooltip(tip)
+	}
 	ck := k // the palette of the row's content, paired with its face
 	if active {
 		sidebarChosen(e, k, h, lifted)
@@ -626,11 +629,14 @@ func (a *App) hostSectionIcon(c *ui.Context, k *colors, h *hostConn) {
 // chosen nor dragged; s is its panes' most urgent record, whose dot
 // ends the row as a shown tab's does. It reports whether it was
 // clicked.
-func spaceTab(c *ui.Context, k *colors, key, name, detail string, s *rex.ProgramStatus, reserve float32, tiles func()) bool {
+func spaceTab(c *ui.Context, k *colors, key, name, detail, tooltip string, s *rex.ProgramStatus, reserve float32, tiles func()) bool {
 	compact := compactSidebar()
 	h := sidebarTabRowH()
 	e := ui.Row(c.Key("tab-"+key)).Height(h).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(h, radiusM)).
 		Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(name + " " + detail)
+	if tooltip != "" {
+		e.Tooltip(tooltip)
+	}
 	if anim := motion(c); anim != nil {
 		e.Transition(exitIn(ui.ElementTransition{Animation: anim, Position: true, Enter: tabMotion, Exit: tabMotion}, durExitMove))
 	}
@@ -683,6 +689,12 @@ func savedTabLabel(t savedTab) (string, program) {
 // the layout keeps (savedTabLabel). A tab its user named keeps the name
 // but still takes its icon from the session. No pane attaches for it.
 func savedTabFace(t savedTab, infos map[string]rex.SessionInfo) (name, detail string, prog program) {
+	return savedTabFaceIn(t, infos, "")
+}
+
+// savedTabFaceIn is savedTabFace with the tab's project name for programs
+// whose untitled fallback shows project context.
+func savedTabFaceIn(t savedTab, infos map[string]rex.SessionInfo, projectName string) (name, detail string, prog program) {
 	name, prog = savedTabLabel(t)
 	n := focusedLeaf(t)
 	in, ok := infos[n.SID]
@@ -693,7 +705,7 @@ func savedTabFace(t savedTab, infos map[string]rex.SessionInfo) (name, detail st
 	if t.Name != "" {
 		return t.Name, "", p.program()
 	}
-	name, detail = p.label()
+	name, detail = p.labelIn(projectName)
 	return name, detail, p.program()
 }
 

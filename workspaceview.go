@@ -181,7 +181,10 @@ func dangerButton(c *ui.Context, k *colors, label string) ui.Element {
 func (a *App) windowTitle() string {
 	title := ""
 	if t := a.tab(); t != nil {
-		name, detail := t.label()
+		name, detail := a.tabLabel(t)
+		if a.ws != nil && a.ws.Dir != "" && strings.EqualFold(detail, a.ws.Name) {
+			detail = ""
+		}
 		title = strings.TrimSpace(name + " " + detail)
 	}
 	if a.ws != nil {
