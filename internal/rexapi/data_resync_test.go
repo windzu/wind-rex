@@ -490,24 +490,64 @@ func TestDataCollapseSlowReader(t *testing.T) {
 	session, block, sid := floodSession(t, f, strconv.Itoa(flood))
 	ws, token, nonce := openData(t, f, session, block)
 	got := readUntil(t, ws, "flood-ready")
+	baseOut := output(t, f, sid)
+	floodStart := len(got)
 	if err := f.desk.Input(sid, typedText("")); err != nil {
 		t.Fatal(err)
 	}
+	floodDone := func() bool {
+		snap, err := f.desk.Capture(sid, 0)
+		return err == nil && bytes.Contains(snap.Screen, []byte("flood-done"))
+	}
+	// Pace the reader to at most 1/16 of the session's output while the
+	// flood runs, instead of a fixed sleep that can outpace ConPTY on
+	// Windows or stop throttling after resume.
+	slowRead := func(ws *websocket.Conn, read int) []byte {
+		b := readData(t, ws)
+		if bytes.Contains(b, []byte("flood-done")) {
+			return b
+		}
+		want := baseOut + min(uint64(read+len(b))*16, flood)
+		last := output(t, f, sid)
+		if last < want {
+			waitFor(t, "the flood to outpace the slow reader", func() bool {
+				cur := output(t, f, sid)
+				if cur >= want {
+					return true
+				}
+				if cur == last && floodDone() {
+					return true
+				}
+				last = cur
+				return false
+			})
+		}
+		return b
+	}
 	reset := []byte(`"type":"terminal_reset"`)
 	for !bytes.Contains(got, reset) {
-		got = append(got, readData(t, ws)...)
-		time.Sleep(5 * time.Millisecond) // a slow reader
-		if len(got) > flood {
-			t.Fatal("no resync in the whole flood")
+		got = append(got, slowRead(ws, len(got)-floodStart)...)
+		if len(got) > flood || (bytes.Contains(got, []byte("flood-done")) && !bytes.Contains(got, reset)) {
+			t.Fatalf("no resync in the whole flood (%d bytes)", len(got))
 		}
 	}
 	ws.CloseNow()
 	ws, _ = resumeData(t, f, token, len(got))
-	more := readUntil(t, ws, "flood-done")
-	if len(got)+len(more) > flood/2 {
-		t.Errorf("the client got %d bytes of a flood of %d", len(got)+len(more), flood)
+	deadline := time.Now().Add(15 * time.Second)
+	for !bytes.Contains(got, []byte("flood-done")) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no flood-done in %d bytes", len(got))
+		}
+		got = append(got, slowRead(ws, len(got)-floodStart)...)
 	}
-	resyncAt(t, append(got, more...), nonce)
+	if len(got) > flood/2 {
+		t.Errorf("the client got %d bytes of a flood of %d", len(got), flood)
+	}
+	if err := f.desk.Input(sid, typedText("after-collapse")); err != nil {
+		t.Fatal(err)
+	}
+	readUntil(t, ws, "after-collapse")
+	resyncAt(t, got, nonce)
 	if n := p.serverEnded.Load(); n != 0 {
 		t.Errorf("the server ended %d attaches", n)
 	}
