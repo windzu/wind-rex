@@ -33,13 +33,16 @@ var (
 
 // ClientConfig configures a host's outbound tunnel to a stateless relay.
 type ClientConfig struct {
-	RelayURL  string
-	HostID    string
-	HostName  string
-	Secret    string
-	CertPin   string
-	FleetAuth bool
-	OnStatus  func(connected bool, err error)
+	RelayURL     string
+	HostID       string
+	HostName     string
+	Secret       string
+	CertPin      string
+	FleetAuth    bool
+	LANAddrs     []string
+	LANAddrsFunc func() []string
+	DirectPin    string
+	OnStatus     func(connected bool, err error)
 }
 
 // TunnelListener maintains a persistent outbound connection to a relay server
@@ -88,6 +91,13 @@ func RelayRegisterURLWithName(relayBase, hostID, hostName string) (string, error
 // register on a relay, attaching an optional sanitized display name and
 // fleet_auth flag.
 func RelayRegisterURLWithOptions(relayBase, hostID, hostName string, fleetAuth bool) (string, error) {
+	return RelayRegisterURLWithLAN(relayBase, hostID, hostName, fleetAuth, nil, "")
+}
+
+// RelayRegisterURLWithLAN constructs the WebSocket URL used by a host to
+// register on a relay, attaching optional sanitized display name, fleet_auth
+// flag, and non-secret private LAN Direct TLS upgrade hints.
+func RelayRegisterURLWithLAN(relayBase, hostID, hostName string, fleetAuth bool, lanAddrs []string, directPin string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(relayBase))
 	if err != nil || u.Host == "" {
 		return "", errors.New("invalid relay URL")
@@ -111,6 +121,16 @@ func RelayRegisterURLWithOptions(relayBase, hostID, hostName string, fleetAuth b
 	}
 	if fleetAuth {
 		q.Set("fleet_auth", "1")
+	}
+	directPin = strings.TrimSpace(directPin)
+	if ValidPin(directPin) {
+		cleanAddrs := SanitizeLANAddrs(lanAddrs)
+		if len(cleanAddrs) > 0 {
+			for _, a := range cleanAddrs {
+				q.Add("lan_addr", a)
+			}
+			q.Set("direct_pin", directPin)
+		}
 	}
 	u.RawQuery = q.Encode()
 	u.Fragment = ""
@@ -295,7 +315,11 @@ func (l *TunnelListener) loop() {
 		if l.ctx.Err() != nil {
 			return
 		}
-		dialURL, err := RelayRegisterURLWithOptions(l.cfg.RelayURL, l.cfg.HostID, l.resolvedHostName(), l.cfg.FleetAuth)
+		lanAddrs := l.cfg.LANAddrs
+		if l.cfg.LANAddrsFunc != nil {
+			lanAddrs = l.cfg.LANAddrsFunc()
+		}
+		dialURL, err := RelayRegisterURLWithLAN(l.cfg.RelayURL, l.cfg.HostID, l.resolvedHostName(), l.cfg.FleetAuth, lanAddrs, l.cfg.DirectPin)
 		if err != nil {
 			l.report(false, err)
 			return

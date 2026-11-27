@@ -50,16 +50,27 @@ type DirectConfig struct {
 	// back to the sanitized local hostname.
 	HostName string `json:"host_name,omitempty"`
 	// RelayTrust opts this host into Relay Fleet auto-discovery: clients holding
-	// the shared RelaySecret may authenticate over transportRelay using the
-	// deterministic per-host derived fleet token. Never honored on direct TLS
-	// or LAN transports.
+	// the shared RelaySecret may authenticate over transportRelay (and private
+	// RFC1918/ULA transportDirect peers when LANDirect is enabled, per NET-011)
+	// using the deterministic per-host derived fleet token.
 	RelayTrust bool `json:"relay_trust,omitempty"`
+	// LANDirect controls whether a relay-enabled host also binds a local Direct
+	// TLS listener and advertises private LAN upgrade hints (NET-011). When nil,
+	// it defaults to enabled.
+	LANDirect *bool `json:"lan_direct,omitempty"`
+}
+
+// LANDirectEnabled reports whether local LAN Direct TLS advertising and
+// private-peer upgrade are enabled (true by default when omitted).
+func (c DirectConfig) LANDirectEnabled() bool {
+	return c.LANDirect == nil || *c.LANDirect
 }
 
 // DirectStatus records runtime state of the direct/relay transport in direct-status.json.
 type DirectStatus struct {
 	Running        bool      `json:"running"`
 	Listening      string    `json:"listening,omitempty"`
+	LANAddrs       []string  `json:"lan_addrs,omitempty"`
 	CertPin        string    `json:"cert_pin,omitempty"`
 	SelfSigned     bool      `json:"self_signed,omitempty"`
 	RelayConnected bool      `json:"relay_connected,omitempty"`
@@ -243,6 +254,7 @@ type directListener struct {
 	conf       DirectConfig
 	applied    bool
 	ln         *trackedListener
+	boundPort  int
 	tunnel     *directrelay.TunnelListener
 	certPin    string
 	selfSigned bool
@@ -256,7 +268,9 @@ func newDirectListener(g *Gateway, dir string) *directListener {
 }
 
 func sameDirect(a, b DirectConfig) bool {
-	return a == b
+	aLAN, bLAN := a.LANDirectEnabled(), b.LANDirectEnabled()
+	a.LANDirect, b.LANDirect = nil, nil
+	return a == b && aLAN == bLAN
 }
 
 func (d *directListener) apply(c DirectConfig) {
@@ -275,11 +289,13 @@ func (d *directListener) apply(c DirectConfig) {
 		return
 	}
 	tokenChanged := d.applied && d.conf.Token != c.Token
+	trustRevoked := d.applied && d.conf.RelayTrust && !c.RelayTrust
 	directChanged := !d.applied || d.conf.Enabled != c.Enabled || d.conf.Listen != c.Listen ||
-		d.conf.CertFile != c.CertFile || d.conf.KeyFile != c.KeyFile || d.conf.PublicURL != c.PublicURL
+		d.conf.CertFile != c.CertFile || d.conf.KeyFile != c.KeyFile || d.conf.PublicURL != c.PublicURL ||
+		(d.conf.RelayURL != "") != (c.RelayURL != "") || d.conf.LANDirectEnabled() != c.LANDirectEnabled()
 	relayChanged := !d.applied || d.conf.Enabled != c.Enabled || d.conf.RelayURL != c.RelayURL ||
 		d.conf.RelaySecret != c.RelaySecret || d.conf.RelayCertPin != c.RelayCertPin || d.conf.HostID != c.HostID ||
-		d.conf.HostName != c.HostName || d.conf.RelayTrust != c.RelayTrust
+		d.conf.HostName != c.HostName || d.conf.RelayTrust != c.RelayTrust || directChanged
 
 	d.applied = true
 	d.conf = c
@@ -298,13 +314,18 @@ func (d *directListener) apply(c DirectConfig) {
 
 	if directChanged {
 		d.closeDirectLocked()
-		if c.Listen != "" {
-			if err := d.startDirectLocked(c); err != nil {
+		switch {
+		case c.Listen != "":
+			if err := d.startDirectLocked(c, c.Listen, false); err != nil {
 				d.err = err.Error()
 				logf("direct: %v", err)
 			}
+		case c.RelayURL != "" && c.LANDirectEnabled():
+			if err := d.startDirectLocked(c, fmt.Sprintf(":%d", DirectPort), true); err != nil {
+				logf("direct lan listener: %v", err)
+			}
 		}
-	} else if tokenChanged && d.ln != nil {
+	} else if (tokenChanged || trustRevoked) && d.ln != nil {
 		d.ln.closeConns()
 	}
 
@@ -320,7 +341,7 @@ func (d *directListener) apply(c DirectConfig) {
 	d.reportLocked()
 }
 
-func (d *directListener) startDirectLocked(c DirectConfig) error {
+func (d *directListener) startDirectLocked(c DirectConfig, listenAddr string, fallbackEphemeral bool) error {
 	var (
 		cert       tls.Certificate
 		pin        string
@@ -340,7 +361,10 @@ func (d *directListener) startDirectLocked(c DirectConfig) error {
 	if err != nil {
 		return err
 	}
-	rawLn, err := net.Listen("tcp", c.Listen)
+	rawLn, err := net.Listen("tcp", listenAddr)
+	if err != nil && fallbackEphemeral {
+		rawLn, err = net.Listen("tcp", ":0")
+	}
 	if err != nil {
 		return err
 	}
@@ -350,6 +374,10 @@ func (d *directListener) startDirectLocked(c DirectConfig) error {
 	})
 	tl := newTrackedListener(tlsLn)
 	d.ln = tl
+	d.boundPort = 0
+	if ta, ok := rawLn.Addr().(*net.TCPAddr); ok {
+		d.boundPort = ta.Port
+	}
 	d.certPin = pin
 	d.selfSigned = selfSigned
 	go func() {
@@ -362,13 +390,24 @@ func (d *directListener) startDirectLocked(c DirectConfig) error {
 }
 
 func (d *directListener) startRelayLocked(c DirectConfig) error {
+	var (
+		lanAddrsFunc func() []string
+		directPin    string
+	)
+	if c.LANDirectEnabled() && d.ln != nil && d.boundPort > 0 && d.certPin != "" {
+		port := d.boundPort
+		lanAddrsFunc = func() []string { return directrelay.CollectLANAddrs(port) }
+		directPin = d.certPin
+	}
 	tl, err := directrelay.StartTunnel(directrelay.ClientConfig{
-		RelayURL:  c.RelayURL,
-		HostID:    c.HostID,
-		HostName:  c.HostName,
-		Secret:    c.RelaySecret,
-		CertPin:   c.RelayCertPin,
-		FleetAuth: c.RelayTrust,
+		RelayURL:     c.RelayURL,
+		HostID:       c.HostID,
+		HostName:     c.HostName,
+		Secret:       c.RelaySecret,
+		CertPin:      c.RelayCertPin,
+		FleetAuth:    c.RelayTrust,
+		LANAddrsFunc: lanAddrsFunc,
+		DirectPin:    directPin,
 		OnStatus: func(connected bool, statusErr error) {
 			d.mu.Lock()
 			d.relayOK = connected
@@ -399,6 +438,7 @@ func (d *directListener) closeDirectLocked() {
 		d.ln.Close()
 		d.ln = nil
 	}
+	d.boundPort = 0
 	d.certPin = ""
 	d.selfSigned = false
 }
@@ -424,6 +464,23 @@ func (d *directListener) close() {
 	saveDirectStatus(d.dir, DirectStatus{})
 }
 
+func (d *directListener) lanHint() ([]string, string) {
+	d.mu.Lock()
+	enabled := d.conf.Enabled && d.conf.LANDirectEnabled()
+	port := d.boundPort
+	pin := d.certPin
+	hasLn := d.ln != nil
+	d.mu.Unlock()
+	if !enabled || !hasLn || port <= 0 || !directrelay.ValidPin(pin) {
+		return nil, ""
+	}
+	addrs := directrelay.CollectLANAddrs(port)
+	if len(addrs) == 0 {
+		return nil, ""
+	}
+	return addrs, pin
+}
+
 func (d *directListener) reportLocked() {
 	s := DirectStatus{
 		Running:        true,
@@ -435,27 +492,40 @@ func (d *directListener) reportLocked() {
 	}
 	if d.ln != nil {
 		s.Listening = d.ln.Addr().String()
+		if d.conf.LANDirectEnabled() && d.boundPort > 0 {
+			s.LANAddrs = directrelay.CollectLANAddrs(d.boundPort)
+		}
 	}
 	saveDirectStatus(d.dir, s)
 }
 
 // admit validates the 256-bit Bearer token for direct TLS and stateless relay callers.
 // When RelayTrust is enabled, it also accepts the per-host HMAC-SHA256 derived
-// fleet token strictly on transportRelay (never on transportDirect or other transports).
+// fleet token on transportRelay, and on transportDirect strictly when LANDirect
+// is enabled and the TCP peer IP is a private RFC1918 or ULA address (NET-011).
 func (d *directListener) admit(w http.ResponseWriter, r *http.Request, transport string) (map[string]any, bool) {
 	d.mu.Lock()
 	token := d.conf.Token
 	relayTrust := d.conf.RelayTrust
 	relaySecret := d.conf.RelaySecret
 	hostID := d.conf.HostID
+	lanDirect := d.conf.LANDirectEnabled()
 	d.mu.Unlock()
 	admitted := tokenMatches(r, token)
-	if !admitted && transport == transportRelay && relayTrust && relaySecret != "" && hostID != "" {
-		fleetToken := directrelay.DeriveFleetToken(relaySecret, hostID)
-		admitted = tokenMatches(r, fleetToken)
+	if !admitted && relayTrust && relaySecret != "" && hostID != "" {
+		allowFleet := transport == transportRelay
+		if !allowFleet && transport == transportDirect && lanDirect {
+			if ip, ok := directrelay.ParsePeerIP(r.RemoteAddr); ok && directrelay.IsPrivateLANIP(ip) {
+				allowFleet = true
+			}
+		}
+		if allowFleet {
+			fleetToken := directrelay.DeriveFleetToken(relaySecret, hostID)
+			admitted = tokenMatches(r, fleetToken)
+		}
 	}
 	if !admitted {
-		if r.URL.Path == rexTunnelPath {
+		if r.URL.Path == rexTunnelPath || r.URL.Path == lanHintPath {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="windrex"`)
 			writeError(w, http.StatusUnauthorized, "WindRex needs this device's pairing token")
 			return nil, false

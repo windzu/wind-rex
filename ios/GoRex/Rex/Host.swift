@@ -505,17 +505,88 @@ final class Host: Identifiable {
     @ObservationIgnored private(set) var pushTarget: (session: String, block: String)?
     /// Bumped after HostStore.foreground finishes probing/resuming this host,
     /// so open terminals verify or resume after foreground recovery completes.
+    /// Active transport route of this host (in-memory, never persisted).
+    enum ActiveRoute: Equatable {
+        case direct
+        case lanDirect(String)
+        case relay
+    }
+
+    private(set) var activeRoute: ActiveRoute = .direct
     private(set) var foregroundReady = 0
     @ObservationIgnored private var pinnedSession: (pin: String, session: URLSession)?
+    @ObservationIgnored private var lanHintAddrs: [String] = []
+    @ObservationIgnored private var lanHintPin: String? = nil
+    @ObservationIgnored private var activeLANURL: URL? = nil
+    @ObservationIgnored private var activeLANPin: String? = nil
+    @ObservationIgnored private var lanDialTask: Task<Void, Never>? = nil
+    @ObservationIgnored private var lanPromoteTask: Task<Void, Never>? = nil
+    @ObservationIgnored var probeLAN: (@Sendable (_ addrs: [String], _ pin: String, _ auth: String?) async -> URL?) = { addrs, pin, auth in
+        await LANDirectProbe.probeFirstReachable(addrs: addrs, pin: pin, auth: auth)
+    }
+    @ObservationIgnored var fetchLANHint: (@Sendable (_ base: URL, _ auth: String?, _ pin: String?) async -> LANDirectHint?) = { base, auth, pin in
+        await LANDirectProbe.fetchHint(baseURL: base, auth: auth, tlsPin: pin)
+    }
+
+    /// Whether `config.url` routes through a stateless relay (`/h/<host_id>`).
+    var isRelayHost: Bool { config.url.path.hasPrefix("/h/") }
+
+    /// The base URL active control, data, and file requests currently dial:
+    /// the promoted local LAN Direct TLS endpoint when reachable, else `config.url`.
+    var activeBaseURL: URL { activeLANURL ?? config.url }
+
+    /// The leaf SHA-256 TLS pin matching `activeBaseURL`.
+    var activeTLSPin: String? { activeLANURL != nil ? activeLANPin : config.tlsPin }
 
     init(_ config: HostConfig) {
         self.config = config
+        self.activeRoute = config.url.path.hasPrefix("/h/") ? .relay : .direct
+    }
+
+    /// Records non-secret private LAN Direct TLS hints learned from `GET /api/hosts`
+    /// or `GET /api/v1/lan-hint` in memory (docs/NET-011-lan-direct-upgrade.md).
+    func updateLANHint(addrs: [String], pin: String?) {
+        guard isRelayHost, let pin, PinnedTLSSession.validPin(pin) else { return }
+        let clean = RelayFleet.sanitizeLANAddrs(addrs)
+        guard !clean.isEmpty else { return }
+        let changed = (lanHintAddrs != clean || lanHintPin != pin)
+        lanHintAddrs = clean
+        lanHintPin = pin
+        if changed, status == .online, activeLANURL == nil {
+            promoteToLANIfReachable()
+        }
+    }
+
+    /// Probes the cached private-LAN candidates without disrupting an active relay
+    /// connection, promoting to LAN direct only after an authenticated HTTP 200.
+    func promoteToLANIfReachable() {
+        guard !isDemo, !stopped, isRelayHost, activeLANURL == nil,
+              !lanHintAddrs.isEmpty, let pin = lanHintPin else { return }
+        lanPromoteTask?.cancel()
+        let addrs = lanHintAddrs
+        let auth = config.auth
+        let probe = probeLAN
+        lanPromoteTask = Task { [weak self] in
+            guard let winner = await probe(addrs, pin, auth), !Task.isCancelled else { return }
+            guard let self, !self.stopped, self.activeLANURL == nil else { return }
+            self.activeLANURL = winner
+            self.activeLANPin = pin
+            self.activeRoute = .lanDirect(Self.hostPortLabel(winner))
+            ConnectionLog.note("\(self.config.name): LAN direct reachable (\(Self.hostPortLabel(winner))), promoting")
+            self.resume(keepLANRoute: true)
+        }
+    }
+
+    private static func hostPortLabel(_ url: URL) -> String {
+        guard let host = url.host() else { return url.absoluteString }
+        if let port = url.port { return "\(host):\(port)" }
+        return host
     }
 
     /// The session the host's connections go through: the system's shared
-    /// session, or a leaf-certificate-pinned session when config.tlsPin is set.
+    /// session, or a leaf-certificate-pinned session when `activeTLSPin` is set.
     func session() -> URLSession {
-        if let pin = config.tlsPin, !pin.isEmpty {
+        if let pin = activeTLSPin, !pin.isEmpty {
             if let s = pinnedSession, s.pin == pin { return s.session }
             pinnedSession?.session.invalidateAndCancel()
             let s = PinnedTLSSession.session(pin: pin)
@@ -528,7 +599,7 @@ final class Host: Identifiable {
     /// Connects, unless connected or connecting. Tried again after a
     /// failure, the host stays offline until it is online.
     func connect(again: Bool = false) {
-        guard control == nil, !stopped else { return }
+        guard control == nil, lanDialTask == nil, !stopped else { return }
         if isDemo {
             // Nothing to reach: the demo host's windows and statuses live
             // on the phone. Connecting again, as the app comes back to the
@@ -552,8 +623,39 @@ final class Host: Identifiable {
         } else {
             isRetrying = true
         }
-        let name = "control \(config.url.host() ?? "")"
-        let c = ControlConnection(base: config.url, auth: config.auth, session: self.session())
+        // When a relay host already has LAN hints and no pinned LAN route yet,
+        // run a fast LAN-first probe (<= 400 ms) before opening the control socket.
+        if isRelayHost, activeLANURL == nil, !lanHintAddrs.isEmpty, let pin = lanHintPin {
+            let addrs = lanHintAddrs
+            let auth = config.auth
+            let probe = probeLAN
+            lanDialTask = Task { [weak self] in
+                let winner = await probe(addrs, pin, auth)
+                guard let self else { return }
+                self.lanDialTask = nil
+                guard !Task.isCancelled, !self.stopped, self.control == nil else { return }
+                if let winner {
+                    self.activeLANURL = winner
+                    self.activeLANPin = pin
+                }
+                self.openControl(again: again)
+            }
+            return
+        }
+        openControl(again: again)
+    }
+
+    private func openControl(again: Bool) {
+        guard control == nil, !stopped else { return }
+        let base = activeBaseURL
+        let usedLAN = activeLANURL != nil
+        if usedLAN {
+            activeRoute = .lanDirect(Self.hostPortLabel(base))
+        } else {
+            activeRoute = isRelayHost ? .relay : .direct
+        }
+        let name = "control \(base.host() ?? "")\(usedLAN ? " (LAN)" : "")"
+        let c = ControlConnection(base: base, auth: config.auth, session: self.session())
         control = c
         describes.cancelAll()
         gate = EventGate()
@@ -572,6 +674,18 @@ final class Host: Identifiable {
             self.describes.cancelAll()
             self.pingMs = nil
             self.prompt = nil
+            if usedLAN {
+                // LAN path dropped or refused (e.g. left office Wi-Fi): clear LAN route
+                // so the immediate reconnect falls back cleanly to the relay URL.
+                self.activeLANURL = nil
+                self.activeLANPin = nil
+                self.activeRoute = self.isRelayHost ? .relay : .direct
+                if !self.stopped {
+                    if self.reconnectSince == nil { self.reconnectSince = .now }
+                    self.connect(again: true)
+                    return
+                }
+            }
             let offline = Status.offline(error?.localizedDescription ?? "")
             if self.status != offline { self.status = offline }
             // Refused: waits for a user-triggered reconnect, updated credential,
@@ -599,6 +713,18 @@ final class Host: Identifiable {
                 attempts = 0
                 settle(.success(c))
                 ConnectionLog.note("\(name): online, \(elapsed.ms)")
+                // Single-host #k= relay connections learn LAN hints via /api/v1/lan-hint.
+                if !usedLAN, isRelayHost, lanHintAddrs.isEmpty {
+                    let relayURL = config.url
+                    let auth = config.auth
+                    let relayPin = config.tlsPin
+                    let fetcher = fetchLANHint
+                    Task { [weak host = self] in
+                        if let hint = await fetcher(relayURL, auth, relayPin) {
+                            host?.updateLANHint(addrs: hint.lanAddrs, pin: hint.directPin)
+                        }
+                    }
+                }
             } catch {
                 c.close(error)
             }
@@ -612,6 +738,12 @@ final class Host: Identifiable {
         reconnectSince = nil
         pingMs = nil
         retry?.cancel()
+        lanDialTask?.cancel()
+        lanDialTask = nil
+        lanPromoteTask?.cancel()
+        lanPromoteTask = nil
+        activeLANURL = nil
+        activeLANPin = nil
         unregisterPush()
         Self.pushTokens().drop(host: id)
         control?.close()
@@ -625,6 +757,12 @@ final class Host: Identifiable {
     /// client end.
     func reconnect() {
         token = nil
+        lanDialTask?.cancel()
+        lanDialTask = nil
+        lanPromoteTask?.cancel()
+        lanPromoteTask = nil
+        activeLANURL = nil
+        activeLANPin = nil
         control?.close()
         connect()
     }
@@ -634,14 +772,22 @@ final class Host: Identifiable {
     /// instead of closing, so the server keeps the client, its streams
     /// and its tickets for the reconnect; a normal close would end them
     /// at once.
-    func resume() {
+    func resume(keepLANRoute: Bool = false) {
+        lanDialTask?.cancel()
+        lanDialTask = nil
+        if !keepLANRoute {
+            lanPromoteTask?.cancel()
+            lanPromoteTask = nil
+            activeLANURL = nil
+            activeLANPin = nil
+        }
         control?.drop()
         connect()
     }
 
     /// Reconnects now, as after the app returns to the foreground.
     func reconnectIfNeeded() {
-        if control == nil { connect() }
+        if control == nil && lanDialTask == nil { connect() }
     }
 
     /// Probes an active control connection with a short ping timeout; keeps it
@@ -653,7 +799,13 @@ final class Host: Identifiable {
             return
         }
         let alive = await c.probe(timeout: timeout)
-        guard !alive, control === c, !stopped else { return }
+        if alive {
+            if isRelayHost, activeLANURL == nil {
+                promoteToLANIfReachable()
+            }
+            return
+        }
+        guard control === c, !stopped else { return }
         ConnectionLog.note("\(config.name): foreground probe failed, resuming")
         resume()
     }
@@ -1124,7 +1276,7 @@ final class Host: Identifiable {
             throw RexError(code: "not_supported", message: String(localized: "Server does not accept uploads"))
         }
         try await Upload.send(file, name: file.lastPathComponent, session: sid, block: block,
-                              control: c, to: config.url, auth: config.auth, urlSession: { self.session() })
+                              control: c, to: activeBaseURL, auth: config.auth, urlSession: { self.session() })
     }
 
     /// Whether the server supports rev 13+ file downloads.
@@ -1141,7 +1293,7 @@ final class Host: Identifiable {
         }
         return try await Download.fetch(path: path, session: sid, block: block,
                                         ifNoneMatch: ifNoneMatch, maxBytes: maxBytes,
-                                        control: c, to: config.url, auth: config.auth, urlSession: { self.session() })
+                                        control: c, to: activeBaseURL, auth: config.auth, urlSession: { self.session() })
     }
 
     /// Whether the server supports rev 14+ com.superlogical.tunnel blocks.
@@ -1187,7 +1339,7 @@ final class Host: Identifiable {
             throw RexError(code: "not_supported", message: String(localized: "Server does not support tunnels"))
         }
         return try await Tunnel.connect(session: session, block: block, dataRefID: dataRefID,
-                                        control: c, to: config.url, auth: config.auth, urlSession: { self.session() })
+                                        control: c, to: activeBaseURL, auth: config.auth, urlSession: { self.session() })
     }
 
     private func sessionID(forBlock block: String) -> String? {

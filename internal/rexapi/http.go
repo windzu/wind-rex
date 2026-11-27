@@ -21,6 +21,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("/api/voice", g.handleVoice)
 	mux.HandleFunc("/api/spaces", g.handleSpaces)
 	mux.HandleFunc(rexTunnelPath, g.handleRexTunnel)
+	mux.HandleFunc(lanHintPath, g.handleLANHint)
 	mux.HandleFunc("/api/help", serveHelp)
 	mux.HandleFunc("/llms.txt", serveLLMs)
 	mux.HandleFunc("/llms.html", serveLLMsHTML)

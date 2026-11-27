@@ -252,3 +252,197 @@ func TestConnectRemoteDirectTLSAndRelayPath(t *testing.T) {
 		t.Fatalf("wrong pin err = %v, want ErrDirectPinMismatch", err)
 	}
 }
+
+func TestConnectDirectHappyEyeballsAndFallback(t *testing.T) {
+	t.Setenv("GOREX_DIR", t.TempDir())
+	sock := SocketPath()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = Serve()
+	}()
+	t.Cleanup(func() {
+		if c, err := ConnectSocket(sock); err == nil {
+			_ = c.Shutdown()
+			_ = c.Close()
+		}
+		<-done
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c, err := net.Dial("unix", sock)
+		if err == nil {
+			_ = c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("rex server did not start: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	oldAllow := allowLoopbackLANCandidate
+	oldHead := lanHeadStart
+	oldDial := lanDialTimeout
+	oldProbe := lanProbeTimeout
+	allowLoopbackLANCandidate = true
+	lanHeadStart = 120 * time.Millisecond
+	lanDialTimeout = 400 * time.Millisecond
+	lanProbeTimeout = 300 * time.Millisecond
+	t.Cleanup(func() {
+		allowLoopbackLANCandidate = oldAllow
+		lanHeadStart = oldHead
+		lanDialTimeout = oldDial
+		lanProbeTimeout = oldProbe
+	})
+
+	const wantToken = "happy-eyeballs-token-1234567890"
+	const relayPrefix = "/h/host-eyeballs"
+
+	newTunnelServer := func(expectedPath string, onHit func(), rejectAuth bool) (*httptest.Server, string) {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if onHit != nil {
+				onHit()
+			}
+			if rejectAuth || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+wantToken)) != 1 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if r.URL.Path == LANHintPath || r.URL.Path == relayPrefix+LANHintPath {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"ok":true}`)
+				return
+			}
+			if r.URL.Path != expectedPath {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			unixConn, err := net.Dial("unix", sock)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+				InsecureSkipVerify: true,
+				CompressionMode:    websocket.CompressionDisabled,
+			})
+			if err != nil {
+				_ = unixConn.Close()
+				return
+			}
+			wsConn := websocket.NetConn(r.Context(), ws, websocket.MessageBinary)
+			defer wsConn.Close()
+			defer unixConn.Close()
+			ch := make(chan struct{})
+			go func() {
+				defer close(ch)
+				_, _ = io.Copy(unixConn, wsConn)
+				_ = unixConn.Close()
+				_ = wsConn.Close()
+			}()
+			_, _ = io.Copy(wsConn, unixConn)
+			_ = wsConn.Close()
+			_ = unixConn.Close()
+			<-ch
+		}))
+		t.Cleanup(srv.Close)
+		sum := sha256.Sum256(srv.Certificate().Raw)
+		return srv, base64.RawURLEncoding.EncodeToString(sum[:])
+	}
+
+	relayHits := 0
+	relaySrv, relayPin := newTunnelServer(relayPrefix+DirectTunnelPath, func() { relayHits++ }, false)
+	lanHits := 0
+	lanSrv, lanPin := newTunnelServer(DirectTunnelPath, func() { lanHits++ }, false)
+
+	relayURL := relaySrv.URL + relayPrefix + "/#k=" + wantToken + "&p=" + relayPin + "&n=dev-box-1"
+	lanAddr := strings.TrimPrefix(lanSrv.URL, "https://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 1. Fast LAN candidate wins before lanHeadStart and never dials relay.
+	c, route, err := ConnectDirectWithCandidates(ctx, relayURL, []DirectCandidate{{Addr: lanAddr, Pin: lanPin}})
+	if err != nil {
+		t.Fatalf("ConnectDirectWithCandidates LAN win: %v", err)
+	}
+	if route.Kind != RouteLANDirect || route.Host != lanAddr {
+		c.Close()
+		t.Fatalf("route = %+v, want RouteLANDirect %s", route, lanAddr)
+	}
+	if relayHits != 0 {
+		c.Close()
+		t.Fatalf("relayHits = %d, want 0 when LAN won before head start", relayHits)
+	}
+	if _, err := c.Hello(); err != nil {
+		c.Close()
+		t.Fatalf("Hello over LAN direct: %v", err)
+	}
+	// Verify AttachConn reuses winning LAN direct route (no relay hits).
+	created, err := c.Create(CreateOptions{Cols: 80, Rows: 24})
+	if err != nil {
+		c.Close()
+		t.Fatalf("Create over LAN direct: %v", err)
+	}
+	sc, err := c.AttachConn(Attach{SID: created.ID, Cols: 80, Rows: 24})
+	if err != nil {
+		c.Close()
+		t.Fatalf("AttachConn over LAN direct: %v", err)
+	}
+	_ = sc.Close()
+	_ = c.Kill(created.ID)
+	_ = c.Close()
+	if relayHits != 0 {
+		t.Fatalf("relayHits after AttachConn = %d, want 0", relayHits)
+	}
+
+	// 2. ProbeLANDirect succeeds against healthy pinned LAN server and rejects bad pin.
+	if got, err := ProbeLANDirect(ctx, relayURL, []DirectCandidate{{Addr: lanAddr, Pin: lanPin}}); err != nil || got.Addr != lanAddr {
+		t.Fatalf("ProbeLANDirect valid = (%+v, %v), want %s", got, err, lanAddr)
+	}
+	wrongPin := strings.Repeat("a", 64)
+	if _, err := ProbeLANDirect(ctx, relayURL, []DirectCandidate{{Addr: lanAddr, Pin: wrongPin}}); err == nil {
+		t.Fatal("ProbeLANDirect with wrong pin succeeded, want error")
+	}
+
+	// 3. Pin mismatch on spoofed LAN server falls back to relay cleanly.
+	c2, route2, err := ConnectDirectWithCandidates(ctx, relayURL, []DirectCandidate{{Addr: lanAddr, Pin: wrongPin}})
+	if err != nil {
+		t.Fatalf("ConnectDirectWithCandidates pin-mismatch fallback: %v", err)
+	}
+	if route2.Kind != RouteRelay {
+		c2.Close()
+		t.Fatalf("route2 = %+v, want RouteRelay", route2)
+	}
+	_ = c2.Close()
+
+	// 4. Auth rejection on old LAN server falls back to relay cleanly.
+	rejectSrv, rejectPin := newTunnelServer(DirectTunnelPath, nil, true)
+	rejectAddr := strings.TrimPrefix(rejectSrv.URL, "https://")
+	c3, route3, err := ConnectDirectWithCandidates(ctx, relayURL, []DirectCandidate{{Addr: rejectAddr, Pin: rejectPin}})
+	if err != nil {
+		t.Fatalf("ConnectDirectWithCandidates auth-reject fallback: %v", err)
+	}
+	if route3.Kind != RouteRelay {
+		c3.Close()
+		t.Fatalf("route3 = %+v, want RouteRelay", route3)
+	}
+	_ = c3.Close()
+
+	// 5. Connection-refused LAN port falls back immediately to relay (before lanHeadStart).
+	closedLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadAddr := closedLn.Addr().String()
+	_ = closedLn.Close()
+	c4, route4, err := ConnectDirectWithCandidates(ctx, relayURL, []DirectCandidate{{Addr: deadAddr, Pin: lanPin}})
+	if err != nil {
+		t.Fatalf("ConnectDirectWithCandidates refused fallback: %v", err)
+	}
+	if route4.Kind != RouteRelay {
+		c4.Close()
+		t.Fatalf("route4 = %+v, want RouteRelay", route4)
+	}
+	_ = c4.Close()
+}

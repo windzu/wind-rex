@@ -381,4 +381,105 @@ nonisolated final class RelayFleetTests: XCTestCase {
         kc.set(nil, for: id)
         XCTAssertNil(kc.secret(for: id))
     }
+
+    /// NET-011: private-LAN IP filtering, candidate sanitization, and DiscoveredRelayHost
+    /// / LANDirectHint decoding.
+    @MainActor func testLANDirectIPFilteringAndDecoding() throws {
+        for ok in ["10.0.13.20", "172.16.0.1", "172.31.255.254", "192.168.1.5", "fd12:3456::1", "::ffff:10.0.8.20"] {
+            XCTAssertTrue(RelayFleet.isPrivateLANIP(ok), "expected private LAN IP: \(ok)")
+        }
+        for bad in ["127.0.0.1", "::1", "169.254.1.2", "fe80::1", "100.64.0.1", "100.111.76.128", "198.18.0.1", "203.0.113.10", "example.com", ""] {
+            XCTAssertFalse(RelayFleet.isPrivateLANIP(bad), "expected rejected IP: \(bad)")
+        }
+
+        let sanitized = RelayFleet.sanitizeLANAddrs([
+            "203.0.113.10:7443",
+            "127.0.0.1:7443",
+            "198.18.0.1:7443",
+            "100.111.76.128:7443",
+            "10.0.13.20:0",
+            "10.0.13.20:7443",
+            "10.0.13.20:7443",
+            "[::ffff:10.0.8.20]:7443",
+            "192.168.1.10:7443",
+            "[fd12::1]:7443",
+            "172.16.0.5:7443",
+        ])
+        XCTAssertEqual(sanitized, [
+            "10.0.13.20:7443",
+            "10.0.8.20:7443",
+            "192.168.1.10:7443",
+            "[fd12::1]:7443",
+        ])
+
+        let pin = samplePin
+        let json = """
+        {
+          "id": "host_lan_0001",
+          "name": "dev-box-1",
+          "path": "/h/host_lan_0001",
+          "fleet_auth": true,
+          "lan_addrs": ["10.0.13.20:7443", "203.0.113.9:7443"],
+          "direct_pin": "\(pin)"
+        }
+        """
+        let decoded = try JSONDecoder().decode(DiscoveredRelayHost.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.lanAddrs, ["10.0.13.20:7443"])
+        XCTAssertEqual(decoded.directPin, pin)
+
+        let badPinJSON = """
+        {
+          "id": "host_lan_0002",
+          "name": "bad-pin",
+          "lan_addrs": ["10.0.13.20:7443"],
+          "direct_pin": "not-a-valid-pin"
+        }
+        """
+        let decodedBad = try JSONDecoder().decode(DiscoveredRelayHost.self, from: Data(badPinJSON.utf8))
+        XCTAssertTrue(decodedBad.lanAddrs.isEmpty)
+        XCTAssertNil(decodedBad.directPin)
+
+        let hintJSON = """
+        {"ok": true, "lan_addrs": ["10.0.13.20:7443", "198.18.0.1:7443"], "direct_pin": "\(pin)"}
+        """
+        let hint = try JSONDecoder().decode(LANDirectHint.self, from: Data(hintJSON.utf8))
+        XCTAssertEqual(hint.lanAddrs, ["10.0.13.20:7443"])
+        XCTAssertEqual(hint.directPin, pin)
+    }
+
+    /// NET-011: Host uses LAN direct when probe succeeds and falls back to relay when off-LAN.
+    @MainActor func testHostLANDirectUpgradeAndFallback() async throws {
+        let relayPin = samplePin
+        let directPin = PinnedTLSSession.sha256Pin(of: Data("host-lan-cert-der".utf8))
+        let relayURL = try XCTUnwrap(URL(string: "https://relay.example.com:7443/h/host_lan_0001"))
+        let lanURL = try XCTUnwrap(URL(string: "https://10.0.13.20:7443"))
+
+        let host = Host(HostConfig(
+            name: "dev-box-1",
+            url: relayURL,
+            lanToken: "fleet-token-123",
+            tlsPin: relayPin
+        ))
+        defer { host.stop() }
+        XCTAssertTrue(host.isRelayHost)
+        XCTAssertEqual(host.activeBaseURL, relayURL)
+        XCTAssertEqual(host.activeTLSPin, relayPin)
+        XCTAssertEqual(host.activeRoute, .relay)
+
+        // Probe returns nil (off-LAN): activeBaseURL stays on relay.
+        host.probeLAN = { _, _, _ in nil }
+        host.updateLANHint(addrs: ["10.0.13.20:7443"], pin: directPin)
+        host.promoteToLANIfReachable()
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(host.activeBaseURL, relayURL)
+        XCTAssertEqual(host.activeTLSPin, relayPin)
+
+        // Probe succeeds (on-LAN): promoteToLANIfReachable switches activeBaseURL & activeTLSPin to LAN direct.
+        host.probeLAN = { _, _, _ in lanURL }
+        host.promoteToLANIfReachable()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(host.activeBaseURL, lanURL)
+        XCTAssertEqual(host.activeTLSPin, directPin)
+        XCTAssertEqual(host.activeRoute, .lanDirect("10.0.13.20:7443"))
+    }
 }

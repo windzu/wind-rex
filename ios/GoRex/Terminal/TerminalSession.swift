@@ -116,7 +116,7 @@ final class TerminalSession {
         self.block = block
         self.owns = owns
         gallery = host.isDemo ? nil : PaneGallery.of(host: host.id.uuidString, block: block)
-        data = DataConnection(base: host.config.url, auth: host.config.auth, tag: block)
+        data = DataConnection(base: host.activeBaseURL, auth: host.config.auth, tag: block)
         // The demo has no host colors: it takes the chosen theme, else the
         // one the app starts with.
         let theme = host.isDemo
@@ -191,7 +191,7 @@ final class TerminalSession {
                 // Use the host's current URLSession (shared or leaf-pinned TLS).
                 let session = host.session()
                 // What ends this generation closes the connection it opens.
-                let c = DataConnection(base: host.config.url, auth: host.config.auth, tag: block)
+                let c = DataConnection(base: host.activeBaseURL, auth: host.config.auth, tag: block)
                 d = c
                 data = c
                 let feed = wire(c)

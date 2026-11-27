@@ -71,6 +71,8 @@ type HostInfo struct {
 	Path        string    `json:"path"`
 	ConnectedAt time.Time `json:"connected_at"`
 	FleetAuth   bool      `json:"fleet_auth,omitempty"`
+	LANAddrs    []string  `json:"lan_addrs,omitempty"`
+	DirectPin   string    `json:"direct_pin,omitempty"`
 }
 
 type hostEntry struct {
@@ -78,6 +80,8 @@ type hostEntry struct {
 	name        string
 	connectedAt time.Time
 	fleetAuth   bool
+	lanAddrs    []string
+	directPin   string
 	mux         *Mux
 }
 
@@ -158,12 +162,18 @@ func (s *Server) Hosts() []HostInfo {
 	s.mu.RLock()
 	out := make([]HostInfo, 0, len(s.hosts))
 	for _, entry := range s.hosts {
+		var lanCopy []string
+		if len(entry.lanAddrs) > 0 {
+			lanCopy = append([]string(nil), entry.lanAddrs...)
+		}
 		out = append(out, HostInfo{
 			ID:          entry.id,
 			Name:        entry.name,
 			Path:        "/h/" + entry.id,
 			ConnectedAt: entry.connectedAt,
 			FleetAuth:   entry.fleetAuth,
+			LANAddrs:    lanCopy,
+			DirectPin:   entry.directPin,
 		})
 	}
 	s.mu.RUnlock()
@@ -223,6 +233,14 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	}
 	hostName := hostDisplayName(r, hostID)
 	fleetAuth := parseBoolParam(r.URL.Query().Get("fleet_auth"))
+	var lanAddrs []string
+	directPin := strings.TrimSpace(r.URL.Query().Get("direct_pin"))
+	if ValidPin(directPin) {
+		lanAddrs = SanitizeLANAddrs(r.URL.Query()["lan_addr"])
+	}
+	if len(lanAddrs) == 0 {
+		directPin = ""
+	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols:       []string{RelaySubprotocol},
 		InsecureSkipVerify: true,
@@ -238,6 +256,8 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 		name:        hostName,
 		connectedAt: s.nowUTC(),
 		fleetAuth:   fleetAuth,
+		lanAddrs:    lanAddrs,
+		directPin:   directPin,
 		mux:         m,
 	}
 	s.mu.Lock()

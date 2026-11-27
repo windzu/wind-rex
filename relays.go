@@ -130,6 +130,7 @@ func (a *App) upsertRelay(target directrelay.FleetTarget, label string, discover
 		hosts:  slices.Clone(discovered),
 	}
 	a.saveRelaysUI()
+	a.applyRelayLANHints(saved, discovered)
 	return saved
 }
 
@@ -174,6 +175,7 @@ func (a *App) refreshRelay(r hosts.Relay) {
 			}
 			cur.err = nil
 			cur.hosts = list
+			a.applyRelayLANHints(relay, list)
 		})
 	}(r)
 }
@@ -243,14 +245,66 @@ func (a *App) importRelayHost(r hosts.Relay, info directrelay.HostInfo) bool {
 		return false
 	}
 	name := uniqueHostName(info.Name, a.hosts)
-	a.addHost(savedHost{
+	h := a.addHost(savedHost{
 		ID:          newHostID(),
 		Name:        name,
 		Address:     pairURL,
 		RelayID:     r.ID,
 		RelayHostID: info.ID,
 	})
+	if h != nil {
+		h.setLANHint(info.LANAddrs, info.DirectPin)
+	}
 	return true
+}
+
+// applyRelayLANHints pushes discovered private-LAN Direct TLS hints from a
+// relay's GET /api/hosts response into matching saved hostConn instances so
+// clients upgrade to LAN direct automatically (docs/NET-011-lan-direct-upgrade.md).
+func (a *App) applyRelayLANHints(r hosts.Relay, list []directrelay.HostInfo) {
+	if len(list) == 0 || len(a.hosts) == 0 {
+		return
+	}
+	for _, info := range list {
+		if len(info.LANAddrs) == 0 || info.DirectPin == "" {
+			continue
+		}
+		wantBase, baseErr := directrelay.RelayClientBaseURL(r.URL, info.ID)
+		for _, h := range a.hosts {
+			matched := h.RelayHostID != "" && h.RelayHostID == info.ID && (h.RelayID == "" || h.RelayID == r.ID)
+			if !matched && baseErr == nil && rex.IsDirectTarget(h.Address) {
+				if t, err := rex.ParseDirectTarget(h.Address); err == nil && strings.EqualFold(t.BaseURL, wantBase) {
+					matched = true
+				}
+			}
+			if matched {
+				h.setLANHint(info.LANAddrs, info.DirectPin)
+			}
+		}
+	}
+}
+
+// prefetchRelayLANHints refreshes saved relays in the background on startup so
+// relay hosts learn their LAN Direct TLS hints before the user opens Settings.
+func (a *App) prefetchRelayLANHints() {
+	saved, err := hosts.LoadRelays(rex.Dir())
+	if err != nil || len(saved) == 0 {
+		return
+	}
+	update := a.hostRedraw()
+	for _, r := range saved {
+		go func(relay hosts.Relay) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			list, derr := discoverRelayHosts(ctx, relay.URL, relay.Secret, relay.CertPin)
+			if derr != nil || len(list) == 0 {
+				return
+			}
+			update(func() {
+				a.applyRelayLANHints(relay, list)
+			})
+		}(r)
+	}
 }
 
 // importAllRelayHosts imports and connects every online fleet_auth host on

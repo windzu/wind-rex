@@ -74,8 +74,30 @@ var (
 	dialHost = func(ctx context.Context, address string) (*rex.Client, error) {
 		return rex.ConnectRemote(ctx, address)
 	}
-	validAddress = rex.ValidRemoteAddress
+	dialHostWithCandidates = func(ctx context.Context, address string, candidates []rex.DirectCandidate) (*rex.Client, rex.DirectRouteInfo, error) {
+		if len(candidates) > 0 && rex.IsDirectTarget(address) {
+			return rex.ConnectDirectWithCandidates(ctx, address, candidates)
+		}
+		c, err := dialHost(ctx, address)
+		return c, defaultHostRoute(address), err
+	}
+	fetchLANHint       = rex.FetchLANHint
+	probeLANDirect     = rex.ProbeLANDirect
+	lanPromoteInterval = 60 * time.Second
+	validAddress       = rex.ValidRemoteAddress
 )
+
+func defaultHostRoute(address string) rex.DirectRouteInfo {
+	if rex.IsDirectTarget(address) {
+		if t, err := rex.ParseDirectTarget(address); err == nil {
+			if t.IsRelay {
+				return rex.DirectRouteInfo{Kind: rex.RouteRelay, Host: t.Host}
+			}
+			return rex.DirectRouteInfo{Kind: rex.RouteDirect, Host: t.Host}
+		}
+	}
+	return rex.DirectRouteInfo{Kind: rex.RouteDirect}
+}
 
 type hostState int
 
@@ -105,6 +127,10 @@ type hostConn struct {
 	// control round trip measured last, -1 until it is. Both reset on
 	// every (re)connect: they describe the connection, not the host.
 	connectMs, pingMs int
+	// routeKind and routeHost describe the active transport of the current
+	// connection (direct, lan_direct, or relay) on the main thread.
+	routeKind rex.DirectRouteKind
+	routeHost string
 	// closed are the sessions closed here since the host connected, which
 	// adopt does not open again though a list still has them.
 	closed map[string]bool
@@ -117,14 +143,17 @@ type hostConn struct {
 	// is placed, or would have been (newPaneRun).
 	creating chan struct{}
 
-	// mu guards client, changed, Kills of savedHost and expect, the
-	// sessions a teleport starts here.
-	mu     sync.Mutex
-	client *rex.Client // nil while not connected
+	// mu guards client, changed, Kills of savedHost, LAN direct hints, and
+	// expect, the sessions a teleport starts here.
+	mu        sync.Mutex
+	client    *rex.Client // nil while not connected
+	lanAddrs  []string
+	directPin string
 	// changed closes as client changes (setClient).
 	changed chan struct{}
 	expect  map[string]bool
 	retry   chan struct{}
+	promote chan struct{}
 	stop    chan struct{}
 	once    sync.Once
 	// infos are the host's sessions, as its last list had them, for the
@@ -141,7 +170,54 @@ type hostConn struct {
 }
 
 func newHostConn(h savedHost) *hostConn {
-	return &hostConn{savedHost: h, pingMs: -1, retry: make(chan struct{}, 1), stop: make(chan struct{})}
+	return &hostConn{
+		savedHost: h,
+		pingMs:    -1,
+		retry:     make(chan struct{}, 1),
+		promote:   make(chan struct{}, 1),
+		stop:      make(chan struct{}),
+	}
+}
+
+// setLANHint records non-secret private LAN Direct TLS upgrade hints learned
+// from GET /api/hosts or GET /api/v1/lan-hint in memory, signalling watchHost
+// to probe and promote when currently connected through a relay.
+func (h *hostConn) setLANHint(addrs []string, pin string) bool {
+	pin = strings.TrimSpace(pin)
+	if pin == "" || len(addrs) == 0 {
+		return false
+	}
+	h.mu.Lock()
+	same := h.directPin == pin && slices.Equal(h.lanAddrs, addrs)
+	if !same {
+		h.lanAddrs = slices.Clone(addrs)
+		h.directPin = pin
+	}
+	h.mu.Unlock()
+	if !same && h.promote != nil {
+		select {
+		case h.promote <- struct{}{}:
+		default:
+		}
+	}
+	return !same
+}
+
+// lanCandidates builds the pinned private-LAN Direct TLS candidate list from
+// the host's in-memory hints.
+func (h *hostConn) lanCandidates() []rex.DirectCandidate {
+	h.mu.Lock()
+	addrs := slices.Clone(h.lanAddrs)
+	pin := h.directPin
+	h.mu.Unlock()
+	if pin == "" || len(addrs) == 0 {
+		return nil
+	}
+	out := make([]rex.DirectCandidate, 0, len(addrs))
+	for _, a := range addrs {
+		out = append(out, rex.DirectCandidate{Addr: a, Pin: pin})
+	}
+	return out
 }
 
 // listed is what the host's last list says of session sid, while the host
@@ -338,27 +414,32 @@ const (
 // failed, and fail what kind of failure it is. It logs nothing: its
 // callers log what changes.
 func connectHost(ctx context.Context, address string) (c *rex.Client, hello rex.Hello, why func() string, fail hostFailure) {
-	c, err := dialHost(ctx, address)
+	c, _, hello, why, fail = connectHostWithCandidates(ctx, address, nil)
+	return c, hello, why, fail
+}
+
+func connectHostWithCandidates(ctx context.Context, address string, candidates []rex.DirectCandidate) (c *rex.Client, route rex.DirectRouteInfo, hello rex.Hello, why func() string, fail hostFailure) {
+	c, route, err := dialHostWithCandidates(ctx, address, candidates)
 	if err != nil {
 		switch {
 		case errors.Is(err, rex.ErrDirectAuth):
-			return nil, hello, locales.HostsDirectAuthFailed, failOther
+			return nil, route, hello, locales.HostsDirectAuthFailed, failOther
 		case errors.Is(err, rex.ErrDirectPinMismatch):
-			return nil, hello, locales.HostsDirectPinMismatch, failOther
+			return nil, route, hello, locales.HostsDirectPinMismatch, failOther
 		}
-		return nil, hello, locales.HostsUnreachable, failUnreachable
+		return nil, route, hello, locales.HostsUnreachable, failUnreachable
 	}
 	if hello, err = c.Hello(); err != nil {
 		c.Close()
 		switch {
 		case strings.Contains(err.Error(), "connection to the server lost"), errors.Is(err, rex.ErrTimeout):
 			// Lost on the way.
-			return nil, hello, locales.HostsUnreachable, failUnreachable
+			return nil, route, hello, locales.HostsUnreachable, failUnreachable
 		}
 		msg := serverMessage(errors.New(rex.Scrub(err.Error(), address)))
-		return nil, hello, func() string { return msg }, failOther
+		return nil, route, hello, func() string { return msg }, failOther
 	}
-	return c, hello, nil, 0
+	return c, route, hello, nil, 0
 }
 
 // failureLog logs why connecting to a host failed, once until it changes.
@@ -459,7 +540,7 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 			}
 		}()
 		dialAt := time.Now()
-		c, hello, why, _ := connectHost(ctx, h.Address)
+		c, route, hello, why, _ := connectHostWithCandidates(ctx, h.Address, h.lanCandidates())
 		cancel()
 		if c != nil {
 			h.mu.Lock()
@@ -475,6 +556,7 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 			logged.log(name, nil)
 			update(func() {
 				h.state, h.reason, h.hello, h.closed = hostConnected, nil, hello, nil
+				h.routeKind, h.routeHost = route.Kind, route.Host
 				h.connectMs, h.pingMs, h.pathAt = int(time.Since(dialAt).Milliseconds()), -1, time.Time{}
 				if h.learn(hello) && h.persist != nil {
 					h.persist()
@@ -483,6 +565,24 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 					a.st.followHost(h, c, hello, update)
 				}
 			})
+			if route.Kind == rex.RouteRelay && len(h.lanCandidates()) == 0 && rex.IsDirectTarget(h.Address) {
+				go func(addr string, cl *rex.Client) {
+					fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer fcancel()
+					go func() {
+						select {
+						case <-cl.Closed():
+							fcancel()
+						case <-h.stop:
+							fcancel()
+						case <-fctx.Done():
+						}
+					}()
+					if hint, err := fetchLANHint(fctx, addr); err == nil && len(hint.LANAddrs) > 0 && hint.DirectPin != "" {
+						h.setLANHint(hint.LANAddrs, hint.DirectPin)
+					}
+				}(h.Address, c)
+			}
 			if hello.Can(rex.CapabilityAgents) {
 				go func(cl *rex.Client) {
 					if res, err := cl.AgentsList(); err == nil {
@@ -496,7 +596,7 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 			}
 			since := time.Now()
 			h.runKills(c)
-			a.watchHost(h, c, update)
+			promoted := a.watchHost(h, c, route.Kind, update)
 			h.mu.Lock()
 			if h.client == c {
 				h.setClient(nil)
@@ -513,6 +613,10 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 			case <-h.stop:
 				return
 			default:
+			}
+			if promoted {
+				attempt = 0
+				continue
 			}
 			why = locales.PaneConnectionDropped
 			if time.Since(since) >= hostHealthy {
@@ -540,13 +644,60 @@ func (a *App) runHost(h *hostConn, update func(func())) {
 }
 
 // watchHost asks a host what runs in its sessions every second, until its
-// connection closes, an ask fails, or the host is closed, and follows its
-// layout: the windows take the list, and draw again, as it changes (its
-// ETag), and the host's layout as its server tells it changed
-// (store.followHost).
-func (a *App) watchHost(h *hostConn, c *rex.Client, update func(func())) {
+// connection closes, an ask fails, the host is closed, or a verified LAN direct
+// probe promotes a relay connection back to the local LAN (returns true).
+func (a *App) watchHost(h *hostConn, c *rex.Client, routeKind rex.DirectRouteKind, update func(func())) bool {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	var (
+		promoteCh     <-chan struct{}
+		promoteTickCh <-chan time.Time
+		lanReady      chan string
+		probing       bool
+	)
+	if routeKind == rex.RouteRelay && rex.IsDirectTarget(h.Address) {
+		promoteCh = h.promote
+		lanReady = make(chan string, 1)
+		if lanPromoteInterval > 0 {
+			pt := time.NewTicker(lanPromoteInterval)
+			defer pt.Stop()
+			promoteTickCh = pt.C
+		}
+	}
+	startLANProbe := func() {
+		if probing || lanReady == nil {
+			return
+		}
+		cands := h.lanCandidates()
+		if len(cands) == 0 {
+			return
+		}
+		probing = true
+		go func(addr string, list []rex.DirectCandidate) {
+			pctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			go func() {
+				select {
+				case <-c.Closed():
+					cancel()
+				case <-h.stop:
+					cancel()
+				case <-pctx.Done():
+				}
+			}()
+			if cand, err := probeLANDirect(pctx, addr, list); err == nil {
+				select {
+				case lanReady <- cand.Addr:
+				default:
+				}
+				return
+			}
+			select {
+			case lanReady <- "":
+			default:
+			}
+		}(h.Address, cands)
+	}
 	var events <-chan rex.Event
 	if err := c.Subscribe(); err == nil {
 		events = c.Events()
@@ -556,11 +707,27 @@ func (a *App) watchHost(h *hostConn, c *rex.Client, update func(func())) {
 	for {
 		select {
 		case <-c.Closed():
-			return
+			return false
 		case <-h.stop:
-			return
+			return false
+		case addr := <-lanReady:
+			probing = false
+			if addr != "" {
+				log.Printf("gorex: host %s: LAN direct reachable (%s), promoting", h.Name, addr)
+				return true
+			}
+			continue
+		case <-promoteCh:
+			startLANProbe()
+			continue
+		case <-promoteTickCh:
+			startLANProbe()
+			continue
 		case <-h.retry: // connected: the next list is taken all the same (a poke)
 			etag = ""
+			if routeKind == rex.RouteRelay {
+				startLANProbe()
+			}
 			continue
 		case ev, ok := <-events:
 			if !ok {
@@ -578,7 +745,7 @@ func (a *App) watchHost(h *hostConn, c *rex.Client, update func(func())) {
 		infos, next, changed, err := c.ListSince(etag)
 		if err != nil {
 			// A connection that stopped answering is as good as dropped.
-			return
+			return false
 		}
 		etag = next
 		if !changed && prev != nil {
@@ -650,12 +817,21 @@ func (a *App) loadHosts() {
 		a.st.hostsLost = err != nil
 	}
 	a.hosts = nil
+	hasRelayHost := false
 	for _, s := range saved {
 		h := newHostConn(s)
 		a.hosts = append(a.hosts, h)
+		if rex.IsDirectTarget(s.Address) {
+			if t, perr := rex.ParseDirectTarget(s.Address); perr == nil && t.IsRelay {
+				hasRelayHost = true
+			}
+		}
 		a.startHost(h)
 	}
 	a.syncHosts()
+	if hasRelayHost {
+		a.prefetchRelayLANHints()
+	}
 }
 
 // peers are the windows of a's store, a alone without one.

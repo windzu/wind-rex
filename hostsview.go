@@ -350,7 +350,12 @@ func (a *App) hostDiag(c *ui.Context, k *colors, h *hostConn) {
 	a.refreshHostPath(h)
 	tag := locales.HostsDiagTagDirect()
 	var segs []string
-	if rex.IsDirectTarget(h.Address) {
+	if h.routeKind == rex.RouteLANDirect {
+		tag = locales.HostsDiagTagLANDirect()
+		if h.routeHost != "" {
+			segs = append(segs, h.routeHost)
+		}
+	} else if rex.IsDirectTarget(h.Address) {
 		if t, err := rex.ParseDirectTarget(h.Address); err == nil {
 			if t.IsRelay {
 				tag = locales.HostsDiagTagRelay()

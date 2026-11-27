@@ -1,12 +1,94 @@
 import CryptoKit
 import Foundation
+import Network
 
-/// Cross-platform Relay Fleet protocol helpers (Issue #55 / NET-010):
+/// Cross-platform Relay Fleet protocol helpers (Issue #55 / NET-010, NET-011):
 /// deterministic per-host HMAC-SHA256 token derivation, `#r=` Fleet QR parsing,
-/// and authenticated `GET /api/hosts` discovery with optional TLS leaf pinning.
+/// authenticated `GET /api/hosts` discovery with optional TLS leaf pinning, and
+/// private-LAN Direct TLS hint validation.
 enum RelayFleet {
     nonisolated static let tokenDomainPrefix = "windrex-fleet-v1:"
     nonisolated static let maxDiscoverBodyBytes = 1 << 20
+    nonisolated static let maxLANAddrs = 4
+
+    /// Reports whether `host` is a literal routable private LAN IP:
+    /// RFC1918 IPv4 (`10/8`, `172.16/12`, `192.168/16`) or IPv6 ULA (`fc00::/7`).
+    /// Rejects loopback, link-local, CGNAT (`100.64/10`), proxy TUN (`198.18/15`),
+    /// public IPs, and hostnames.
+    nonisolated static func isPrivateLANIP(_ host: String) -> Bool {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        guard !trimmed.isEmpty else { return false }
+        if let v4 = IPv4Address(trimmed) {
+            return isRFC1918(v4)
+        }
+        if let v6 = IPv6Address(trimmed) {
+            if let mapped = v6.asIPv4 {
+                return isRFC1918(mapped)
+            }
+            let bytes = [UInt8](v6.rawValue)
+            return bytes.count == 16 && (bytes[0] & 0xfe) == 0xfc
+        }
+        return false
+    }
+
+    nonisolated private static func isRFC1918(_ v4: IPv4Address) -> Bool {
+        let b = [UInt8](v4.rawValue)
+        guard b.count == 4 else { return false }
+        if b[0] == 10 { return true }
+        if b[0] == 172 && (b[1] >= 16 && b[1] <= 31) { return true }
+        if b[0] == 192 && b[1] == 168 { return true }
+        return false
+    }
+
+    /// Validates, normalizes, deduplicates, and caps `host:port` private LAN
+    /// Direct TLS candidates to `maxLANAddrs`.
+    nonisolated static func sanitizeLANAddrs(_ raw: [String]) -> [String] {
+        guard !raw.isEmpty else { return [] }
+        var seen = Set<String>()
+        var out: [String] = []
+        for item in raw {
+            let trimmed = item.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let (host, port) = splitHostPort(trimmed),
+                  port >= 1 && port <= 65535,
+                  isPrivateLANIP(host) else {
+                continue
+            }
+            let norm: String
+            if let v6 = IPv6Address(host), let mapped = v6.asIPv4 {
+                norm = "\(mapped):\(port)"
+            } else if host.contains(":") {
+                norm = "[\(host)]:\(port)"
+            } else {
+                norm = "\(host):\(port)"
+            }
+            if seen.insert(norm).inserted {
+                out.append(norm)
+                if out.count >= maxLANAddrs { break }
+            }
+        }
+        return out
+    }
+
+    nonisolated private static func splitHostPort(_ s: String) -> (String, Int)? {
+        if s.hasPrefix("[") {
+            guard let close = s.firstIndex(of: "]") else { return nil }
+            let after = s.index(after: close)
+            guard after < s.endIndex, s[after] == ":" else { return nil }
+            let host = String(s[s.index(after: s.startIndex)..<close])
+            guard let port = Int(s[s.index(after: after)...]) else { return nil }
+            return (host, port)
+        }
+        guard let colon = s.lastIndex(of: ":"), s.firstIndex(of: ":") == colon else { return nil }
+        let host = String(s[..<colon])
+        guard let port = Int(s[s.index(after: colon)...]) else { return nil }
+        return (host, port)
+    }
+
+    nonisolated static func lanURL(for addr: String) -> URL? {
+        guard sanitizeLANAddrs([addr]).first == addr else { return nil }
+        return URL(string: "https://\(addr)")
+    }
 
     /// Derives the per-host Bearer token accepted by `transportRelay` hosts
     /// that trust this relay (`relay_trust: true`):
@@ -171,19 +253,39 @@ nonisolated struct DiscoveredRelayHost: Codable, Equatable, Hashable, Identifiab
     var path: String?
     var connectedAt: String?
     var fleetAuth: Bool
+    var lanAddrs: [String]
+    var directPin: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, path
         case connectedAt = "connected_at"
         case fleetAuth = "fleet_auth"
+        case lanAddrs = "lan_addrs"
+        case directPin = "direct_pin"
     }
 
-    init(id: String, name: String, path: String? = nil, connectedAt: String? = nil, fleetAuth: Bool = false) {
+    init(
+        id: String,
+        name: String,
+        path: String? = nil,
+        connectedAt: String? = nil,
+        fleetAuth: Bool = false,
+        lanAddrs: [String] = [],
+        directPin: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.path = path
         self.connectedAt = connectedAt
         self.fleetAuth = fleetAuth
+        if let directPin, PinnedTLSSession.validPin(directPin) {
+            let clean = RelayFleet.sanitizeLANAddrs(lanAddrs)
+            self.lanAddrs = clean
+            self.directPin = clean.isEmpty ? nil : directPin
+        } else {
+            self.lanAddrs = []
+            self.directPin = nil
+        }
     }
 
     init(from decoder: Decoder) throws {
@@ -192,8 +294,18 @@ nonisolated struct DiscoveredRelayHost: Codable, Equatable, Hashable, Identifiab
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         path = try c.decodeIfPresent(String.self, forKey: .path)
         connectedAt = try c.decodeIfPresent(String.self, forKey: .connectedAt)
-        // Older relays omit `fleet_auth`; treat missing as false.
+        // Older relays omit `fleet_auth`, `lan_addrs`, and `direct_pin`.
         fleetAuth = try c.decodeIfPresent(Bool.self, forKey: .fleetAuth) ?? false
+        let rawAddrs = try c.decodeIfPresent([String].self, forKey: .lanAddrs) ?? []
+        let rawPin = try c.decodeIfPresent(String.self, forKey: .directPin)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let rawPin, PinnedTLSSession.validPin(rawPin) {
+            let clean = RelayFleet.sanitizeLANAddrs(rawAddrs)
+            lanAddrs = clean
+            directPin = clean.isEmpty ? nil : rawPin
+        } else {
+            lanAddrs = []
+            directPin = nil
+        }
     }
 
     /// Clean display name falling back to `id` when empty.
@@ -206,6 +318,117 @@ nonisolated struct DiscoveredRelayHost: Codable, Equatable, Hashable, Identifiab
     func hostURL(base: URL) -> URL? {
         guard RelayFleet.validHostID(id) else { return nil }
         return base.apiURL("/h/\(id)")
+    }
+}
+
+/// Authenticated `GET /api/v1/lan-hint` payload and pinned LAN probe helpers
+/// (docs/NET-011-lan-direct-upgrade.md).
+nonisolated struct LANDirectHint: Decodable, Equatable, Sendable {
+    var lanAddrs: [String]
+    var directPin: String?
+
+    enum CodingKeys: String, CodingKey {
+        case lanAddrs = "lan_addrs"
+        case directPin = "direct_pin"
+    }
+
+    init(lanAddrs: [String] = [], directPin: String? = nil) {
+        if let directPin, PinnedTLSSession.validPin(directPin) {
+            let clean = RelayFleet.sanitizeLANAddrs(lanAddrs)
+            self.lanAddrs = clean
+            self.directPin = clean.isEmpty ? nil : directPin
+        } else {
+            self.lanAddrs = []
+            self.directPin = nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rawAddrs = try c.decodeIfPresent([String].self, forKey: .lanAddrs) ?? []
+        let rawPin = try c.decodeIfPresent(String.self, forKey: .directPin)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.init(lanAddrs: rawAddrs, directPin: rawPin)
+    }
+}
+
+enum LANDirectProbe {
+    nonisolated static let hintPath = "/api/v1/lan-hint"
+
+    /// Fetches private-LAN Direct TLS hints from an authenticated relay or direct host.
+    nonisolated static func fetchHint(baseURL: URL, auth: String?, tlsPin: String?, timeout: TimeInterval = 5) async -> LANDirectHint? {
+        let session = await MainActor.run { PinnedTLSSession.session(pin: tlsPin, rejectRedirects: true) }
+        defer {
+            if session !== URLSession.shared {
+                session.finishTasksAndInvalidate()
+            }
+        }
+        var request = URLRequest(url: baseURL.apiURL(hintPath))
+        request.httpMethod = "GET"
+        request.timeoutInterval = timeout
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request = request.authorized(auth)
+
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200,
+              data.count <= 64 * 1024,
+              let hint = try? JSONDecoder().decode(LANDirectHint.self, from: data),
+              !hint.lanAddrs.isEmpty,
+              hint.directPin != nil else {
+            return nil
+        }
+        return hint
+    }
+
+    /// Races authenticated pinned `GET /api/v1/lan-hint` across sanitized private-LAN
+    /// candidates and returns the first `https://<ip>:<port>` URL answering HTTP 200.
+    nonisolated static func probeFirstReachable(
+        addrs: [String],
+        pin: String,
+        auth: String?,
+        timeout: TimeInterval = 0.4
+    ) async -> URL? {
+        guard PinnedTLSSession.validPin(pin) else { return nil }
+        let urls = RelayFleet.sanitizeLANAddrs(addrs).compactMap(RelayFleet.lanURL(for:))
+        guard !urls.isEmpty else { return nil }
+
+        return await withTaskGroup(of: URL?.self) { group in
+            for url in urls {
+                group.addTask {
+                    await probeOne(url: url, pin: pin, auth: auth, timeout: timeout)
+                }
+            }
+            for await result in group {
+                if let winner = result {
+                    group.cancelAll()
+                    return winner
+                }
+            }
+            return nil
+        }
+    }
+
+    nonisolated private static func probeOne(url: URL, pin: String, auth: String?, timeout: TimeInterval) async -> URL? {
+        let session = await MainActor.run { PinnedTLSSession.session(pin: pin, rejectRedirects: true) }
+        defer {
+            if session !== URLSession.shared {
+                session.finishTasksAndInvalidate()
+            }
+        }
+        var request = URLRequest(url: url.apiURL(hintPath))
+        request.httpMethod = "GET"
+        request.timeoutInterval = timeout
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request = request.authorized(auth)
+
+        guard let (_, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200 else {
+            return nil
+        }
+        return url
     }
 }
 

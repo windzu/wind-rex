@@ -19,7 +19,7 @@ func directMain(args []string) int {
 }
 
 func directMainIO(args []string, out, errOut io.Writer) int {
-	usage := "usage: gorex rexapi direct on [--listen :7443] --public https://HOST:PORT [--cert FILE --key FILE] [--name NAME] | relay --url https://RELAY:PORT [--pin PIN] [--secret SECRET] [--name NAME] [--trust-relay] | off | status | qr [--fleet] | fleet-qr [--label LABEL] | rotate"
+	usage := "usage: gorex rexapi direct on [--listen :7443] --public https://HOST:PORT [--cert FILE --key FILE] [--name NAME] | relay --url https://RELAY:PORT [--pin PIN] [--secret SECRET] [--name NAME] [--trust-relay] [--lan-direct=true] | off | status | qr [--fleet] | fleet-qr [--label LABEL] | rotate"
 	if len(args) == 0 {
 		fmt.Fprintln(errOut, usage)
 		return 2
@@ -89,6 +89,7 @@ func directMainIO(args []string, out, errOut io.Writer) int {
 		secret := fs.String("secret", conf.RelaySecret, "optional relay registration secret")
 		name := fs.String("name", conf.HostName, "optional host display name override")
 		trustRelay := fs.Bool("trust-relay", conf.RelayTrust, "allow relay fleet auto-connect via per-host derived HMAC token")
+		lanDirect := fs.Bool("lan-direct", conf.LANDirectEnabled(), "listen locally with Direct TLS for automatic LAN direct upgrade")
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
@@ -104,6 +105,12 @@ func directMainIO(args []string, out, errOut io.Writer) int {
 		conf.RelaySecret = strings.TrimSpace(*secret)
 		conf.HostName = strings.TrimSpace(*name)
 		conf.RelayTrust = *trustRelay
+		if *lanDirect {
+			conf.LANDirect = nil
+		} else {
+			v := false
+			conf.LANDirect = &v
+		}
 	default:
 		fmt.Fprintln(errOut, usage)
 		return 2
@@ -199,10 +206,10 @@ func printDirectQR(w io.Writer, pairURL string) {
 func printDirect(w io.Writer, c DirectConfig, s DirectStatus) {
 	state := "off"
 	switch {
-	case c.Enabled && s.Listening != "":
-		state = "listening on https://" + s.Listening
-	case c.Enabled && s.RelayConnected:
+	case c.Enabled && c.RelayURL != "" && s.RelayConnected:
 		state = "connected to relay"
+	case c.Enabled && s.Listening != "" && c.RelayURL == "":
+		state = "listening on https://" + s.Listening
 	case c.Enabled && (s.Error != "" || s.RelayError != ""):
 		state = "error"
 	case c.Enabled:
@@ -214,6 +221,11 @@ func printDirect(w io.Writer, c DirectConfig, s DirectStatus) {
 	}
 	if c.PublicURL != "" {
 		fmt.Fprintf(w, "  public: %s\n", c.PublicURL)
+	}
+	if len(s.LANAddrs) > 0 {
+		fmt.Fprintf(w, "  lan direct: %s\n", strings.Join(s.LANAddrs, ", "))
+	} else if c.RelayURL != "" && !c.LANDirectEnabled() {
+		fmt.Fprintln(w, "  lan direct: disabled")
 	}
 	if s.CertPin != "" {
 		fmt.Fprintf(w, "  cert pin: %s\n", s.CertPin)

@@ -187,7 +187,12 @@ final class RelayStore {
         var ignoredCount = 0
 
         for item in discovered {
+            let hostURL = item.hostURL(base: relay.url)
             guard item.fleetAuth else {
+                // Even manual-QR hosts on this relay benefit from LAN direct hints.
+                if let hostURL, let existing = hostStore.hosts.first(where: { !$0.isDemo && ($0.config.url == hostURL || ($0.config.relayID == relay.id && $0.config.relayHostID == item.id)) }) {
+                    existing.updateLANHint(addrs: item.lanAddrs, pin: item.directPin)
+                }
                 manualOnly += 1
                 continue
             }
@@ -195,7 +200,7 @@ final class RelayStore {
                 ignoredCount += 1
                 continue
             }
-            guard let hostURL = item.hostURL(base: relay.url) else { continue }
+            guard let hostURL else { continue }
             let token = RelayFleet.deriveFleetToken(relaySecret: secret, hostID: item.id)
 
             // Deduplicate by (relayID, relayHostID) first, then by exact URL.
@@ -221,6 +226,7 @@ final class RelayStore {
                     hostStore.update(next)
                     updated.append(next)
                 }
+                existing.updateLANHint(addrs: item.lanAddrs, pin: item.directPin)
             } else {
                 let config = HostConfig(
                     name: item.displayName,
@@ -231,6 +237,9 @@ final class RelayStore {
                     relayHostID: item.id
                 )
                 hostStore.add(config)
+                if let addedHost = hostStore.host(config.id) {
+                    addedHost.updateLANHint(addrs: item.lanAddrs, pin: item.directPin)
+                }
                 added.append(config)
             }
         }

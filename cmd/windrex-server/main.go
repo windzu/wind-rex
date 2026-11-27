@@ -185,18 +185,19 @@ type serverStatusReport struct {
 }
 
 type directStatusSummary struct {
-	Enabled        bool   `json:"enabled"`
-	Mode           string `json:"mode"`
-	HostName       string `json:"hostName,omitempty"`
-	Listen         string `json:"listen,omitempty"`
-	PublicURL      string `json:"publicURL,omitempty"`
-	Listening      string `json:"listening,omitempty"`
-	RelayURL       string `json:"relayURL,omitempty"`
-	RelayTrust     bool   `json:"relayTrust,omitempty"`
-	RelayConnected bool   `json:"relayConnected,omitempty"`
-	CertPin        string `json:"certPin,omitempty"`
-	Error          string `json:"error,omitempty"`
-	RelayError     string `json:"relayError,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	Mode           string   `json:"mode"`
+	HostName       string   `json:"hostName,omitempty"`
+	Listen         string   `json:"listen,omitempty"`
+	PublicURL      string   `json:"publicURL,omitempty"`
+	Listening      string   `json:"listening,omitempty"`
+	LANAddrs       []string `json:"lanAddrs,omitempty"`
+	RelayURL       string   `json:"relayURL,omitempty"`
+	RelayTrust     bool     `json:"relayTrust,omitempty"`
+	RelayConnected bool     `json:"relayConnected,omitempty"`
+	CertPin        string   `json:"certPin,omitempty"`
+	Error          string   `json:"error,omitempty"`
+	RelayError     string   `json:"relayError,omitempty"`
 }
 
 type lanStatusSummary struct {
@@ -290,6 +291,7 @@ func readDirectSummary(dir string) directStatusSummary {
 		Listen:         conf.Listen,
 		PublicURL:      conf.PublicURL,
 		Listening:      st.Listening,
+		LANAddrs:       st.LANAddrs,
 		RelayURL:       conf.RelayURL,
 		RelayTrust:     conf.RelayTrust,
 		RelayConnected: st.RelayConnected,
@@ -329,12 +331,15 @@ func printServerStatus(w io.Writer, r serverStatusReport) {
 	fmt.Fprintf(w, "  socket: %s\n", r.Socket)
 	fmt.Fprintf(w, "  direct: %s", r.Direct.Mode)
 	switch {
-	case r.Direct.Listening != "":
-		fmt.Fprintf(w, " (https://%s)", r.Direct.Listening)
 	case r.Direct.RelayURL != "":
 		fmt.Fprintf(w, " (%s, connected: %v)", r.Direct.RelayURL, r.Direct.RelayConnected)
+	case r.Direct.Listening != "":
+		fmt.Fprintf(w, " (https://%s)", r.Direct.Listening)
 	}
 	fmt.Fprintln(w)
+	if len(r.Direct.LANAddrs) > 0 {
+		fmt.Fprintf(w, "  lan direct: %s\n", strings.Join(r.Direct.LANAddrs, ", "))
+	}
 	if r.Direct.Error != "" {
 		fmt.Fprintf(w, "  direct error: %s\n", r.Direct.Error)
 	}
