@@ -466,6 +466,7 @@ func (a *App) sidebar(c *ui.Context, k *colors, right bool) {
 			if iconButton(c, k, "folder-plus", cmdNewProject.Title(), 30, 16).Tooltip(tip(cmdNewProject.Title(), &cmdNewProject)).Clicked() {
 				a.later(c, a.openNewProject)
 			}
+			a.archivedFooterButton(c, k)
 			ui.Spacer(c)
 			a.hostButton(c, k)
 		})
@@ -581,7 +582,7 @@ func (a *App) sidebarTab(c *ui.Context, k *colors, i int, t *Tab, reserve float3
 		} else if !compact {
 			ui.Box(c).Width(reserve).Shrink(0)
 		}
-		a.tabRest(c, ck, t, active, hovered, compact)
+		a.tabRest(c, ck, t, active, hovered, compact, true)
 	})
 }
 
@@ -627,9 +628,10 @@ func (a *App) hostSectionIcon(c *ui.Context, k *colors, h *hostConn) {
 // spaceTab is a tab of a session the window does not show, in the host
 // view: its tiles and its name, as the window's tabs show, but neither
 // chosen nor dragged; s is its panes' most urgent record, whose dot
-// ends the row as a shown tab's does. It reports whether it was
-// clicked.
-func spaceTab(c *ui.Context, k *colors, key, name, detail, tooltip string, s *rex.ProgramStatus, reserve float32, tiles func()) bool {
+// ends the row as a shown tab's does. When onArchive is set, hovering shows a
+// trailing Archive button and right-clicking offers Archive Tab. It reports
+// whether the row was clicked to open the tab.
+func (a *App) spaceTab(c *ui.Context, k *colors, key, name, detail, tooltip string, s *rex.ProgramStatus, reserve float32, tiles func(), onArchive func()) bool {
 	compact := compactSidebar()
 	h := sidebarTabRowH()
 	e := ui.Row(c.Key("tab-"+key)).Height(h).Shrink(0).Padding(0, 6, 0, sidebarLead()).Gap(sideGap).AlignItems(ui.Center).Radius(pillRadius(h, radiusM)).
@@ -640,13 +642,22 @@ func spaceTab(c *ui.Context, k *colors, key, name, detail, tooltip string, s *re
 	if anim := motion(c); anim != nil {
 		e.Transition(exitIn(ui.ElementTransition{Animation: anim, Position: true, Enter: tabMotion, Exit: tabMotion}, durExitMove))
 	}
-	if e.Hovered() {
+	hovered := e.Hovered()
+	if hovered {
 		if compact {
 			e.Radius(radiusM)
 		}
 		e.Background(hoverFace(k))
 		k = sidebarHoverColors(k)
 	}
+	if onArchive != nil {
+		e.ContextMenu(func(m *ui.Menu) {
+			if m.Item(locales.CmdArchiveTab()).Chosen() {
+				a.laterService(onArchive)
+			}
+		})
+	}
+	archived := false
 	e.Children(func() {
 		if !sidebarIconsText() {
 			ui.Box(c).Width(reserve).Shrink(0).Children(tiles)
@@ -660,11 +671,16 @@ func spaceTab(c *ui.Context, k *colors, key, name, detail, tooltip string, s *re
 				fadeText(p, r, tabLabel(name, detail, k.textMuted, k.textFaint))
 			}
 		})
-		if needsUser(s) || s != nil && s.State == "working" {
+		if hovered && onArchive != nil {
+			if iconButton(c.Key("archive"), k, "archive", locales.CmdArchiveTab(), 18, 12).Tooltip(locales.CmdArchiveTab()).Clicked() {
+				archived = true
+				a.later(c, onArchive)
+			}
+		} else if needsUser(s) || s != nil && s.State == "working" {
 			statusDot(c, k, s, 5.5).Label(statusTip(s))
 		}
 	})
-	return e.Clicked()
+	return e.Clicked() && !archived
 }
 
 // savedTabLabel is how a tab of a layout names itself, and the program

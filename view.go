@@ -128,6 +128,7 @@ func (a *App) view(c *ui.Context) {
 	a.spaceDialog(c, k)
 	a.projectSheetView(c, k)
 	a.teleportConfirm(c, k)
+	a.archiveDialog(c, k)
 	// mygo paints a text input's caret in the theme of the frame as it
 	// paints, and a field cannot give it one of its own: the widgets above
 	// have taken their colors already, so the theme changes now, after

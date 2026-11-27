@@ -118,7 +118,7 @@ func (a *App) workspaceConfirm(c *ui.Context, k *colors) {
 		a.wsConfirm = false
 		return
 	}
-	n := 0
+	n := archivedWorkspacePanes(a.ws)
 	for _, t := range a.tabs {
 		n += len(t.allPanes())
 	}

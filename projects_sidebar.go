@@ -590,7 +590,12 @@ func (a *App) workspaceTabs(c *ui.Context, k *colors, w *Workspace, reserve floa
 		for i, t := range o.tabs[:limit] {
 			name, detail := t.labelIn(proj)
 			tip := tabTooltip(t, proj)
-			if spaceTab(c, k, t.UID, name, detail, tip, t.status(), reserve, func() { a.tiles(c, k, t) }) {
+			var onArchive func()
+			if !offline && t.UID != "" {
+				uid := t.UID
+				onArchive = func() { a.archiveWorkspaceTab(w, uid) }
+			}
+			if a.spaceTab(c, k, t.UID, name, detail, tip, t.status(), reserve, func() { a.tiles(c, k, t) }, onArchive) {
 				pick(i)
 			}
 		}
@@ -603,7 +608,12 @@ func (a *App) workspaceTabs(c *ui.Context, k *colors, w *Workspace, reserve floa
 		name, detail, prog := savedTabFaceIn(t, infos, proj)
 		tip := savedTabTooltip(t, infos, proj)
 		s := a.st.savedTabStatus(t, id, infos)
-		if spaceTab(c, k, cmp.Or(t.ID, fmt.Sprint(i)), name, detail, tip, s, reserve, func() {
+		var onArchive func()
+		if !offline && t.ID != "" {
+			tid := t.ID
+			onArchive = func() { a.archiveWorkspaceTab(w, tid) }
+		}
+		if a.spaceTab(c, k, cmp.Or(t.ID, fmt.Sprint(i)), name, detail, tip, s, reserve, func() {
 			ui.Box(c).Size(tileSlot, tileH+4).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
 				fr := ui.Rect{X: r.X + 1, Y: r.Y + 2, W: tileW, H: tileH}
 				drawTile(p, fr, prog, true)
@@ -611,7 +621,7 @@ func (a *App) workspaceTabs(c *ui.Context, k *colors, w *Workspace, reserve floa
 					drawDoneDot(p, fr, k)
 				}
 			})
-		}) {
+		}, onArchive) {
 			pick(i)
 		}
 	}

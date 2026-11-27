@@ -7999,3 +7999,255 @@ func PreviewLineBadge(line int) string { return In(i18n.Locale()).PreviewLineBad
 func (msgs Messages) PreviewLineBadge(line int) string {
 	return Catalog.Format(msgs.locale, "previewLineBadge", map[string]any{"line": line})
 }
+
+// CmdArchiveTab says "Archive Tab"
+// in the language the app shows.
+//
+// Action to archive a tab out of the daily sidebar list while keeping its
+// sessions running.
+func CmdArchiveTab() string { return In(i18n.Locale()).CmdArchiveTab() }
+
+// CmdArchiveTab says "Archive Tab"
+// in the language of msgs.
+//
+// Action to archive a tab out of the daily sidebar list while keeping its
+// sessions running.
+func (msgs Messages) CmdArchiveTab() string {
+	return Catalog.Format(msgs.locale, "cmdArchiveTab", nil)
+}
+
+// CmdArchivedTabs says "Archived Tabs…"
+// in the language the app shows.
+//
+// Command Palette action that opens the Archived tabs dialog.
+func CmdArchivedTabs() string { return In(i18n.Locale()).CmdArchivedTabs() }
+
+// CmdArchivedTabs says "Archived Tabs…"
+// in the language of msgs.
+//
+// Command Palette action that opens the Archived tabs dialog.
+func (msgs Messages) CmdArchivedTabs() string {
+	return Catalog.Format(msgs.locale, "cmdArchivedTabs", nil)
+}
+
+// SidebarArchived says "Archived"
+// in the language the app shows.
+//
+// Accessible label and tooltip for the Archived sessions button in the
+// sidebar footer.
+func SidebarArchived() string { return In(i18n.Locale()).SidebarArchived() }
+
+// SidebarArchived says "Archived"
+// in the language of msgs.
+//
+// Accessible label and tooltip for the Archived sessions button in the
+// sidebar footer.
+func (msgs Messages) SidebarArchived() string {
+	return Catalog.Format(msgs.locale, "sidebarArchived", nil)
+}
+
+// SidebarArchivedCount says "Archived ({count})"
+// in the language the app shows.
+//
+// Tooltip for the sidebar footer Archived button when archived sessions
+// exist.
+func SidebarArchivedCount(count int) string { return In(i18n.Locale()).SidebarArchivedCount(count) }
+
+// SidebarArchivedCount says "Archived ({count})"
+// in the language of msgs.
+//
+// Tooltip for the sidebar footer Archived button when archived sessions
+// exist.
+func (msgs Messages) SidebarArchivedCount(count int) string {
+	return Catalog.Format(msgs.locale, "sidebarArchivedCount", map[string]any{"count": count})
+}
+
+// ArchiveDialogTitle says "Archived"
+// in the language the app shows.
+//
+// Heading of the Archived sessions dialog.
+func ArchiveDialogTitle() string { return In(i18n.Locale()).ArchiveDialogTitle() }
+
+// ArchiveDialogTitle says "Archived"
+// in the language of msgs.
+//
+// Heading of the Archived sessions dialog.
+func (msgs Messages) ArchiveDialogTitle() string {
+	return Catalog.Format(msgs.locale, "archiveDialogTitle", nil)
+}
+
+// ArchiveClose says "Close"
+// in the language the app shows.
+//
+// Close button label in the Archived dialog.
+func ArchiveClose() string { return In(i18n.Locale()).ArchiveClose() }
+
+// ArchiveClose says "Close"
+// in the language of msgs.
+//
+// Close button label in the Archived dialog.
+func (msgs Messages) ArchiveClose() string {
+	return Catalog.Format(msgs.locale, "archiveClose", nil)
+}
+
+// ArchiveSearchPlaceholder says "Filter archived sessions…"
+// in the language the app shows.
+//
+// Placeholder text for the search box inside the Archived dialog.
+func ArchiveSearchPlaceholder() string { return In(i18n.Locale()).ArchiveSearchPlaceholder() }
+
+// ArchiveSearchPlaceholder says "Filter archived sessions…"
+// in the language of msgs.
+//
+// Placeholder text for the search box inside the Archived dialog.
+func (msgs Messages) ArchiveSearchPlaceholder() string {
+	return Catalog.Format(msgs.locale, "archiveSearchPlaceholder", nil)
+}
+
+// ArchiveEmpty says "No archived sessions"
+// in the language the app shows.
+//
+// Empty state title in the Archived dialog when no tabs are archived.
+func ArchiveEmpty() string { return In(i18n.Locale()).ArchiveEmpty() }
+
+// ArchiveEmpty says "No archived sessions"
+// in the language of msgs.
+//
+// Empty state title in the Archived dialog when no tabs are archived.
+func (msgs Messages) ArchiveEmpty() string {
+	return Catalog.Format(msgs.locale, "archiveEmpty", nil)
+}
+
+// ArchiveEmptyHint says "Hover a session in the sidebar or right-click a tab to archive it without stopping its process."
+// in the language the app shows.
+//
+// Empty state hint in the Archived dialog explaining how to archive a tab.
+func ArchiveEmptyHint() string { return In(i18n.Locale()).ArchiveEmptyHint() }
+
+// ArchiveEmptyHint says "Hover a session in the sidebar or right-click a tab to archive it without stopping its process."
+// in the language of msgs.
+//
+// Empty state hint in the Archived dialog explaining how to archive a tab.
+func (msgs Messages) ArchiveEmptyHint() string {
+	return Catalog.Format(msgs.locale, "archiveEmptyHint", nil)
+}
+
+// ArchiveNoMatches says "No archived sessions match \"{query}\""
+// in the language the app shows.
+//
+// Shown in the Archived dialog when the filter matches no archived tabs.
+func ArchiveNoMatches(query string) string { return In(i18n.Locale()).ArchiveNoMatches(query) }
+
+// ArchiveNoMatches says "No archived sessions match \"{query}\""
+// in the language of msgs.
+//
+// Shown in the Archived dialog when the filter matches no archived tabs.
+func (msgs Messages) ArchiveNoMatches(query string) string {
+	return Catalog.Format(msgs.locale, "archiveNoMatches", map[string]any{"query": query})
+}
+
+// ArchivePaneCount says "{count} panes"
+// in the language the app shows.
+//
+// Subtitle part showing how many split panes an archived tab holds.
+func ArchivePaneCount(count int) string { return In(i18n.Locale()).ArchivePaneCount(count) }
+
+// ArchivePaneCount says "{count} panes"
+// in the language of msgs.
+//
+// Subtitle part showing how many split panes an archived tab holds.
+func (msgs Messages) ArchivePaneCount(count int) string {
+	return Catalog.Format(msgs.locale, "archivePaneCount", map[string]any{"count": count})
+}
+
+// ArchiveStatusLive says "Running on host"
+// in the language the app shows.
+//
+// Tooltip for the live status dot on an archived tab whose host session is
+// still running.
+func ArchiveStatusLive() string { return In(i18n.Locale()).ArchiveStatusLive() }
+
+// ArchiveStatusLive says "Running on host"
+// in the language of msgs.
+//
+// Tooltip for the live status dot on an archived tab whose host session is
+// still running.
+func (msgs Messages) ArchiveStatusLive() string {
+	return Catalog.Format(msgs.locale, "archiveStatusLive", nil)
+}
+
+// ArchiveStatusExited says "Exited"
+// in the language the app shows.
+//
+// Label on an archived tab whose host session has exited.
+func ArchiveStatusExited() string { return In(i18n.Locale()).ArchiveStatusExited() }
+
+// ArchiveStatusExited says "Exited"
+// in the language of msgs.
+//
+// Label on an archived tab whose host session has exited.
+func (msgs Messages) ArchiveStatusExited() string {
+	return Catalog.Format(msgs.locale, "archiveStatusExited", nil)
+}
+
+// ArchiveRestore says "Restore"
+// in the language the app shows.
+//
+// Button that restores an archived tab back to its project or No Project
+// list.
+func ArchiveRestore() string { return In(i18n.Locale()).ArchiveRestore() }
+
+// ArchiveRestore says "Restore"
+// in the language of msgs.
+//
+// Button that restores an archived tab back to its project or No Project
+// list.
+func (msgs Messages) ArchiveRestore() string {
+	return Catalog.Format(msgs.locale, "archiveRestore", nil)
+}
+
+// ArchiveRestoreOffline says "Host is offline"
+// in the language the app shows.
+//
+// Tooltip on a disabled Restore button when the archived tab's host is
+// disconnected.
+func ArchiveRestoreOffline() string { return In(i18n.Locale()).ArchiveRestoreOffline() }
+
+// ArchiveRestoreOffline says "Host is offline"
+// in the language of msgs.
+//
+// Tooltip on a disabled Restore button when the archived tab's host is
+// disconnected.
+func (msgs Messages) ArchiveRestoreOffline() string {
+	return Catalog.Format(msgs.locale, "archiveRestoreOffline", nil)
+}
+
+// ArchiveDelete says "Delete permanently"
+// in the language the app shows.
+//
+// Button that permanently deletes an archived tab and ends its sessions.
+func ArchiveDelete() string { return In(i18n.Locale()).ArchiveDelete() }
+
+// ArchiveDelete says "Delete permanently"
+// in the language of msgs.
+//
+// Button that permanently deletes an archived tab and ends its sessions.
+func (msgs Messages) ArchiveDelete() string {
+	return Catalog.Format(msgs.locale, "archiveDelete", nil)
+}
+
+// ArchiveDeleteConfirm says "End & Delete"
+// in the language the app shows.
+//
+// Confirmation button when permanently deleting an archived tab that still
+// runs a program.
+func ArchiveDeleteConfirm() string { return In(i18n.Locale()).ArchiveDeleteConfirm() }
+
+// ArchiveDeleteConfirm says "End & Delete"
+// in the language of msgs.
+//
+// Confirmation button when permanently deleting an archived tab that still
+// runs a program.
+func (msgs Messages) ArchiveDeleteConfirm() string {
+	return Catalog.Format(msgs.locale, "archiveDeleteConfirm", nil)
+}

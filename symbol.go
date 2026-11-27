@@ -15,6 +15,7 @@ import (
 var sfSymbols = map[string]string{
 	"activity":                  "waveform.path.ecg",
 	"app-window":                "macwindow",
+	"archive":                   "archivebox",
 	"check":                     "checkmark",
 	"chevron-down":              "chevron.down",
 	"cloud":                     "cloud",
@@ -43,6 +44,7 @@ var sfSymbols = map[string]string{
 	"pencil":                    "pencil",
 	"plus":                      "plus",
 	"plus-minus-circle":         "plusminus.circle",
+	"rotate-ccw":                "arrow.uturn.backward",
 	"rows-2":                    "rectangle.split.1x2",
 	"search":                    "magnifyingglass",
 	"server":                    "server.rack",

@@ -2789,5 +2789,91 @@
         "example": "42"
       }
     }
+  },
+  "cmdArchiveTab": "Archive Tab",
+  "@cmdArchiveTab": {
+    "description": "Action to archive a tab out of the daily sidebar list while keeping its sessions running."
+  },
+  "cmdArchivedTabs": "Archived Tabs…",
+  "@cmdArchivedTabs": {
+    "description": "Command Palette action that opens the Archived tabs dialog."
+  },
+  "sidebarArchived": "Archived",
+  "@sidebarArchived": {
+    "description": "Accessible label and tooltip for the Archived sessions button in the sidebar footer."
+  },
+  "sidebarArchivedCount": "Archived ({count})",
+  "@sidebarArchivedCount": {
+    "description": "Tooltip for the sidebar footer Archived button when archived sessions exist.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "archiveDialogTitle": "Archived",
+  "@archiveDialogTitle": {
+    "description": "Heading of the Archived sessions dialog."
+  },
+  "archiveClose": "Close",
+  "@archiveClose": {
+    "description": "Close button label in the Archived dialog."
+  },
+  "archiveSearchPlaceholder": "Filter archived sessions…",
+  "@archiveSearchPlaceholder": {
+    "description": "Placeholder text for the search box inside the Archived dialog."
+  },
+  "archiveEmpty": "No archived sessions",
+  "@archiveEmpty": {
+    "description": "Empty state title in the Archived dialog when no tabs are archived."
+  },
+  "archiveEmptyHint": "Hover a session in the sidebar or right-click a tab to archive it without stopping its process.",
+  "@archiveEmptyHint": {
+    "description": "Empty state hint in the Archived dialog explaining how to archive a tab."
+  },
+  "archiveNoMatches": "No archived sessions match \"{query}\"",
+  "@archiveNoMatches": {
+    "description": "Shown in the Archived dialog when the filter matches no archived tabs.",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "api"
+      }
+    }
+  },
+  "archivePaneCount": "{count} panes",
+  "@archivePaneCount": {
+    "description": "Subtitle part showing how many split panes an archived tab holds.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "archiveStatusLive": "Running on host",
+  "@archiveStatusLive": {
+    "description": "Tooltip for the live status dot on an archived tab whose host session is still running."
+  },
+  "archiveStatusExited": "Exited",
+  "@archiveStatusExited": {
+    "description": "Label on an archived tab whose host session has exited."
+  },
+  "archiveRestore": "Restore",
+  "@archiveRestore": {
+    "description": "Button that restores an archived tab back to its project or No Project list."
+  },
+  "archiveRestoreOffline": "Host is offline",
+  "@archiveRestoreOffline": {
+    "description": "Tooltip on a disabled Restore button when the archived tab's host is disconnected."
+  },
+  "archiveDelete": "Delete permanently",
+  "@archiveDelete": {
+    "description": "Button that permanently deletes an archived tab and ends its sessions."
+  },
+  "archiveDeleteConfirm": "End & Delete",
+  "@archiveDeleteConfirm": {
+    "description": "Confirmation button when permanently deleting an archived tab that still runs a program."
   }
 }
