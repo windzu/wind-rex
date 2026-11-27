@@ -1469,6 +1469,10 @@
   "@hostsDiagTagDirect": {
     "description": "Remote Hosts page: tag of a host linked over Direct TLS."
   },
+  "hostsDiagTagLANDirect": "LAN direct",
+  "@hostsDiagTagLANDirect": {
+    "description": "Remote Hosts page: tag of a relay host upgraded automatically to local LAN Direct TLS."
+  },
   "hostsDiagTagRelay": "relay",
   "@hostsDiagTagRelay": {
     "description": "Remote Hosts page: tag of a host linked through a self-hosted relay."

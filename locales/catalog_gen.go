@@ -4362,6 +4362,22 @@ func (msgs Messages) HostsDiagTagDirect() string {
 	return Catalog.Format(msgs.locale, "hostsDiagTagDirect", nil)
 }
 
+// HostsDiagTagLANDirect says "LAN direct"
+// in the language the app shows.
+//
+// Remote Hosts page: tag of a relay host upgraded automatically to local
+// LAN Direct TLS.
+func HostsDiagTagLANDirect() string { return In(i18n.Locale()).HostsDiagTagLANDirect() }
+
+// HostsDiagTagLANDirect says "LAN direct"
+// in the language of msgs.
+//
+// Remote Hosts page: tag of a relay host upgraded automatically to local
+// LAN Direct TLS.
+func (msgs Messages) HostsDiagTagLANDirect() string {
+	return Catalog.Format(msgs.locale, "hostsDiagTagLANDirect", nil)
+}
+
 // HostsDiagTagRelay says "relay"
 // in the language the app shows.
 //

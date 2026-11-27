@@ -2,6 +2,7 @@ package rexapi
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -17,7 +18,41 @@ import (
 // (docs/NET-007-desktop-direct-client.md).
 const rexTunnelPath = "/api/v1/rex-tunnel"
 
+// lanHintPath is the authenticated HTTP endpoint that reports this host's
+// private LAN Direct TLS addresses and certificate pin, and doubles as the
+// non-disruptive LAN reachability/auth probe (docs/NET-011-lan-direct-upgrade.md).
+const lanHintPath = "/api/v1/lan-hint"
+
 const rexTunnelDialTimeout = 5 * time.Second
+
+func (g *Gateway) handleLANHint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	transport := transportOf(r)
+	if transport != transportDirect && transport != transportRelay {
+		writeRefusal(w, "lan-hint is only available over direct TLS or relay")
+		return
+	}
+	if g.direct == nil {
+		writeRefusal(w, "direct access is off")
+		return
+	}
+	addrs, pin := g.direct.lanHint()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(struct {
+		OK        bool     `json:"ok"`
+		LANAddrs  []string `json:"lan_addrs,omitempty"`
+		DirectPin string   `json:"direct_pin,omitempty"`
+	}{
+		OK:        true,
+		LANAddrs:  addrs,
+		DirectPin: pin,
+	})
+}
 
 func (g *Gateway) rexSocketPath() string {
 	if g.opt.RexSocket != "" {

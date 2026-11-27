@@ -3,7 +3,7 @@ name: NET-010
 description: "WindRex shares a stateless relay fleet with one QR scan (#r=), derives per-host relay tokens with HMAC-SHA256, and adds custom host display names and desktop relay discovery. Use when you change fleet QR URLs, DeriveFleetToken, relay_trust admission, host_name, fleet_auth metadata, or relays.json."
 metadata:
   created: "2026-11-26"
-  updated: "2026-11-26"
+  updated: "2026-11-27"
 ---
 
 # NET-010: One-scan relay fleet auto-discovery
@@ -127,7 +127,7 @@ Both Go (`internal/directrelay`) and Swift (`GoRexTests`) pin this exact vector 
 
 ## Security
 
-- **Transport boundary**: `directListener.admit` checks `DeriveFleetToken` strictly when `transport == transportRelay` and `RelayTrust` is true. Requests on `transportDirect`, `transportLAN`, or `transportTCP` reject fleet tokens.
+- **Transport boundary**: `directListener.admit` checks `DeriveFleetToken` when `transport == transportRelay` and `RelayTrust` is true, and (as extended by [`NET-011`](NET-011-lan-direct-upgrade.md)) on `transportDirect` strictly for private RFC1918/ULA peers when `LANDirect` is enabled. Public `transportDirect` peers, loopback peers, `transportLAN`, and `transportTCP` reject fleet tokens.
 - **Opt-in per host**: `RelayTrust` defaults to `false`. High-sensitivity hosts leave it off (`fleet_auth: false`) and require their own `#k=` single-host QR.
 - **Secret isolation**: `relay_secret` lives only in URL `#fragment`, `rexapi/direct.json` (`0600`), and desktop `relays.json` (`0600`). It is never printed on screen, logged, or returned by `/api/hosts` or `server status`. Clipboard writes set `Concealed: true`.
 - **TLS pinning**: `DiscoverHosts` and `rex.ConnectRemote` enforce `p=` leaf SHA-256 certificate verification and refuse HTTP redirects on `/api/hosts`.

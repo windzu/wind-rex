@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"gorex/internal/directrelay"
+	"gorex/internal/hosts"
 	"gorex/internal/layout"
 	"gorex/internal/rex"
 	"gorex/locales"
@@ -1483,7 +1486,7 @@ func TestWatchHostTakesChanges(t *testing.T) {
 	h := newHostConn(savedHost{ID: "h1", Name: "office-pc", Address: sock})
 	t.Cleanup(h.close)
 	updates := make(chan struct{}, 100)
-	go (&App{}).watchHost(h, c, func(func()) { updates <- struct{}{} })
+	go (&App{}).watchHost(h, c, rex.RouteDirect, func(func()) { updates <- struct{}{} })
 	taken := func(what string) {
 		t.Helper()
 		select {
@@ -1715,5 +1718,80 @@ func TestAddDirectHostUI(t *testing.T) {
 	assertNoSecretInUI(relaySecret)
 	if hs, err := loadHosts(); err != nil || len(hs) != 2 || hs[0].Address != directURL || hs[1].Address != relayURL {
 		t.Fatalf("hosts.json = %+v, err = %v", hs, err)
+	}
+}
+
+func TestRelayHostLANDirectPromotionAndDiag(t *testing.T) {
+	a, tt := hostsPage(t)
+	f := newFakeHost(t, fakeApproved)
+
+	oldPing := hostPing
+	hostPing = func(*rex.Client, time.Duration) (time.Duration, error) { return 4 * time.Millisecond, nil }
+	t.Cleanup(func() { hostPing = oldPing })
+
+	oldDialCand := dialHostWithCandidates
+	oldFetch := fetchLANHint
+	oldProbe := probeLANDirect
+	oldInterval := lanPromoteInterval
+	t.Cleanup(func() {
+		dialHostWithCandidates = oldDialCand
+		fetchLANHint = oldFetch
+		probeLANDirect = oldProbe
+		lanPromoteInterval = oldInterval
+	})
+
+	var probeAllowed atomic.Bool
+	dialHostWithCandidates = func(ctx context.Context, address string, candidates []rex.DirectCandidate) (*rex.Client, rex.DirectRouteInfo, error) {
+		c, err := rex.ConnectSocketKeepalive(f.path)
+		if err != nil {
+			return nil, rex.DirectRouteInfo{}, err
+		}
+		if len(candidates) > 0 && probeAllowed.Load() {
+			return c, rex.DirectRouteInfo{Kind: rex.RouteLANDirect, Host: candidates[0].Addr}, nil
+		}
+		return c, defaultHostRoute(address), nil
+	}
+	fetchLANHint = func(context.Context, string) (rex.LANHint, error) {
+		return rex.LANHint{}, errors.New("no hint yet")
+	}
+	probeLANDirect = func(_ context.Context, _ string, candidates []rex.DirectCandidate) (rex.DirectCandidate, error) {
+		if probeAllowed.Load() && len(candidates) > 0 {
+			return candidates[0], nil
+		}
+		return rex.DirectCandidate{}, errors.New("lan unreachable")
+	}
+	lanPromoteInterval = 0
+
+	pin := strings.Repeat("a", 64)
+	relayURL := "https://relay.example.com:7443/h/host_lan_01/#k=secret_token_999&p=" + pin + "&n=dev-box-1"
+	h := a.addHost(savedHost{ID: "h-lan", Name: "dev-box-1", Address: relayURL, RelayID: "r1", RelayHostID: "host_lan_01"})
+	waitFor(t, tt, "initial relay connection", func() bool {
+		return h.state == hostConnected && h.routeKind == rex.RouteRelay && tt.HasText(locales.HostsDiagTagRelay())
+	})
+
+	// 1. Receiving LAN hints while off-LAN (probe fails) does not disrupt the relay connection.
+	initialClient := h.current()
+	h.setLANHint([]string{"10.0.13.20:7443"}, pin)
+	time.Sleep(60 * time.Millisecond)
+	tt.Frame()
+	if h.current() != initialClient || h.routeKind != rex.RouteRelay {
+		t.Fatalf("failed LAN probe disrupted relay connection: route=%v", h.routeKind)
+	}
+
+	// 2. Once LAN becomes reachable and relay refresh delivers hints, host promotes to LAN direct
+	//    and shows the LAN direct diagnostic badge with the private LAN host:port.
+	probeAllowed.Store(true)
+	a.applyRelayLANHints(hosts.Relay{ID: "r1", URL: "https://relay.example.com:7443"}, []directrelay.HostInfo{
+		{ID: "host_lan_01", Name: "dev-box-1", LANAddrs: []string{"10.0.13.21:7443"}, DirectPin: pin},
+	})
+	waitFor(t, tt, "LAN direct promotion", func() bool {
+		return h.state == hostConnected &&
+			h.routeKind == rex.RouteLANDirect &&
+			h.routeHost == "10.0.13.21:7443" &&
+			tt.HasText(locales.HostsDiagTagLANDirect()) &&
+			tt.HasText("10.0.13.21:7443")
+	})
+	if len(a.hosts) != 1 {
+		t.Fatalf("expected single host entry after LAN promotion, got %d", len(a.hosts))
 	}
 }

@@ -310,6 +310,7 @@
   "hostsManage": "远程主机…",
   "hostsSessions": "{n, plural, =0 {没有终端} other {# 个终端}}",
   "hostsDiagTagDirect": "直连",
+  "hostsDiagTagLANDirect": "局域网直连",
   "hostsDiagTagRelay": "中继",
   "hostsDiagConnect": "连接 {ms} 毫秒",
   "hostsDiagPing": "延迟 {ms} 毫秒",

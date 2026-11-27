@@ -295,3 +295,186 @@ func assertControlHello(t *testing.T, ctx context.Context, ws *websocket.Conn) [
 	}
 	return wel.Features
 }
+
+func TestDirectFleetTokenPrivatePeerOnly(t *testing.T) {
+	const (
+		relaySecret = "test-relay-secret"
+		hostID      = "host-abc-123"
+	)
+	fleetToken := directrelay.DeriveFleetToken(relaySecret, hostID)
+	d := newDirectListener(nil, t.TempDir())
+	d.conf = DirectConfig{
+		Enabled:     true,
+		Token:       "host-own-secret-token",
+		RelayURL:    "https://relay.example.com:7443",
+		RelaySecret: relaySecret,
+		HostID:      hostID,
+		RelayTrust:  true,
+	}
+
+	call := func(remoteAddr, transport, tok string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "https://10.0.13.20:7443"+rexTunnelPath, nil)
+		req.RemoteAddr = remoteAddr
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		_, ok := d.admit(w, req, transport)
+		if ok {
+			return http.StatusOK
+		}
+		return w.Code
+	}
+
+	// Private RFC1918 and ULA peers on transportDirect are admitted with fleet token.
+	for _, peer := range []string{"10.0.13.41:54321", "172.16.4.5:54321", "192.168.1.9:54321", "[::ffff:10.0.8.9]:54321", "[fd12:3456::1]:54321"} {
+		if code := call(peer, transportDirect, fleetToken); code != http.StatusOK {
+			t.Errorf("private peer %s on transportDirect = %d, want 200", peer, code)
+		}
+	}
+
+	// Public, loopback, CGNAT, and proxy-TUN peers on transportDirect are rejected with 401.
+	for _, peer := range []string{"203.0.113.5:54321", "127.0.0.1:54321", "[::1]:54321", "100.111.76.128:54321", "198.18.0.1:54321"} {
+		if code := call(peer, transportDirect, fleetToken); code != http.StatusUnauthorized {
+			t.Errorf("non-private peer %s on transportDirect = %d, want 401", peer, code)
+		}
+	}
+
+	// transportRelay still admits fleet token regardless of peer IP.
+	if code := call("203.0.113.5:54321", transportRelay, fleetToken); code != http.StatusOK {
+		t.Errorf("transportRelay with fleet token = %d, want 200", code)
+	}
+
+	// Turning LANDirect off rejects fleet token on transportDirect even for private peers.
+	off := false
+	d.conf.LANDirect = &off
+	if code := call("10.0.13.41:54321", transportDirect, fleetToken); code != http.StatusUnauthorized {
+		t.Errorf("private peer with lan_direct=false = %d, want 401", code)
+	}
+	// Host's own per-host Token still succeeds.
+	if code := call("10.0.13.41:54321", transportDirect, d.conf.Token); code != http.StatusOK {
+		t.Errorf("private peer with host token = %d, want 200", code)
+	}
+
+	// Turning RelayTrust off rejects fleet token on both direct and relay.
+	d.conf.LANDirect = nil
+	d.conf.RelayTrust = false
+	if code := call("10.0.13.41:54321", transportDirect, fleetToken); code != http.StatusUnauthorized {
+		t.Errorf("private peer with RelayTrust=false = %d, want 401", code)
+	}
+	if code := call("203.0.113.5:54321", transportRelay, fleetToken); code != http.StatusUnauthorized {
+		t.Errorf("transportRelay with RelayTrust=false = %d, want 401", code)
+	}
+}
+
+func TestDirectRelayAutoLANListenerAndHint(t *testing.T) {
+	sock, _ := startServer(t)
+	c, err := rex.ConnectSocketKeepalive(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateDir := t.TempDir()
+	g, err := New(Options{Client: c, StateDir: stateDir, RexSocket: sock})
+	if err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	defer g.Close()
+
+	relayDir := t.TempDir()
+	relayCert, relayPin, err := directrelay.LoadOrCreateCert(relayDir, "relay", []string{"127.0.0.1"})
+	if err != nil {
+		t.Fatalf("relay cert: %v", err)
+	}
+	relay := directrelay.NewServer("relay-secret", nil)
+	defer relay.Close()
+	relaySrv := httptest.NewUnstartedServer(relay.Handler())
+	relaySrv.TLS = &tls.Config{Certificates: []tls.Certificate{relayCert}}
+	relaySrv.StartTLS()
+	defer relaySrv.Close()
+
+	hostID := NewHostID()
+	token := NewLANToken()
+	// 1. Relay-only config with default LANDirect=nil automatically starts local TLS listener.
+	g.direct.apply(DirectConfig{
+		Enabled:      true,
+		RelayURL:     relaySrv.URL,
+		RelaySecret:  "relay-secret",
+		RelayCertPin: relayPin,
+		HostID:       hostID,
+		Token:        token,
+	})
+	st := LoadDirectStatus(stateDir)
+	if st.Listening == "" || !directrelay.ValidPin(st.CertPin) {
+		t.Fatalf("expected auto LAN Direct TLS listener, got status %+v", st)
+	}
+	waitFor(t, "relay host online", func() bool { return relay.HostOnline(hostID) })
+
+	// Authenticated GET /api/v1/lan-hint over relay succeeds with 200 OK.
+	relayHTTP := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: directrelay.TLSConfigWithPin(relayPin)},
+	}
+	t.Cleanup(relayHTTP.CloseIdleConnections)
+	hintURL := relaySrv.URL + "/h/" + hostID + lanHintPath
+	req, _ := http.NewRequest(http.MethodGet, hintURL, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := relayHTTP.Do(req)
+	if err != nil {
+		t.Fatalf("GET lan-hint over relay: %v", err)
+	}
+	var hint struct {
+		OK        bool     `json:"ok"`
+		LANAddrs  []string `json:"lan_addrs"`
+		DirectPin string   `json:"direct_pin"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&hint); err != nil {
+		resp.Body.Close()
+		t.Fatalf("decode lan-hint: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !hint.OK {
+		t.Fatalf("lan-hint status=%d body=%+v", resp.StatusCode, hint)
+	}
+	if len(st.LANAddrs) > 0 && (len(hint.LANAddrs) == 0 || hint.DirectPin != st.CertPin) {
+		t.Fatalf("lan-hint mismatch: got %+v, status %+v", hint, st)
+	}
+
+	// Unauthenticated GET /api/v1/lan-hint returns 401.
+	unauthResp, err := relayHTTP.Get(hintURL)
+	if err != nil {
+		t.Fatalf("unauth GET lan-hint: %v", err)
+	}
+	unauthResp.Body.Close()
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauth lan-hint status = %d, want 401", unauthResp.StatusCode)
+	}
+
+	// POST /api/v1/lan-hint returns 405.
+	postReq, _ := http.NewRequest(http.MethodPost, hintURL, nil)
+	postReq.Header.Set("Authorization", "Bearer "+token)
+	postResp, err := relayHTTP.Do(postReq)
+	if err != nil {
+		t.Fatalf("POST lan-hint: %v", err)
+	}
+	postResp.Body.Close()
+	if postResp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST lan-hint status = %d, want 405", postResp.StatusCode)
+	}
+
+	// 2. Disabling LANDirect binds zero TCP listeners and clears LANAddrs.
+	off := false
+	g.direct.apply(DirectConfig{
+		Enabled:      true,
+		RelayURL:     relaySrv.URL,
+		RelaySecret:  "relay-secret",
+		RelayCertPin: relayPin,
+		HostID:       hostID,
+		Token:        token,
+		LANDirect:    &off,
+	})
+	stOff := LoadDirectStatus(stateDir)
+	if stOff.Listening != "" || len(stOff.LANAddrs) != 0 {
+		t.Fatalf("expected no listener when lan_direct=false, got %+v", stOff)
+	}
+}

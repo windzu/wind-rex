@@ -8,23 +8,75 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
+
+	"gorex/internal/directrelay"
 )
 
 // DirectTunnelPath is the authenticated WebSocket endpoint on a Direct TLS or
 // stateless relay gateway that tunnels the native rex protocol stream.
 const DirectTunnelPath = "/api/v1/rex-tunnel"
 
-const directRedialTimeout = 20 * time.Second
+// LANHintPath is the authenticated HTTP endpoint returning a host's private
+// LAN Direct TLS addresses and certificate pin, and doubling as the
+// non-disruptive LAN reachability probe (docs/NET-011-lan-direct-upgrade.md).
+const LANHintPath = "/api/v1/lan-hint"
+
+const (
+	directRedialTimeout = 20 * time.Second
+	maxLANHintBodyBytes = 64 << 10
+)
+
+var (
+	// lanHeadStart gives local LAN candidates a short window to win before
+	// dialing the relay fallback (staggered Happy Eyeballs). Tests may shorten.
+	lanHeadStart    = 200 * time.Millisecond
+	lanDialTimeout  = 800 * time.Millisecond
+	lanProbeTimeout = 400 * time.Millisecond
+	// allowLoopbackLANCandidate is enabled only in unit tests so loopback
+	// httptest servers can exercise the LAN Happy Eyeballs dialer.
+	allowLoopbackLANCandidate = false
+)
+
+// DirectCandidate is a pinned private-LAN Direct TLS endpoint offered as an
+// automatic local upgrade for a relay host.
+type DirectCandidate struct {
+	Addr string
+	Pin  string
+}
+
+// DirectRouteKind identifies which transport path a direct/relay client uses.
+type DirectRouteKind string
+
+const (
+	RouteDirect    DirectRouteKind = "direct"
+	RouteLANDirect DirectRouteKind = "lan_direct"
+	RouteRelay     DirectRouteKind = "relay"
+)
+
+// DirectRouteInfo describes the winning transport route of a connected client.
+type DirectRouteInfo struct {
+	Kind DirectRouteKind
+	Host string
+}
+
+// LANHint is the payload returned by GET /api/v1/lan-hint.
+type LANHint struct {
+	LANAddrs  []string `json:"lan_addrs,omitempty"`
+	DirectPin string   `json:"direct_pin,omitempty"`
+}
 
 // ErrDirectAuth indicates the remote host rejected the Direct TLS / Relay
 // Bearer token (HTTP 401 or 403).
@@ -222,25 +274,188 @@ func directToken(raw string) string {
 // using the pairing URL's Bearer token and optional leaf certificate SHA-256
 // pin, returning a native *rex.Client with keepalive enabled.
 func ConnectDirect(ctx context.Context, raw string) (*Client, error) {
-	target, err := ParseDirectTarget(raw)
+	c, _, err := ConnectDirectWithCandidates(ctx, raw, nil)
+	return c, err
+}
+
+// ConnectDirectWithCandidates connects to a remote host like ConnectDirect,
+// racing valid private-LAN Direct TLS candidates ahead of the relay URL with a
+// staggered Happy Eyeballs head start (docs/NET-011-lan-direct-upgrade.md).
+// The winning transport is pinned onto the returned *Client for pane stream redials.
+func ConnectDirectWithCandidates(ctx context.Context, raw string, candidates []DirectCandidate) (*Client, DirectRouteInfo, error) {
+	primary, err := ParseDirectTarget(raw)
 	if err != nil {
-		return nil, err
+		return nil, DirectRouteInfo{}, err
+	}
+	primaryKind := RouteDirect
+	if primary.IsRelay {
+		primaryKind = RouteRelay
+	}
+	primaryRoute := DirectRouteInfo{Kind: primaryKind, Host: primary.Host}
+
+	lanTargets := buildLANCandidateTargets(primary.Token, candidates)
+	if !primary.IsRelay || len(lanTargets) == 0 {
+		c, err := connectSingleDirect(ctx, primary)
+		if err != nil {
+			return nil, DirectRouteInfo{}, err
+		}
+		return c, primaryRoute, nil
 	}
 
-	tlsCfg := directTLSConfig(target)
-	tr := &http.Transport{
-		TLSClientConfig: tlsCfg,
-		// WebSocket upgrades require HTTP/1.1.
-		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	type attemptResult struct {
+		conn   net.Conn
+		target DirectTarget
+		tr     *http.Transport
+		client *http.Client
+		route  DirectRouteInfo
+		isLAN  bool
+		err    error
 	}
-	httpClient := &http.Client{Transport: tr}
 
+	raceCtx, raceCancel := context.WithCancel(ctx)
+	defer raceCancel()
+
+	results := make(chan attemptResult, len(lanTargets)+1)
+	allLANFailed := make(chan struct{})
+	var lanWG sync.WaitGroup
+
+	for _, lt := range lanTargets {
+		lanWG.Add(1)
+		go func(t DirectTarget) {
+			defer lanWG.Done()
+			tr, hc := newDirectHTTPClient(t)
+			lctx, lcancel := context.WithTimeout(raceCtx, lanDialTimeout)
+			conn, derr := dialDirectConn(lctx, t, hc)
+			lcancel()
+			if derr != nil {
+				tr.CloseIdleConnections()
+				results <- attemptResult{isLAN: true, err: derr}
+				return
+			}
+			results <- attemptResult{
+				conn:   conn,
+				target: t,
+				tr:     tr,
+				client: hc,
+				route:  DirectRouteInfo{Kind: RouteLANDirect, Host: t.Host},
+				isLAN:  true,
+			}
+		}(lt)
+	}
+	go func() {
+		lanWG.Wait()
+		close(allLANFailed)
+	}()
+
+	relayStarted := make(chan bool, 1)
+	go func() {
+		headTimer := time.NewTimer(lanHeadStart)
+		defer headTimer.Stop()
+		select {
+		case <-raceCtx.Done():
+			relayStarted <- false
+			return
+		case <-allLANFailed:
+		case <-headTimer.C:
+		}
+		if raceCtx.Err() != nil {
+			relayStarted <- false
+			return
+		}
+		relayStarted <- true
+		tr, hc := newDirectHTTPClient(primary)
+		conn, derr := dialDirectConn(raceCtx, primary, hc)
+		if derr != nil {
+			tr.CloseIdleConnections()
+			results <- attemptResult{isLAN: false, err: derr}
+			return
+		}
+		results <- attemptResult{
+			conn:   conn,
+			target: primary,
+			tr:     tr,
+			client: hc,
+			route:  primaryRoute,
+			isLAN:  false,
+		}
+	}()
+
+	var (
+		winner   *attemptResult
+		relayErr error
+		lastErr  error
+		lanDone  int
+		gotRelay bool
+	)
+	for {
+		if winner != nil {
+			break
+		}
+		if lanDone == len(lanTargets) && gotRelay {
+			break
+		}
+		res := <-results
+		if res.isLAN {
+			lanDone++
+		} else {
+			gotRelay = true
+		}
+		if res.err == nil {
+			r := res
+			winner = &r
+			raceCancel()
+			break
+		}
+		if !res.isLAN {
+			relayErr = res.err
+		}
+		lastErr = res.err
+	}
+
+	// Drain any remaining in-flight attempts in background so late winners close cleanly.
+	remainingLAN := len(lanTargets) - lanDone
+	go func() {
+		started := <-relayStarted
+		remaining := remainingLAN
+		if started && !gotRelay {
+			remaining++
+		}
+		for i := 0; i < remaining; i++ {
+			res := <-results
+			if res.conn != nil {
+				_ = res.conn.Close()
+			}
+			if res.tr != nil {
+				res.tr.CloseIdleConnections()
+			}
+		}
+	}()
+
+	if winner == nil {
+		if relayErr != nil {
+			return nil, DirectRouteInfo{}, relayErr
+		}
+		return nil, DirectRouteInfo{}, lastErr
+	}
+
+	winTarget, winHTTP, winTr := winner.target, winner.client, winner.tr
+	c := newClient(winner.conn, func() (net.Conn, error) {
+		rctx, cancel := context.WithTimeout(context.Background(), directRedialTimeout)
+		defer cancel()
+		return dialDirectConn(rctx, winTarget, winHTTP)
+	})
+	c.keepalive = true
+	c.closer = directTransportCloser{tr: winTr}
+	return c, winner.route, nil
+}
+
+func connectSingleDirect(ctx context.Context, target DirectTarget) (*Client, error) {
+	tr, httpClient := newDirectHTTPClient(target)
 	conn, err := dialDirectConn(ctx, target, httpClient)
 	if err != nil {
 		tr.CloseIdleConnections()
 		return nil, err
 	}
-
 	c := newClient(conn, func() (net.Conn, error) {
 		rctx, cancel := context.WithTimeout(context.Background(), directRedialTimeout)
 		defer cancel()
@@ -249,6 +464,177 @@ func ConnectDirect(ctx context.Context, raw string) (*Client, error) {
 	c.keepalive = true
 	c.closer = directTransportCloser{tr: tr}
 	return c, nil
+}
+
+func newDirectHTTPClient(target DirectTarget) (*http.Transport, *http.Client) {
+	tr := &http.Transport{
+		TLSClientConfig: directTLSConfig(target),
+		// WebSocket upgrades require HTTP/1.1.
+		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	}
+	return tr, &http.Client{
+		Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func buildLANCandidateTargets(token string, candidates []DirectCandidate) []DirectTarget {
+	if token == "" || len(candidates) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, min(len(candidates), directrelay.MaxLANAddrs))
+	out := make([]DirectTarget, 0, min(len(candidates), directrelay.MaxLANAddrs))
+	for _, cand := range candidates {
+		ap, err := netip.ParseAddrPort(strings.TrimSpace(cand.Addr))
+		if err != nil || ap.Port() == 0 {
+			continue
+		}
+		ip := ap.Addr().Unmap()
+		if !directrelay.IsPrivateLANIP(ip) && !(allowLoopbackLANCandidate && ip.IsLoopback()) {
+			continue
+		}
+		pin := strings.TrimSpace(cand.Pin)
+		if pin == "" {
+			continue
+		}
+		pinBytes, err := decodeDirectPin(pin)
+		if err != nil {
+			continue
+		}
+		host := netip.AddrPortFrom(ip, ap.Port()).String()
+		if _, dup := seen[host]; dup {
+			continue
+		}
+		seen[host] = struct{}{}
+		out = append(out, DirectTarget{
+			BaseURL:  "https://" + host,
+			Host:     host,
+			Hostname: ip.String(),
+			Path:     "",
+			Token:    token,
+			Pin:      pin,
+			IsRelay:  false,
+			pinBytes: pinBytes,
+			hasPin:   true,
+		})
+		if len(out) >= directrelay.MaxLANAddrs {
+			break
+		}
+	}
+	return out
+}
+
+// FetchLANHint queries authenticated GET /api/v1/lan-hint on a Direct TLS or
+// relay target to learn its private LAN Direct TLS candidates and cert pin.
+func FetchLANHint(ctx context.Context, raw string) (LANHint, error) {
+	target, err := ParseDirectTarget(raw)
+	if err != nil {
+		return LANHint{}, err
+	}
+	tr, hc := newDirectHTTPClient(target)
+	defer tr.CloseIdleConnections()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.BaseURL+LANHintPath, nil)
+	if err != nil {
+		return LANHint{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+target.Token)
+
+	resp, err := hc.Do(req)
+	if err != nil {
+		msg := strings.ReplaceAll(err.Error(), target.Token, "<redacted>")
+		return LANHint{}, fmt.Errorf("rex: lan hint %s: %s", target.DisplayAddress(), msg)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return LANHint{}, fmt.Errorf("%w (%s)", ErrDirectAuth, target.DisplayAddress())
+	}
+	if resp.StatusCode != http.StatusOK {
+		return LANHint{}, fmt.Errorf("rex: lan hint %s: HTTP %d", target.DisplayAddress(), resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxLANHintBodyBytes))
+	if err != nil {
+		return LANHint{}, err
+	}
+	var out LANHint
+	if err := json.Unmarshal(body, &out); err != nil {
+		return LANHint{}, err
+	}
+	out.DirectPin = strings.TrimSpace(out.DirectPin)
+	if _, err := decodeDirectPin(out.DirectPin); err != nil {
+		return LANHint{}, nil
+	}
+	out.LANAddrs = directrelay.SanitizeLANAddrs(out.LANAddrs)
+	if len(out.LANAddrs) == 0 {
+		out.DirectPin = ""
+	}
+	return out, nil
+}
+
+// ProbeLANDirect checks whether any private-LAN Direct TLS candidate answers
+// authenticated GET /api/v1/lan-hint with HTTP 200 within lanProbeTimeout.
+// It never disrupts existing terminal connections.
+func ProbeLANDirect(ctx context.Context, raw string, candidates []DirectCandidate) (DirectCandidate, error) {
+	target, err := ParseDirectTarget(raw)
+	if err != nil {
+		return DirectCandidate{}, err
+	}
+	lanTargets := buildLANCandidateTargets(target.Token, candidates)
+	if len(lanTargets) == 0 {
+		return DirectCandidate{}, errors.New("rex: no valid LAN candidates")
+	}
+
+	pctx, cancel := context.WithTimeout(ctx, lanProbeTimeout)
+	defer cancel()
+
+	type probeRes struct {
+		cand DirectCandidate
+		err  error
+	}
+	ch := make(chan probeRes, len(lanTargets))
+	for _, lt := range lanTargets {
+		go func(t DirectTarget) {
+			tr, hc := newDirectHTTPClient(t)
+			defer tr.CloseIdleConnections()
+			req, rerr := http.NewRequestWithContext(pctx, http.MethodGet, t.BaseURL+LANHintPath, nil)
+			if rerr != nil {
+				ch <- probeRes{err: rerr}
+				return
+			}
+			req.Header.Set("Accept", "application/json")
+			req.Header.Set("Authorization", "Bearer "+t.Token)
+			resp, derr := hc.Do(req)
+			if derr != nil {
+				ch <- probeRes{err: derr}
+				return
+			}
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				ch <- probeRes{err: fmt.Errorf("HTTP %d", resp.StatusCode)}
+				return
+			}
+			ch <- probeRes{cand: DirectCandidate{Addr: t.Host, Pin: t.Pin}}
+		}(lt)
+	}
+
+	var lastErr error
+	for range lanTargets {
+		res := <-ch
+		if res.err == nil {
+			cancel()
+			return res.cand, nil
+		}
+		lastErr = res.err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("rex: LAN probe failed")
+	}
+	return DirectCandidate{}, lastErr
 }
 
 func directTLSConfig(target DirectTarget) *tls.Config {
